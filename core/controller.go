@@ -76,7 +76,7 @@ type AppController struct {
 	updatePopupMutex sync.RWMutex // Мьютекс для защиты updatePopupShown
 
 	// --- Installed core version cache (one successful check per run) ---
-	installedCoreVersionCache   string     // после первой успешной проверки — без повторных запусков sing-box version
+	installedCoreVersionCache   string // после первой успешной проверки — без повторных запусков sing-box version
 	installedCoreVersionCacheMu sync.Mutex
 }
 
@@ -152,6 +152,7 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 	if err := ac.FileService.OpenLogFiles(logFileName, childLogFileName, apiLogFileName); err != nil {
 		return nil, fmt.Errorf("NewAppController: cannot open log files: %w", err)
 	}
+	api.SetAPILogFile(ac.FileService.ApiLogFile)
 
 	// Initialize RunningState before UIService (needed for callback)
 	ac.RunningState = &RunningState{controller: ac}
@@ -180,7 +181,6 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 	// Initialize APIService
 	apiService, err := services.NewAPIService(
 		ac.FileService.ConfigPath,
-		ac.FileService.ApiLogFile,
 		func() bool { return ac.RunningState.IsRunning() },
 		func() {
 			// OnProxiesUpdated callback
@@ -327,6 +327,7 @@ func (ac *AppController) GracefulExit() {
 end_loop:
 
 	if ac.FileService != nil {
+		api.SetAPILogFile(nil)
 		ac.FileService.CloseLogFiles()
 	}
 

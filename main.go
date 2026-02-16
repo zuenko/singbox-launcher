@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/desktop"
 
+	"singbox-launcher/api"
 	"singbox-launcher/core"
 	"singbox-launcher/core/config/parser"
 	"singbox-launcher/internal/debuglog"
@@ -262,6 +263,7 @@ func main() {
 			debuglog.RunAndLog("main: close child log file", controller.FileService.ChildLogFile.Close)
 		}
 		if controller.FileService.ApiLogFile != nil {
+			api.SetAPILogFile(nil)
 			debuglog.RunAndLog("main: close API log file", controller.FileService.ApiLogFile.Close)
 		}
 	}

@@ -78,7 +78,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		}
 		go func(group string) {
 			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
-			proxies, now, err := api.GetProxiesInGroup(baseURL, token, group, ac.FileService.ApiLogFile)
+			proxies, now, err := api.GetProxiesInGroup(baseURL, token, group)
 			fyne.Do(func() {
 				if err != nil {
 					ShowError(ac.UIService.MainWindow, err)
@@ -161,7 +161,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		}
 		go func() {
 			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
-			err := api.TestAPIConnection(baseURL, token, ac.FileService.ApiLogFile)
+			err := api.TestAPIConnection(baseURL, token)
 			fyne.Do(func() {
 				if err != nil {
 					ac.UIService.ApiStatusLabel.SetText("❌ Clash API Off (Error)")
@@ -209,7 +209,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		go func() {
 			fyne.Do(func() { button.SetText("...") })
 			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
-			delay, err := api.GetDelay(baseURL, token, proxyName, ac.FileService.ApiLogFile)
+			delay, err := api.GetDelay(baseURL, token, proxyName)
 			fyne.Do(func() {
 				if err != nil {
 					button.SetText("Error")
@@ -451,7 +451,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		go func() {
 			for i, proxy := range proxies {
 				baseURL, token, _ := ac.APIService.GetClashAPIConfig()
-				delay, err := api.GetDelay(baseURL, token, proxy.Name, ac.FileService.ApiLogFile)
+				delay, err := api.GetDelay(baseURL, token, proxy.Name)
 				fyne.Do(func() {
 					// Обновляем задержку в списке прокси
 					updatedProxies := ac.GetProxiesList()
@@ -559,7 +559,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 			results := make([]string, 0, len(currentSelectorOptions))
 			for _, sel := range currentSelectorOptions {
-				_, now, err := api.GetProxiesInGroup(baseURL, token, sel, ac.FileService.ApiLogFile)
+				_, now, err := api.GetProxiesInGroup(baseURL, token, sel)
 				if err != nil {
 					results = append(results, fmt.Sprintf("%s → error: %v", sel, err))
 					continue

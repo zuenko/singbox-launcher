@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -38,19 +37,17 @@ type APIService struct {
 
 	// Dependencies (passed from AppController)
 	ConfigPath            string
-	ApiLogFile            *os.File
 	RunningStateIsRunning func() bool
 	OnProxiesUpdated      func() // Called when proxies are updated
 	OnProxySwitched       func() // Called when proxy is switched
 }
 
 // NewAPIService creates and initializes a new APIService instance.
-func NewAPIService(configPath string, apiLogFile *os.File,
+func NewAPIService(configPath string,
 	runningStateIsRunning func() bool,
 	onProxiesUpdated func(), onProxySwitched func()) (*APIService, error) {
 	apiSvc := &APIService{
 		ConfigPath:            configPath,
-		ApiLogFile:            apiLogFile,
 		RunningStateIsRunning: runningStateIsRunning,
 		OnProxiesUpdated:      onProxiesUpdated,
 		OnProxySwitched:       onProxySwitched,
@@ -294,7 +291,7 @@ func (apiSvc *APIService) AutoLoadProxies(ctx context.Context) {
 		}
 
 		// Try to load proxies
-		proxies, now, err := api.GetProxiesInGroup(baseURL, token, currentGroup, apiSvc.ApiLogFile)
+		proxies, now, err := api.GetProxiesInGroup(baseURL, token, currentGroup)
 		if err != nil {
 			debuglog.DebugLog("AutoLoadProxies: Attempt %d failed: %v", attempt+1, err)
 			// Continue to next attempt
@@ -356,7 +353,7 @@ func (apiSvc *APIService) SwitchProxy(group, proxyName string) error {
 		return fmt.Errorf("Clash API is disabled")
 	}
 
-	err := api.SwitchProxy(baseURL, token, group, proxyName, apiSvc.ApiLogFile)
+	err := api.SwitchProxy(baseURL, token, group, proxyName)
 	if err != nil {
 		return fmt.Errorf("failed to switch proxy: %w", err)
 	}
