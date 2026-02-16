@@ -433,7 +433,8 @@ func (svc *ProcessService) Stop() {
 
 	var err error
 	if runtime.GOOS == "windows" {
-		err = platform.SendCtrlBreak(processToStop.Pid)
+		debuglog.InfoLog("stopSingBox: Stopping Sing-Box PID %d...", processToStop.Pid)
+		err = platform.KillProcessByPID(processToStop.Pid)
 	} else {
 		err = processToStop.Signal(os.Interrupt)
 	}

@@ -40,12 +40,16 @@ func OpenURL(url string) error {
 
 // KillProcess kills a process by name
 func KillProcess(processName string) error {
-	return exec.Command("taskkill", "/IM", processName, "/F").Run()
+	cmd := exec.Command("taskkill", "/IM", processName, "/F")
+	PrepareCommand(cmd)
+	return cmd.Run()
 }
 
 // KillProcessByPID kills a process and its children by PID
 func KillProcessByPID(pid int) error {
-	return exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F").Run()
+	cmd := exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F")
+	PrepareCommand(cmd)
+	return cmd.Run()
 }
 
 // SendCtrlBreak sends CTRL_BREAK_EVENT to a process by PID.
