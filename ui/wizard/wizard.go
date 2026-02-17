@@ -89,6 +89,7 @@ func ShowConfigWizard(parent fyne.Window) {
 		return
 	}
 	model.TemplateData = templateData
+	model.ExecDir = ac.FileService.ExecDir
 
 	// Create new window for wizard
 	wizardWindow := ac.UIService.Application.NewWindow("Config Wizard")

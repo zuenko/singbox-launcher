@@ -28,6 +28,7 @@ import (
 
 	"singbox-launcher/core"
 	"singbox-launcher/core/config"
+	"singbox-launcher/core/services"
 	"singbox-launcher/internal/debuglog"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
@@ -255,14 +256,16 @@ func (p *WizardPresenter) restoreSelectableRuleStates(persistedRules []wizardmod
 		}
 
 		if saved, ok := savedByLabel[rule.Label]; ok {
-			// Восстанавливаем выбор пользователя
 			rs.Enabled = saved.Enabled
 			rs.SelectedOutbound = saved.SelectedOutbound
 			debuglog.DebugLog("restoreSelectableRuleStates: matched rule label=%s, enabled=%v, selected_outbound=%s", rule.Label, saved.Enabled, saved.SelectedOutbound)
 		} else {
-			// Новое правило — используем default из шаблона
 			rs.Enabled = rule.IsDefault
 			rs.SelectedOutbound = rule.DefaultOutbound
+		}
+
+		if !services.AllSRSDownloaded(p.model.ExecDir, rule.RuleSets) {
+			rs.Enabled = false
 		}
 
 		p.model.SelectableRuleStates = append(p.model.SelectableRuleStates, rs)

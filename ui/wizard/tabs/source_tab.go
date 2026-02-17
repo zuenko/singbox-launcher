@@ -223,7 +223,6 @@ Hard requirements (must follow exactly):
      - all local "*-select" outbounds
      - the global auto outbound
      - "direct-out"
-     - do not change "go-any-way-githubusercontent" 
      - Create default a global selector "proxy-out" and copy this for "output-proxy-1", "output-proxy-2", "output-proxy-3" this global selectors output-proxy-1, output-proxy-2, output-proxy-3 MUST be fully independent selectors, not wrappers and not references to proxy-out. For EACH of them: Repeat the SAME addOutbounds list as proxy-out
 6. Preserve GUI/UX-related fields and intent.
    Do NOT remove fields just because they look optional.

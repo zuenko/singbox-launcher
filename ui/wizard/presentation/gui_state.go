@@ -34,10 +34,11 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// RuleWidget связывает виджеты Select и Check с правилом из модели.
+// RuleWidget связывает виджеты Select, Check и SRS button с правилом из модели.
 type RuleWidget struct {
 	Select    *widget.Select
 	Checkbox  *widget.Check // Может быть nil, если правило не имеет чекбокса
+	SRSButton *widget.Button // Кнопка ⬇/🔄/✔️ для правил с SRS
 	RuleState interface{}   // *models.RuleState - используется interface{} чтобы избежать циклических зависимостей
 }
 

@@ -19,6 +19,7 @@
 package presentation
 
 import (
+	"singbox-launcher/core/services"
 	"singbox-launcher/internal/debuglog"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
@@ -205,10 +206,14 @@ func (p *WizardPresenter) InitializeTemplateState() {
 			if outbound == "" {
 				outbound = options[0]
 			}
+			enabled := rule.IsDefault
+			if !services.AllSRSDownloaded(p.model.ExecDir, rule.RuleSets) {
+				enabled = false
+			}
 			p.model.SelectableRuleStates = append(p.model.SelectableRuleStates, &wizardmodels.RuleState{
 				Rule:             rule,
 				SelectedOutbound: outbound,
-				Enabled:          rule.IsDefault,
+				Enabled:          enabled,
 			})
 		}
 	} else {

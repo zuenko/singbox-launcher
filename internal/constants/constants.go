@@ -12,8 +12,9 @@ const (
 
 // Directory names
 const (
-	BinDirName  = "bin"
-	LogsDirName = "logs"
+	BinDirName     = "bin"
+	LogsDirName    = "logs"
+	RuleSetsDirName = "rule-sets"
 )
 
 // Log file names
