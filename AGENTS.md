@@ -71,6 +71,7 @@
 - **Существующие утилиты:** перед новой функцией проверять `internal/debuglog`, `internal/constants`, `core/network_utils`, `internal/platform`, пакеты в `core/config`, `ui/wizard/business`.
 - **Логирование:** только `internal/debuglog`; в новых путях кода — `debuglog.DebugLog` в точках start/success/error (см. **constitution.md**, раздел 5).
 - **Ошибки пользователю:** только через `dialogs.ShowError` / `ShowErrorText`; не игнорировать ошибки (`_ = err` только с явным обоснованием в комментарии).
+- **Информация об агентах:** без явного запроса пользователя не добавлять ни в документы, ни в коммиты, ни в код упоминания используемых агентов (Cursor, Codex, названия моделей и т.п.).
 
 Полный список — в **constitution.md** (раздел «Запреты») и **IMPLEMENTATION_PROMPT.md** (в т.ч. разделы про Git и консоль).
 
