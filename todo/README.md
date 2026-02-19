@@ -23,6 +23,7 @@
 ## Текущие фичи
 
 - **SRS_LOCAL_DOWNLOAD/** — локальное скачивание SRS, устранение зависимости от raw.githubusercontent.com
+- **RULE_TYPE_SRS_URL/** — тип пользовательского правила «SRS (URL)»: вставка своей ссылки на SRS в диалоге Add Rule
 - **TELEMETRY/** — система статистики (opt-in, allowlist, relay)
 
 ## Workflow
