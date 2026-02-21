@@ -21,10 +21,10 @@ import (
 
 	"singbox-launcher/core"
 	"singbox-launcher/core/config/parser"
+	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/platform"
-	"singbox-launcher/ui/components"
 	"singbox-launcher/ui/wizard"
 	wizardtemplate "singbox-launcher/ui/wizard/template"
 )
@@ -686,7 +686,8 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 				if tab.templateDownloadButton != nil {
 					tab.templateDownloadButton.Enable()
 				}
-				ShowError(tab.controller.GetMainWindow(), fmt.Errorf("failed to create request: %w", err))
+				binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
+				ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
 			})
 			return
 		}
@@ -702,7 +703,8 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 				if tab.templateDownloadButton != nil {
 					tab.templateDownloadButton.Enable()
 				}
-				ShowError(tab.controller.GetMainWindow(), fmt.Errorf("failed to download template: %w", err))
+				binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
+				ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
 			})
 			return
 		}
@@ -711,7 +713,8 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 				if tab.templateDownloadButton != nil {
 					tab.templateDownloadButton.Enable()
 				}
-				ShowError(tab.controller.GetMainWindow(), fmt.Errorf("download template failed: %s", resp.Status))
+				binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
+				ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
 			})
 			return
 		}
@@ -721,7 +724,8 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 				if tab.templateDownloadButton != nil {
 					tab.templateDownloadButton.Enable()
 				}
-				ShowError(tab.controller.GetMainWindow(), fmt.Errorf("failed to read template: %w", err))
+				binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
+				ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
 			})
 			return
 		}
@@ -732,7 +736,8 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 				if tab.templateDownloadButton != nil {
 					tab.templateDownloadButton.Enable()
 				}
-				ShowError(tab.controller.GetMainWindow(), fmt.Errorf("failed to create bin directory: %w", err))
+				binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
+				ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
 			})
 			return
 		}
@@ -741,7 +746,8 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 				if tab.templateDownloadButton != nil {
 					tab.templateDownloadButton.Enable()
 				}
-				ShowError(tab.controller.GetMainWindow(), fmt.Errorf("failed to save template: %w", err))
+				binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
+				ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
 			})
 			return
 		}
@@ -824,7 +830,8 @@ func (tab *CoreDashboardTab) startDownloadWithVersion(targetVersion string) {
 				} else if progress.Status == "error" {
 					tab.downloadInProgress = false
 					tab.setSingboxState("", "Download", -1)
-					ShowError(tab.controller.GetMainWindow(), progress.Error)
+					binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
+					ShowDownloadFailedManual(tab.controller.GetMainWindow(), "sing-box download failed", constants.SingboxReleasesURL, binDir)
 				}
 			})
 		}
@@ -968,7 +975,8 @@ func (tab *CoreDashboardTab) handleWintunDownload() {
 				} else if progress.Status == "error" {
 					tab.wintunDownloadInProgress = false
 					tab.setWintunState("", "Download wintun.dll", -1)
-					ShowError(tab.controller.GetMainWindow(), progress.Error)
+					binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
+					ShowDownloadFailedManual(tab.controller.GetMainWindow(), "wintun.dll download failed", constants.WintunHomeURL, binDir)
 				}
 			})
 		}
@@ -1011,9 +1019,7 @@ func (tab *CoreDashboardTab) showUpdatePopup(currentVersion, latestVersion strin
 			downloadLink,
 		)
 
-		// Используем components.NewCustom для создания диалога
-		// Передаем nil для кнопок, чтобы не было кнопки "Скачать", только "Закрыть"
-		d := components.NewCustom("Update Available", mainContent, nil, "Close", tab.controller.UIService.MainWindow)
+		d := dialogs.NewCustom("Update Available", mainContent, nil, "Close", tab.controller.UIService.MainWindow)
 
 		// Показываем диалог
 		d.Show()

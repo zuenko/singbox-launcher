@@ -38,7 +38,7 @@ import (
 
 	"singbox-launcher/core"
 	"singbox-launcher/internal/debuglog"
-	"singbox-launcher/ui/components"
+	"singbox-launcher/internal/dialogs"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 )
@@ -373,7 +373,7 @@ func (p *WizardPresenter) showSaveSuccessDialog(configPath string, validationErr
 
 	messageLabel := widget.NewLabel(message)
 
-	d = components.NewCustom(title, messageLabel, buttonsRow, "", p.guiState.Window)
+	d = dialogs.NewCustom(title, messageLabel, buttonsRow, "", p.guiState.Window)
 	d.Show()
 }
 

@@ -36,6 +36,12 @@ const (
 	DefaultSTUNServer = "stun.l.google.com:19302"
 )
 
+// Manual download URLs (shown when automatic download fails)
+const (
+	SingboxReleasesURL = "https://github.com/SagerNet/sing-box/releases"
+	WintunHomeURL      = "https://www.wintun.net/"
+)
+
 // Application version
 // Can be overridden at build time using -ldflags="-X singbox-launcher/internal/constants.AppVersion=..."
 var (

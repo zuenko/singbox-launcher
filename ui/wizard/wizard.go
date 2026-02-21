@@ -42,7 +42,9 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/core"
+	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/ui/components"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizarddialogs "singbox-launcher/ui/wizard/dialogs"
@@ -82,7 +84,8 @@ func ShowConfigWizard(parent fyne.Window) {
 	if err != nil {
 		templateFileName := wizardtemplate.GetTemplateFileName()
 		debuglog.ErrorLog("ConfigWizard: failed to load %s from %s: %v", templateFileName, filepath.Join(ac.FileService.ExecDir, "bin", templateFileName), err)
-		// Update config status in Core Dashboard
+		binDir := filepath.Join(ac.FileService.ExecDir, constants.BinDirName)
+		dialogs.ShowDownloadFailedManual(parent, "Config template failed to load", wizardtemplate.GetTemplateURL(), binDir)
 		if ac.UIService != nil && ac.UIService.UpdateConfigStatusFunc != nil {
 			ac.UIService.UpdateConfigStatusFunc()
 		}
@@ -169,10 +172,11 @@ func loadConfigFromFile(presenter *wizardpresentation.WizardPresenter, fileServi
 		model.ParserConfigJSON = parserConfigJSON
 		model.SourceURLs = sourceURLs
 	} else {
-		// If we didn't load from template or config.json - show error
+		// If we didn't load from template or config.json - show manual download dialog
 		if model.TemplateData == nil || model.TemplateData.ParserConfig == "" {
-			templateFileName := wizardtemplate.GetTemplateFileName()
-			dialog.ShowError(fmt.Errorf("No config found and template file (bin/%s) is missing or invalid.\nPlease create %s or ensure config.json exists.", templateFileName, templateFileName), wizardWindow)
+			ac := core.GetController()
+			binDir := filepath.Join(ac.FileService.ExecDir, constants.BinDirName)
+			dialogs.ShowDownloadFailedManual(wizardWindow, "Config template missing", wizardtemplate.GetTemplateURL(), binDir)
 			wizardWindow.Close()
 			return
 		}
@@ -513,7 +517,8 @@ func loadStateFromRead(presenter *wizardpresentation.WizardPresenter, wizardWind
 				templateLoader := &wizardbusiness.DefaultTemplateLoader{}
 				templateData, err := templateLoader.LoadTemplateData(ac.FileService.ExecDir)
 				if err != nil {
-					dialog.ShowError(fmt.Errorf("Failed to load template: %w", err), wizardWindow)
+					binDir := filepath.Join(ac.FileService.ExecDir, constants.BinDirName)
+					dialogs.ShowDownloadFailedManual(wizardWindow, "Config template failed to load", wizardtemplate.GetTemplateURL(), binDir)
 					return
 				}
 				model.TemplateData = templateData
@@ -628,7 +633,7 @@ func handleCloseButton(presenter *wizardpresentation.WizardPresenter, guiState *
 			discardButton,
 		)
 
-		d = components.NewCustom("Confirmation", messageLabel, buttonsRow, "Cancel", wizardWindow)
+		d = dialogs.NewCustom("Confirmation", messageLabel, buttonsRow, "Cancel", wizardWindow)
 		d.Show()
 	} else {
 		// Нет изменений - закрываем без диалога

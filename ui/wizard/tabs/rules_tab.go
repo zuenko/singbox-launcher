@@ -22,6 +22,7 @@ package tabs
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -32,7 +33,9 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/core/services"
+	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/ui/components"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
@@ -280,8 +283,12 @@ func createSRSButton(
 				btn.Enable()
 				if lastErr != nil {
 					btn.SetText(srsBtnDownload)
-					msg := fmt.Sprintf("Failed to download SRS: %v. Check your internet connection or use a VPN.", lastErr)
-					dialog.ShowError(fmt.Errorf("%s", msg), guiState.Window)
+					ruleSetsDir := filepath.Join(execDir, constants.BinDirName, constants.RuleSetsDirName)
+					downloadURL := ""
+					if len(srsEntries) > 0 {
+						downloadURL = srsEntries[0].URL
+					}
+					dialogs.ShowDownloadFailedManual(guiState.Window, "Rule-set (SRS) download failed", downloadURL, ruleSetsDir)
 					return
 				}
 				btn.SetText(srsBtnDone)

@@ -204,12 +204,14 @@ singbox-launcher/
 │   ├── help_tab.go             # Вкладка помощи
 │   │   │   - CreateHelpTab()                           # Создание вкладки помощи
 │   │   │
-│   ├── dialogs.go              # Общие диалоги
+│   ├── dialogs.go              # Общие диалоги (реэкспорт из internal/dialogs)
 │   │   │   - ShowError()                                # Показать ошибку
 │   │   │   - ShowErrorText()                            # Показать текст ошибки
 │   │   │   - ShowInfo()                                 # Показать информацию
 │   │   │   - ShowConfirm()                              # Показать подтверждение
 │   │   │   - ShowAutoHideInfo()                         # Автоскрываемая информация
+│   │   │   - ShowDownloadFailedManual()                 # Диалог «загрузка не удалась — скачайте вручную» (ссылка, копирование, Open folder)
+│   │   │   - ShowCustom() / NewCustom()                  # Кастомный диалог (через internal/dialogs)
 │   │   │
 │   ├── error_banner.go         # Баннеры ошибок
 │   │   │   - NewErrorBanner()                           # Создание баннера ошибки
@@ -468,8 +470,10 @@ singbox-launcher/
 │   │   │   - ShouldLog()                       # Проверка уровня логирования
 │   │   │   - Level enum (Off/Error/Warn/Info/Verbose/Trace)
 │   │   │
-│   ├── dialogs/                # Утилиты диалогов
-│   │   │   - различные утилиты для диалогов
+│   ├── dialogs/                # Диалоги (без зависимости от ui)
+│   │   │   - NewCustom()                                # Кастомный диалог: mainContent (центр), buttons (низ), Border; ESC закрывает
+│   │   │   - ShowDownloadFailedManual()                 # Единый диалог при ошибке загрузки (sing-box, wintun, шаблон, SRS): короткое сообщение, ссылка «Open download page» + кнопка копирования URL, «Open folder», «Close»
+│   │   │   - ShowError() / ShowErrorText()              # Показать ошибку (используются из ui/dialogs)
 │   │   │
 │   └── platform/              # Платформо-зависимый код
 │       │   - платформо-специфичные функции

@@ -16,7 +16,7 @@ import (
 	"singbox-launcher/core"
 	"singbox-launcher/core/config"
 	"singbox-launcher/internal/debuglog"
-	"singbox-launcher/ui/components"
+	"singbox-launcher/internal/dialogs"
 )
 
 // CreateClashAPITab creates and returns the content for the "Clash API" tab.
@@ -580,7 +580,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				}
 				scroll := container.NewVScroll(content)
 				scroll.SetMinSize(fyne.NewSize(480, 260))
-				dlg := components.NewCustom("Selector → Active Outbound", scroll, nil, "Close", ac.UIService.MainWindow)
+				dlg := dialogs.NewCustom("Selector → Active Outbound", scroll, nil, "Close", ac.UIService.MainWindow)
 				dlg.Show()
 			})
 		}()
