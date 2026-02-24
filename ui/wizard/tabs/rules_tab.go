@@ -132,10 +132,13 @@ func createSelectableRulesUI(presenter *wizardpresentation.WizardPresenter, mode
 
 		var srsButton *widget.Button
 		var srsTooltipText string
-		checkbox := createSelectableRuleCheckbox(presenter, model, guiState, ruleState, idx, outboundSelect, &srsButton)
+		// When user clicks checkbox to enable rule and SRS is not downloaded, we start download and set this flag
+		// so that on success we set the rule checkbox (only when download was initiated by checkbox, not by ⬇).
+		enableRuleOnSRSSuccess := new(bool)
+		checkbox := createSelectableRuleCheckbox(presenter, model, guiState, ruleState, idx, outboundSelect, &srsButton, enableRuleOnSRSSuccess)
 
 		if len(srsEntries) > 0 {
-			srsButton = createSRSButton(presenter, model, guiState, ruleState, idx, srsEntries, checkbox, outboundSelect)
+			srsButton = createSRSButton(presenter, model, guiState, ruleState, idx, srsEntries, checkbox, outboundSelect, enableRuleOnSRSSuccess)
 			urls := make([]string, 0, len(srsEntries))
 			for _, e := range srsEntries {
 				urls = append(urls, e.URL)
@@ -201,6 +204,8 @@ func createOutboundSelectorForSelectableRule(
 }
 
 // createSelectableRuleCheckbox создает checkbox для selectable rule.
+// When user checks the box and SRS is not downloaded, we start download and set enableRuleOnSRSSuccess
+// so that on success the rule is enabled (checkbox stays checked).
 func createSelectableRuleCheckbox(
 	presenter *wizardpresentation.WizardPresenter,
 	model *wizardmodels.WizardModel,
@@ -209,11 +214,13 @@ func createSelectableRuleCheckbox(
 	idx int,
 	outboundSelect *widget.Select,
 	srsButtonRef **widget.Button,
+	enableRuleOnSRSSuccess *bool,
 ) *widget.Check {
 	var checkbox *widget.Check
 	checkbox = widget.NewCheck(ruleState.Rule.Label, func(val bool) {
 		if val && !services.AllSRSDownloaded(model.ExecDir, ruleState.Rule.RuleSets) {
 			if !guiState.UpdatingOutboundOptions && srsButtonRef != nil && *srsButtonRef != nil {
+				*enableRuleOnSRSSuccess = true // on 🔄→✔️ success we will set the checkbox
 				(*srsButtonRef).OnTapped()
 			}
 			checkbox.SetChecked(false)
@@ -241,7 +248,8 @@ func createSelectableRuleCheckbox(
 	return checkbox
 }
 
-// createSRSButton создает кнопку ⬇/🔄/✔️ для скачивания SRS
+// createSRSButton создает кнопку ⬇/🔄/✔️ для скачивания SRS.
+// enableRuleOnSRSSuccess: if set by checkbox before starting download, we set the rule checkbox on success.
 func createSRSButton(
 	presenter *wizardpresentation.WizardPresenter,
 	model *wizardmodels.WizardModel,
@@ -251,6 +259,7 @@ func createSRSButton(
 	srsEntries []services.SRSEntry,
 	checkbox *widget.Check,
 	outboundSelect *widget.Select,
+	enableRuleOnSRSSuccess *bool,
 ) *widget.Button {
 	execDir := model.ExecDir
 	initialText := srsBtnDownload
@@ -296,7 +305,16 @@ func createSRSButton(
 				if outboundSelect != nil {
 					outboundSelect.Enable()
 				}
-				if ruleState.Rule.IsDefault && !ruleState.Enabled {
+				// Set rule checkbox only when download was initiated by checkbox click (not by ⬇).
+				if enableRuleOnSRSSuccess != nil && *enableRuleOnSRSSuccess {
+					*enableRuleOnSRSSuccess = false
+					guiState.UpdatingOutboundOptions = true
+					model.SelectableRuleStates[idx].Enabled = true
+					checkbox.SetChecked(true)
+					guiState.UpdatingOutboundOptions = false
+					presenter.MarkAsChanged()
+				} else if ruleState.Rule.IsDefault && !ruleState.Enabled {
+					// Auto-enable default rules when they are first opened (e.g. initial auto-download).
 					guiState.UpdatingOutboundOptions = true
 					model.SelectableRuleStates[idx].Enabled = true
 					checkbox.SetChecked(true)
