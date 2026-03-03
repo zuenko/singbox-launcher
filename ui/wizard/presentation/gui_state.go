@@ -32,13 +32,14 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 // RuleWidget связывает виджеты Select, Check и SRS button с правилом из модели.
 type RuleWidget struct {
 	Select    *widget.Select
 	Checkbox  *widget.Check // Может быть nil, если правило не имеет чекбокса
-	SRSButton *widget.Button // Кнопка ⬇/🔄/✔️ для правил с SRS
+	SRSButton *ttwidget.Button // Кнопка ⬇/🔄/✔️ для правил с SRS (ttwidget для tooltip)
 	RuleState interface{}   // *models.RuleState - используется interface{} чтобы избежать циклических зависимостей
 }
 

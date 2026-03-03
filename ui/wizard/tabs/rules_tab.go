@@ -31,12 +31,12 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 
 	"singbox-launcher/core/services"
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
-	"singbox-launcher/ui/components"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
@@ -130,7 +130,7 @@ func createSelectableRulesUI(presenter *wizardpresentation.WizardPresenter, mode
 			presenter, model, guiState, ruleState, idx, availableOutbounds, srsDownloaded,
 		)
 
-		var srsButton *widget.Button
+		var srsButton *ttwidget.Button
 		var srsTooltipText string
 		// When user clicks checkbox to enable rule and SRS is not downloaded, we start download and set this flag
 		// so that on success we set the rule checkbox (only when download was initiated by checkbox, not by ⬇).
@@ -213,7 +213,7 @@ func createSelectableRuleCheckbox(
 	ruleState *wizardmodels.RuleState,
 	idx int,
 	outboundSelect *widget.Select,
-	srsButtonRef **widget.Button,
+	srsButtonRef **ttwidget.Button,
 	enableRuleOnSRSSuccess *bool,
 ) *widget.Check {
 	var checkbox *widget.Check
@@ -260,14 +260,14 @@ func createSRSButton(
 	checkbox *widget.Check,
 	outboundSelect *widget.Select,
 	enableRuleOnSRSSuccess *bool,
-) *widget.Button {
+) *ttwidget.Button {
 	execDir := model.ExecDir
 	initialText := srsBtnDownload
 	if services.AllSRSDownloaded(execDir, ruleState.Rule.RuleSets) {
 		initialText = srsBtnDone
 	}
 
-	btn := widget.NewButton(initialText, nil)
+	btn := ttwidget.NewButton(initialText, nil)
 	btn.Importance = widget.LowImportance
 
 	btn.OnTapped = func() {
@@ -336,7 +336,7 @@ func createSelectableRuleRowContent(
 	guiState *wizardpresentation.GUIState,
 	checkbox *widget.Check,
 	outboundRow fyne.CanvasObject,
-	srsButton *widget.Button,
+	srsButton *ttwidget.Button,
 	srsTooltipText string,
 ) []fyne.CanvasObject {
 	// Create checkbox container with optional info button and SRS button
@@ -349,11 +349,10 @@ func createSelectableRuleRowContent(
 		checkboxContainer.Add(infoButton)
 	}
 	if srsButton != nil {
-		srsObj := fyne.CanvasObject(srsButton)
-		if srsTooltipText != "" && guiState.Window != nil {
-			srsObj = components.NewToolTipWrapper(srsButton, srsTooltipText, guiState.Window.Canvas())
+		if srsTooltipText != "" {
+			srsButton.SetToolTip(srsTooltipText)
 		}
-		checkboxContainer.Add(srsObj)
+		checkboxContainer.Add(srsButton)
 	}
 
 	rowContent := []fyne.CanvasObject{checkboxContainer, layout.NewSpacer()}

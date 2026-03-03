@@ -35,6 +35,9 @@ type APIService struct {
 	// This allows remembering the last proxy per selector (group) independently.
 	LastSelectedProxyByGroup map[string]string
 
+	// LastPingError maps proxy name -> last ping error message (for tooltip when button shows "Error").
+	LastPingError map[string]string
+
 	// Dependencies (passed from AppController)
 	ConfigPath            string
 	RunningStateIsRunning func() bool
@@ -82,6 +85,7 @@ func NewAPIService(configPath string,
 	apiSvc.SetSelectedIndex(-1)
 	apiSvc.SetActiveProxyName("")
 	apiSvc.LastSelectedProxyByGroup = make(map[string]string)
+	apiSvc.LastPingError = make(map[string]string)
 
 	return apiSvc, nil
 }
@@ -149,6 +153,30 @@ func (apiSvc *APIService) GetLastSelectedProxyForGroup(group string) string {
 		return ""
 	}
 	return apiSvc.LastSelectedProxyByGroup[group]
+}
+
+// SetLastPingError stores the last ping error message for a proxy (for tooltip when button shows "Error").
+func (apiSvc *APIService) SetLastPingError(proxyName, errMsg string) {
+	apiSvc.StateMutex.Lock()
+	defer apiSvc.StateMutex.Unlock()
+	if apiSvc.LastPingError == nil {
+		apiSvc.LastPingError = make(map[string]string)
+	}
+	if errMsg == "" {
+		delete(apiSvc.LastPingError, proxyName)
+	} else {
+		apiSvc.LastPingError[proxyName] = errMsg
+	}
+}
+
+// GetLastPingError returns the last ping error message for a proxy, or empty string.
+func (apiSvc *APIService) GetLastPingError(proxyName string) string {
+	apiSvc.StateMutex.RLock()
+	defer apiSvc.StateMutex.RUnlock()
+	if apiSvc.LastPingError == nil {
+		return ""
+	}
+	return apiSvc.LastPingError[proxyName]
 }
 
 // GetSelectedClashGroup safely gets the selected Clash group.

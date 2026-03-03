@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 
 	"singbox-launcher/api"
 	"singbox-launcher/core"
@@ -88,6 +89,16 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 					return
 				}
 
+				// Preserve local ping state (Delay / Error) when refreshing from API so switching tabs does not reset button text.
+				oldProxies := ac.GetProxiesList()
+				for i := range proxies {
+					for _, old := range oldProxies {
+						if old.Name == proxies[i].Name {
+							proxies[i].Delay = old.Delay
+							break
+						}
+					}
+				}
 				ac.SetProxiesList(proxies)
 				ac.SetActiveProxyName(now)
 
@@ -205,19 +216,41 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	}
 
 	// --- Вспомогательная функция для пинга ---
-	pingProxy := func(proxyName string, button *widget.Button) {
+	// Delay in ProxyInfo: >0 = ms, 0 = not pinged, -1 = error (so updateItem shows correct text after list refresh).
+	pingProxy := func(proxyName string, button interface{ SetText(string) }) {
 		go func() {
 			fyne.Do(func() { button.SetText("...") })
 			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
 			delay, err := api.GetDelay(baseURL, token, proxyName)
 			fyne.Do(func() {
-				if err != nil {
-					button.SetText("Error")
-					status.SetText("Delay error: " + err.Error())
-					ShowError(ac.UIService.MainWindow, err)
-				} else {
-					button.SetText(fmt.Sprintf("%d ms", delay))
-					status.SetText(fmt.Sprintf("Delay: %d ms for %s", delay, proxyName))
+				proxies := ac.GetProxiesList()
+				for i := range proxies {
+					if proxies[i].Name == proxyName {
+						if err != nil {
+							proxies[i].Delay = -1
+							if ac.APIService != nil {
+								ac.APIService.SetLastPingError(proxyName, err.Error())
+							}
+							button.SetText("Error")
+							// Set tooltip immediately so hover shows error without needing a list refresh.
+							if tb, ok := button.(interface{ SetToolTip(string) }); ok && ac.APIService != nil {
+								tb.SetToolTip(ac.APIService.GetLastPingError(proxyName))
+							}
+							status.SetText("Delay error: " + err.Error())
+						} else {
+							proxies[i].Delay = delay
+							if ac.APIService != nil {
+								ac.APIService.SetLastPingError(proxyName, "")
+							}
+							button.SetText(fmt.Sprintf("%d ms", delay))
+							if tb, ok := button.(interface{ SetToolTip(string) }); ok {
+								tb.SetToolTip("")
+							}
+							status.SetText(fmt.Sprintf("Delay: %d ms for %s", delay, proxyName))
+						}
+						ac.SetProxiesList(proxies)
+						break
+					}
 				}
 			})
 		}()
@@ -232,7 +265,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		nameLabel := widget.NewLabel("Proxy Name")
 		nameLabel.TextStyle.Bold = true
 
-		pingButton := widget.NewButton("Ping", nil)
+		pingButton := ttwidget.NewButton("Ping", nil)
 		switchButton := widget.NewButton("▶️", nil)
 
 		content := container.NewHBox(
@@ -259,13 +292,20 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		content := paddedContent.Objects[0].(*fyne.Container)
 
 		nameLabel := content.Objects[0].(*widget.Label)
-		pingButton := content.Objects[2].(*widget.Button)
+		pingButton := content.Objects[2].(*ttwidget.Button)
+		if ac.APIService != nil {
+			pingButton.SetToolTip(ac.APIService.GetLastPingError(proxyInfo.Name))
+		} else {
+			pingButton.SetToolTip("")
+		}
 		switchButton := content.Objects[3].(*widget.Button)
 
 		nameLabel.SetText(proxyInfo.Name)
 
 		if proxyInfo.Delay > 0 {
 			pingButton.SetText(fmt.Sprintf("%d ms", proxyInfo.Delay))
+		} else if proxyInfo.Delay == -1 {
+			pingButton.SetText("Error")
 		} else {
 			pingButton.SetText("Ping")
 		}

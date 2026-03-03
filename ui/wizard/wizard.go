@@ -40,6 +40,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+	fynetooltip "github.com/dweymouth/fyne-tooltip"
 
 	"singbox-launcher/core"
 	"singbox-launcher/internal/constants"
@@ -123,6 +124,7 @@ func ShowConfigWizard(parent fyne.Window) {
 			}
 		}
 		wizardWindow.SetOnClosed(func() {
+			fynetooltip.DestroyWindowToolTipLayer(wizardWindow.Canvas())
 			ac.UIService.WizardWindow = nil
 			ac.UIService.FocusOpenRuleDialogs = nil
 			if ac.UIService.OnStateChange != nil {
@@ -466,7 +468,7 @@ func setWindowContent(guiState *wizardpresentation.GUIState, wizardWindow fyne.W
 	if guiState.RuleDialogOverlay != nil {
 		content = container.NewMax(content, guiState.RuleDialogOverlay)
 	}
-	wizardWindow.SetContent(content)
+	wizardWindow.SetContent(fynetooltip.AddWindowToolTipLayer(content, wizardWindow.Canvas()))
 }
 
 // handleReadButton обрабатывает нажатие кнопки "Read".
