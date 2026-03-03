@@ -26,6 +26,21 @@
 - Сервисы делегируют специфические задачи
 - Централизованное управление состоянием
 
+## Используемые библиотеки
+
+Основные внешние зависимости (прямые из `go.mod`):
+
+- **fyne.io/fyne/v2** — GUI: окна, виджеты, layout, приложение. Основа интерфейса лаунчера и визарда конфигурации.
+- **github.com/dweymouth/fyne-tooltip** — тултипы для Fyne. В проекте:
+  - Слой тултипов в окне: `fynetooltip.AddWindowToolTipLayer(content, canvas)` при установке контента главного окна и окна визарда; при закрытии визарда вызывается `DestroyWindowToolTipLayer`.
+  - Виджеты с тултипами из `github.com/dweymouth/fyne-tooltip/widget`: кнопка Ping на вкладке Servers (Clash API), кнопка SRS в визарде (Rules). Ошибки Ping (одиночный и массовый `test`) хранятся в `APIService.LastPingError` и показываются в tooltip кнопки Ping.
+- **github.com/muhammadmuzzammil1998/jsonc** — парсинг JSON с комментариями (JSONC) при чтении config.json.
+- **github.com/mitchellh/go-ps** — список процессов (проверка запущенного sing-box и т.п.).
+- **github.com/pion/stun** — STUN-запросы (проверка доступности сети).
+- **github.com/txthinking/socks5** — клиент SOCKS5 для подписок и парсера.
+
+Косвенные зависимости (драйверы Fyne, системный трей и т.д.) перечислены в `go.mod` в блоке `require` и не описаны здесь.
+
 ## Структура проекта
 
 ```
@@ -511,6 +526,7 @@ singbox-launcher/
 - `StopTrayMenuUpdateTimer()` - остановка таймера обновления меню
 - `QuitApplication()` - выход из приложения
 - Структуры: `UIService` с полями для Fyne компонентов и callbacks
+- Тултипы: см. раздел «Используемые библиотеки» (fyne-tooltip).
 
 **APIService** (`api_service.go`)
 - `NewAPIService()` - создание сервиса
@@ -521,6 +537,7 @@ singbox-launcher/
 - `SetActiveProxyName()` - установка активного прокси
 - `SwitchProxy()` - переключение прокси
 - `AutoLoadProxies()` - автозагрузка прокси
+- `SetLastPingError()` / `GetLastPingError()` - хранение текста последней ошибки Ping для прокси (показывается в tooltip кнопки Ping)
 
 **StateService** (`state_service.go`)
 - `NewStateService()` - создание сервиса
@@ -935,7 +952,7 @@ singbox-launcher/
 │    • Load Proxies                                           │
 │    • Switch Proxy                                           │
 │    • Test Connection                                        │
-│    • Ping Proxy                                             │
+│    • Ping Proxy (single & mass ping with tooltips for errors)│
 │                                                             │
 │  Config Wizard:                                             │
 │    • Add Source                                             │

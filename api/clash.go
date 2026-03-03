@@ -75,6 +75,53 @@ const (
 	httpRequestTimeoutSeconds = 20 // Increased to 20 seconds for better reliability
 )
 
+// PingTestEndpoint describes a single HTTP endpoint that Clash uses
+// for delay measurement via /proxies/{name}/delay (url query param).
+type PingTestEndpoint struct {
+	Title string
+	URL   string
+}
+
+// Default endpoints for ping delay measurement (Clash /proxies/{name}/delay url param).
+// Titles are used in the UI; URLs are passed to Clash as-is.
+var (
+	PingTestEndpointGStatic = PingTestEndpoint{
+		Title: "GStatic",
+		URL:   "http://www.gstatic.com/generate_204",
+	}
+	PingTestEndpointGoogle = PingTestEndpoint{
+		Title: "Google",
+		URL:   "https://www.google.com/generate_204",
+	}
+	PingTestEndpointGosuslugi = PingTestEndpoint{
+		Title: "Gosuslugi",
+		URL:   "https://gosuslugi.ru/favicon.ico",
+	}
+	PingTestEndpointYaStaticICO = PingTestEndpoint{
+		Title: "YaStatic",
+		URL:   "https://yastatic.net/s3/home-misc/favicon.ico",
+	}
+)
+
+// pingTestURL is the current endpoint used for delay checks.
+// It is process-wide and can be overridden at runtime from the UI.
+var pingTestURL = PingTestEndpointGoogle.URL
+
+// GetPingTestURL returns the current endpoint used for delay checks.
+func GetPingTestURL() string {
+	return pingTestURL
+}
+
+// SetPingTestURL sets the endpoint used for delay checks.
+// If url is empty or only whitespace, it falls back to PingTestEndpointGoogle.URL.
+func SetPingTestURL(url string) {
+	if strings.TrimSpace(url) == "" {
+		pingTestURL = PingTestEndpointGoogle.URL
+		return
+	}
+	pingTestURL = url
+}
+
 // Global HTTP client with timeout for all HTTP requests
 var httpClient = &http.Client{
 	Timeout: time.Duration(httpRequestTimeoutSeconds) * time.Second,
@@ -338,12 +385,17 @@ func SwitchProxy(baseURL, token, group, proxy string) error {
 	return nil
 }
 
-// GetDelay gets the delay for the specified proxy node.
+// GetDelay asks Clash to measure latency for the specified proxy node
+// using the currently configured ping test endpoint (GetPingTestURL).
 func GetDelay(baseURL, token, proxyName string) (int64, error) {
 	logMessage := fmt.Sprintf("[%s] GET /proxies/%s/delay request started.\n", time.Now().Format("2006-01-02 15:04:05"), proxyName)
 	writeLog(debuglog.LevelVerbose, "%s", logMessage)
 
-	url := fmt.Sprintf("%s/proxies/%s/delay?timeout=5000&url=http://www.gstatic.com/generate_204", baseURL, proxyName)
+	// url param: connectivity check endpoint (configurable via SetPingTestURL).
+	// Default endpoints:
+	// - DefaultPingTestURLGStatic = "http://www.gstatic.com/generate_204"
+	// - DefaultPingTestURLGoogle  = "https://www.google.com/generate_204"
+	url := fmt.Sprintf("%s/proxies/%s/delay?timeout=5000&url=%s", baseURL, proxyName, GetPingTestURL())
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(httpRequestTimeoutSeconds)*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
