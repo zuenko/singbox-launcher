@@ -186,8 +186,9 @@ func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) err
 		return err
 	}
 
-	// Извлечение SourceURLs (шаг 3)
-	p.model.SourceURLs = p.extractSourceURLsFromParserConfig(&stateFile.ParserConfig)
+	// Step 3: Keep source URL entry empty on load so the field is for adding new URLs only.
+	// Existing sources are already in ParserConfig and shown in the Sources list.
+	p.model.SourceURLs = ""
 
 	// Восстановление config_params (шаг 4)
 	p.restoreConfigParams(stateFile.ConfigParams)

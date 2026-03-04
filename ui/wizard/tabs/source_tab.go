@@ -31,6 +31,7 @@ import (
 	"singbox-launcher/core/config"
 	"singbox-launcher/core/config/subscription"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/platform"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizarddialogs "singbox-launcher/ui/wizard/dialogs"
@@ -166,7 +167,19 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 			}
 			tooltipText := strings.Join(tooltipLines, "\n")
 
-			sourceButton := widget.NewButton(shortLabel, nil)
+			copyText := fullURL
+			if copyText == "" && len(proxy.Connections) > 0 {
+				copyText = strings.Join(proxy.Connections, "\n")
+			}
+			sourceButton := widget.NewButton(shortLabel, func() {
+				if copyText == "" {
+					return
+				}
+				if guiState.Window != nil && guiState.Window.Clipboard() != nil {
+					guiState.Window.Clipboard().SetContent(copyText)
+					dialogs.ShowAutoHideInfo(fyne.CurrentApp(), guiState.Window, "Copied", "Source copied to clipboard.")
+				}
+			})
 			sourceButton.Importance = widget.LowImportance
 			if tb, ok := interface{}(sourceButton).(interface{ SetToolTip(string) }); ok {
 				tb.SetToolTip(tooltipText)

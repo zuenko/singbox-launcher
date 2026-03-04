@@ -347,9 +347,7 @@ func preserveExistingProperties(parserConfig *config.ParserConfig) *existingProp
 func createSubscriptionProxies(subscriptions []string, existingProps *existingProperties) []config.ProxySource {
 	newProxies := make([]config.ProxySource, 0, len(subscriptions))
 
-	// Automatically add tag_prefix with sequential number only if there are multiple subscriptions
-	autoAddPrefix := len(subscriptions) > 1
-
+	// By default assign tag_prefix (1:, 2:, 3:, ...) for each added subscription when not restored from existing
 	for idx, sub := range subscriptions {
 		proxySource := config.ProxySource{
 			Source: sub,
@@ -361,13 +359,13 @@ func createSubscriptionProxies(subscriptions []string, existingProps *existingPr
 			debuglog.DebugLog("applyURLToParserConfig: Restored %d local outbounds for subscription: %s", len(existingOutbounds), sub)
 		}
 
-		// Restore tag_prefix and tag_postfix
+		// Restore tag_prefix and tag_postfix from existing props
 		restoreTagPrefixAndPostfix(&proxySource, sub, existingProps, fmt.Sprintf("subscription: %s", sub))
 
-		// Automatically add tag_prefix if not restored and auto-add is enabled
-		if proxySource.TagPrefix == "" && autoAddPrefix {
+		// Default tag_prefix if not restored (e.g. new subscription)
+		if proxySource.TagPrefix == "" {
 			proxySource.TagPrefix = GenerateTagPrefix(idx + 1)
-			debuglog.DebugLog("applyURLToParserConfig: Added automatic tag_prefix '%s' for subscription: %s", proxySource.TagPrefix, sub)
+			debuglog.DebugLog("applyURLToParserConfig: Added default tag_prefix '%s' for subscription: %s", proxySource.TagPrefix, sub)
 		}
 
 		newProxies = append(newProxies, proxySource)

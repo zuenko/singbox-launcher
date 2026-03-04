@@ -25,6 +25,7 @@
 package presentation
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -36,6 +37,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/core"
+	"singbox-launcher/core/config"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
@@ -66,18 +68,27 @@ func (p *WizardPresenter) SaveConfig() {
 }
 
 // validateSaveInput проверяет входные данные перед сохранением.
+// Only ParserConfig.ParserConfig.Proxies is the source of truth; at least one proxy must have Source or Connections.
 func (p *WizardPresenter) validateSaveInput() bool {
 	if strings.TrimSpace(p.model.ParserConfigJSON) == "" {
 		debuglog.WarnLog("SaveConfig: ParserConfig is empty")
 		dialog.ShowError(fmt.Errorf("ParserConfig is empty"), p.guiState.Window)
 		return false
 	}
-	if strings.TrimSpace(p.model.SourceURLs) == "" {
-		debuglog.WarnLog("SaveConfig: SourceURLs is empty")
-		dialog.ShowError(fmt.Errorf("VLESS URL is empty"), p.guiState.Window)
+	var pc config.ParserConfig
+	if err := json.Unmarshal([]byte(p.model.ParserConfigJSON), &pc); err != nil {
+		debuglog.WarnLog("SaveConfig: ParserConfig JSON invalid: %v", err)
+		dialog.ShowError(fmt.Errorf("ParserConfig is invalid: %w", err), p.guiState.Window)
 		return false
 	}
-	return true
+	for _, px := range pc.ParserConfig.Proxies {
+		if strings.TrimSpace(px.Source) != "" || len(px.Connections) > 0 {
+			return true
+		}
+	}
+	debuglog.WarnLog("SaveConfig: no proxy with source or connections in ParserConfig")
+	dialog.ShowError(fmt.Errorf("Add at least one source: use the Sources tab (Add) or add proxies in ParserConfig on the Outbounds tab."), p.guiState.Window)
+	return false
 }
 
 // checkSaveOperationState проверяет состояние операции сохранения.
