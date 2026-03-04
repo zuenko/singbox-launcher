@@ -59,3 +59,10 @@
 3. **Реализовать конфигуратор outbounds** на второй вкладке (список, Up/Down, Edit/Delete/Add, диалог).
 4. **Настроить полную синхронизацию ParserConfig** между структурой модели, SourceURLEntry, UI‑списком и текстовым JSON.
 5. **Интегрировать изменения с Rules/Preview** и удалить старое окно Config Outbounds, провести финальную проверку по критериям приёмки SPEC.
+
+### 4. Как реализовано (соответствие коду)
+
+- Вкладки: **Sources** и **Outbounds** (название в UI — "Outbounds"). Создание в `wizard.go`; при уходе с Outbounds вызывается `ValidateAndApplyParserConfigFromEntry`.
+- **Sources**: поле URL + кнопка Add (только по нажатию, `AppendURLsToParserConfig`, дедупликация), список с prefix/View/Del, Preview с Refresh и списком серверов по всем источникам. CheckURL и статус URL удалены.
+- **Outbounds**: редактор ParserConfig JSON, кнопка Documentation, встроенный конфигуратор (`outbounds_configurator.NewConfiguratorContent`) с ↑/↓, Edit, Del, Add; диалог Add/Edit — отдельное окно. Parse и ChatGPT убраны. Синхронизация: onApply после каждой мутации; ручной JSON — при смене вкладки.
+- Детали: [IMPLEMENTATION_REPORT.md](IMPLEMENTATION_REPORT.md).

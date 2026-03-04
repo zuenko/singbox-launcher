@@ -308,6 +308,11 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 				}
 
 				debuglog.InfoLog("Successfully applied configuration from get_free.json")
+				// Clear URL field and model so links from get_free do not remain (SyncModelToGUI would refill from model otherwise)
+				presenter.Model().SourceURLs = ""
+				if guiState.SourceURLEntry != nil {
+					guiState.SourceURLEntry.SetText("")
+				}
 				dialog.ShowInformation("Success", "Configuration from get_free.json has been applied successfully!", guiState.Window)
 
 				// Close the dialog

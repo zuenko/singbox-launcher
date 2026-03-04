@@ -16,6 +16,14 @@ import (
 	"singbox-launcher/core/config"
 )
 
+// OutboundEditPresenter is used to register the Edit/Add window with the wizard overlay (single instance, focus redirect).
+type OutboundEditPresenter interface {
+	OpenOutboundEditWindow() fyne.Window
+	SetOutboundEditWindow(fyne.Window)
+	ClearOutboundEditWindow()
+	UpdateChildOverlay()
+}
+
 // outboundRow identifies one outbound in the list (global or per-source).
 type outboundRow struct {
 	IsGlobal     bool
@@ -123,7 +131,8 @@ func moveOutboundDown(parserConfig *config.ParserConfig, r outboundRow) {
 
 // NewConfiguratorContent builds a reusable outbounds configurator content for embedding into tabs.
 // parserConfig is modified in place. onApply is called after each mutation (Edit/Add/Delete/Up/Down) so the caller can serialize and sync.
-func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfig, onApply func()) fyne.CanvasObject {
+// editPresenter is optional; when set, the Edit/Add window is registered for overlay and only one instance is allowed.
+func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfig, onApply func(), editPresenter OutboundEditPresenter) fyne.CanvasObject {
 	listContent := container.NewVBox()
 
 	var refreshList func()
@@ -185,7 +194,7 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 				downBtn.Disable()
 			}
 
-			editBtn := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() {
+			editBtn := widget.NewButtonWithIcon("Edit", theme.DocumentCreateIcon(), func() {
 				rowsNow := collectRows(parserConfig)
 				idx := -1
 				for i := range rowsNow {
@@ -195,7 +204,7 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 					}
 				}
 				tagsForAdd := tagsAbove(rowsNow, idx)
-				ShowEditDialog(parent, parserConfig, r.Outbound, r.IsGlobal, r.SourceIndex, tagsForAdd, func(updated *config.OutboundConfig, scopeKind string, sourceIndex int) {
+				ShowEditDialog(parent, editPresenter, parserConfig, r.Outbound, r.IsGlobal, r.SourceIndex, tagsForAdd, func(updated *config.OutboundConfig, scopeKind string, sourceIndex int) {
 					*r.Outbound = *updated
 					refreshList()
 					if onApply != nil {
@@ -204,7 +213,7 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 				})
 			})
 
-			delBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+			delBtn := widget.NewButtonWithIcon("Del", theme.DeleteIcon(), func() {
 				rowsNow := collectRows(parserConfig)
 				idx := -1
 				for i := range rowsNow {
@@ -246,7 +255,7 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 
 	addBtn := widget.NewButton("Add", func() {
 		existingTags := collectAllTags(parserConfig)
-		ShowEditDialog(parent, parserConfig, nil, true, -1, existingTags, func(updated *config.OutboundConfig, scopeKind string, sourceIndex int) {
+		ShowEditDialog(parent, editPresenter, parserConfig, nil, true, -1, existingTags, func(updated *config.OutboundConfig, scopeKind string, sourceIndex int) {
 			if scopeKind == "global" || sourceIndex < 0 {
 				parserConfig.ParserConfig.Outbounds = append(parserConfig.ParserConfig.Outbounds, *updated)
 			} else {

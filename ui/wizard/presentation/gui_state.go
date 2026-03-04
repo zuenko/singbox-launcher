@@ -6,7 +6,7 @@
 //   - Виджеты основного окна и табов (Entry, Label, Button, ProgressBar, Select и т.д.)
 //   - Контейнеры и placeholder'ы для компоновки
 //   - RuleWidget - структуры-обертки, связывающие виджеты Select с правилами из модели
-//   - UI-флаги состояния операций (CheckURLInProgress, SaveInProgress)
+//   - UI-флаги состояния операций (SaveInProgress и т.д.)
 //   - Флаги блокировки для предотвращения рекурсивных обновлений
 //
 // В отличие от WizardState, GUIState НЕ содержит бизнес-данных (ParserConfig, GeneratedOutbounds и т.д.).
@@ -26,8 +26,6 @@
 package presentation
 
 import (
-	"time"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
@@ -46,18 +44,12 @@ type RuleWidget struct {
 // GUIState содержит только GUI-виджеты и UI-флаги состояния.
 type GUIState struct {
 	Window            fyne.Window
-	RuleDialogOverlay fyne.CanvasObject
+	ChildWindowsOverlay fyne.CanvasObject
 
 	// Tab 1: Sources & ParserConfig
-	SourceURLEntry      *widget.Entry
-	URLStatusLabel      *widget.Label
-	ParserConfigEntry   *widget.Entry
-	OutboundsPreview    *widget.Entry
-	CheckURLButton      *widget.Button
-	CheckURLProgress    *widget.ProgressBar
-	CheckURLPlaceholder *canvas.Rectangle
-	CheckURLContainer   fyne.CanvasObject
-	ParseButton         *widget.Button
+	SourceURLEntry    *widget.Entry
+	ParserConfigEntry *widget.Entry
+	ParseButton       *widget.Button
 
 	// Template tab widgets
 	TemplatePreviewEntry       *widget.Entry
@@ -75,6 +67,7 @@ type GUIState struct {
 	SaveButton       *widget.Button
 	SaveProgress     *widget.ProgressBar
 	SavePlaceholder  *canvas.Rectangle
+	SaveStatusLabel  *widget.Label // Status text left of Prev (e.g. "Building config...")
 	ButtonsContainer fyne.CanvasObject
 	Tabs             *container.AppTabs
 
@@ -85,11 +78,7 @@ type GUIState struct {
 	LastValidParserConfigJSON string
 
 	// UI-флаги состояния операций
-	CheckURLInProgress       bool
-	CheckURLTimer            *time.Timer
 	SaveInProgress           bool
-	ParserConfigUpdating     bool
-	OutboundsPreviewUpdating bool
-	OutboundsPreviewLastText string
-	UpdatingOutboundOptions  bool
+	ParserConfigUpdating    bool
+	UpdatingOutboundOptions bool
 }

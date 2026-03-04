@@ -58,7 +58,7 @@ type UIService struct {
 	UpdateConfigStatusFunc   func()
 	UpdateTrayMenuFunc       func()
 	UpdateParserProgressFunc func(progress float64, status string)
-	FocusOpenRuleDialogs     func()
+	FocusOpenChildWindows    func() // Focus one of wizard child windows (View, Outbound Edit, rule dialog) when user clicks wizard
 	ShowUpdatePopupFunc      func(currentVersion, latestVersion string) // Called to show update popup
 
 	// Dependencies (passed from AppController)

@@ -114,19 +114,29 @@ func ShowConfigWizard(parent fyne.Window) {
 	// Create presenter
 	presenter := wizardpresentation.NewWizardPresenter(model, guiState, templateLoader)
 	if ac.UIService != nil {
-		ac.UIService.FocusOpenRuleDialogs = func() {
+		// Focus any open child window (View, Outbound Edit, or rule dialog) so click on wizard brings focus to it
+		ac.UIService.FocusOpenChildWindows = func() {
+			if w := presenter.OpenViewWindow(); w != nil {
+				w.RequestFocus()
+				return
+			}
+			if w := presenter.OpenOutboundEditWindow(); w != nil {
+				w.RequestFocus()
+				return
+			}
 			openDialogs := presenter.OpenRuleDialogs()
 			for _, dlg := range openDialogs {
 				if dlg != nil {
 					dlg.Show()
 					dlg.RequestFocus()
+					return
 				}
 			}
 		}
 		wizardWindow.SetOnClosed(func() {
 			fynetooltip.DestroyWindowToolTipLayer(wizardWindow.Canvas())
 			ac.UIService.WizardWindow = nil
-			ac.UIService.FocusOpenRuleDialogs = nil
+			ac.UIService.FocusOpenChildWindows = nil
 			if ac.UIService.OnStateChange != nil {
 				ac.UIService.OnStateChange()
 			}
@@ -269,8 +279,8 @@ func createWizardTabs(presenter *wizardpresentation.WizardPresenter, guiState *w
 
 	// Overlay that redirects clicks to open rule dialog when present
 	ac := core.GetController()
-	guiState.RuleDialogOverlay = components.NewClickRedirect(ac)
-	guiState.RuleDialogOverlay.Hide()
+	guiState.ChildWindowsOverlay = components.NewClickRedirect(ac)
+	guiState.ChildWindowsOverlay.Hide()
 
 	var rulesTabItem *container.TabItem
 	var previewTabItem *container.TabItem
@@ -374,6 +384,9 @@ func createSaveButtonWithProgress(presenter *wizardpresentation.WizardPresenter,
 	guiState.SavePlaceholder = canvas.NewRectangle(color.Transparent)
 	guiState.SavePlaceholder.SetMinSize(fyne.NewSize(saveButtonWidth, saveButtonHeight))
 	guiState.SavePlaceholder.Show()
+
+	guiState.SaveStatusLabel = widget.NewLabel("")
+	guiState.SaveStatusLabel.Hide()
 }
 
 // updateNavigationButtons обновляет контейнер кнопок в зависимости от текущего таба.
@@ -389,11 +402,12 @@ func updateNavigationButtons(guiState *wizardpresentation.GUIState, tabs *contai
 
 	var buttonsContent fyne.CanvasObject
 	if currentTabIndex == totalTabs-1 {
-		// Last tab (Preview): Close, Save As on left, Prev, Save on right
+		// Last tab (Preview): Close, Save As on left, status label + Prev + Save on right
 		buttonsContent = container.NewHBox(
 			guiState.CloseButton,
 			guiState.SaveAsButton,
 			layout.NewSpacer(),
+			guiState.SaveStatusLabel,
 			guiState.PrevButton,
 			saveButtonStack,
 		)
@@ -478,8 +492,8 @@ func setWindowContent(guiState *wizardpresentation.GUIState, wizardWindow fyne.W
 		nil,                       // right
 		tabs,                      // center
 	)
-	if guiState.RuleDialogOverlay != nil {
-		content = container.NewMax(content, guiState.RuleDialogOverlay)
+	if guiState.ChildWindowsOverlay != nil {
+		content = container.NewMax(content, guiState.ChildWindowsOverlay)
 	}
 	wizardWindow.SetContent(fynetooltip.AddWindowToolTipLayer(content, wizardWindow.Canvas()))
 }

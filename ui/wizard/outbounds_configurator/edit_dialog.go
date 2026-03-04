@@ -3,6 +3,7 @@
 package outbounds_configurator
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -22,8 +23,10 @@ import (
 
 // ShowEditDialog opens a separate window to add or edit an outbound. existing may be nil for add.
 // onSave is called with the new config, scopeKind ("global" or "source") and sourceIndex (when scope is source).
+// editPresenter is optional; when set, only one Edit/Add window is allowed and it is registered for overlay/focus.
 func ShowEditDialog(
 	parent fyne.Window,
+	editPresenter OutboundEditPresenter,
 	parserConfig *config.ParserConfig,
 	existing *config.OutboundConfig,
 	isGlobal bool,
@@ -31,6 +34,12 @@ func ShowEditDialog(
 	existingTags []string,
 	onSave func(updated *config.OutboundConfig, scopeKind string, sourceIndex int),
 ) {
+	if editPresenter != nil {
+		if w := editPresenter.OpenOutboundEditWindow(); w != nil {
+			w.RequestFocus()
+			return
+		}
+	}
 	isAdd := existing == nil
 	dialogTitle := "Edit Outbound"
 	if isAdd {
@@ -145,19 +154,38 @@ func ShowEditDialog(
 		}
 	}
 
+	otherTagsBox := container.NewVBox()
+	for _, c := range otherTagChecks {
+		otherTagsBox.Add(c)
+	}
+	scrollOther := container.NewScroll(otherTagsBox)
+	scrollOther.SetMinSize(fyne.NewSize(0, 80))
+
+	// Raw tab: editable JSON (valid outbound object)
+	initialConfig := existing
+	if initialConfig == nil {
+		initialConfig = &config.OutboundConfig{
+			Tag:           "",
+			Type:          "selector",
+			Comment:       "",
+			Options:       map[string]interface{}{"interrupt_exist_connections": true},
+			AddOutbounds:  nil,
+		}
+	}
+	rawJSONBytes, _ := json.MarshalIndent(initialConfig, "", "  ")
+	rawEntry := widget.NewMultiLineEntry()
+	rawEntry.SetText(string(rawJSONBytes))
+	rawEntry.Wrapping = fyne.TextWrapOff
+	rawEntry.SetMinRowsVisible(16)
+	rawScroll := container.NewScroll(rawEntry)
+	rawScroll.SetMinSize(fyne.NewSize(400, 360))
+
+	var currentTab string = "settings"
+
 	var dialogWin fyne.Window
-	save := func() {
-		tag := strings.TrimSpace(tagEntry.Text)
-		if tag == "" {
-			dialog.ShowError(fmt.Errorf("tag is required"), dialogWin)
-			return
-		}
-		obType := "selector"
-		if typeSelect.Selected == "auto (urltest)" {
-			obType = "urltest"
-		}
-		scopeKind := "global"
-		idx := -1
+	getScopeFromForm := func() (scopeKind string, idx int) {
+		scopeKind = "global"
+		idx = -1
 		if scopeSelect.Selected != "" && strings.HasPrefix(scopeSelect.Selected, "For source:") {
 			scopeKind = "source"
 			for i, opt := range scopeOptions {
@@ -167,6 +195,39 @@ func ShowEditDialog(
 				}
 			}
 		}
+		return scopeKind, idx
+	}
+	save := func() {
+		if currentTab == "raw" {
+			var cfg config.OutboundConfig
+			if err := json.Unmarshal([]byte(rawEntry.Text), &cfg); err != nil {
+				dialog.ShowError(fmt.Errorf("invalid JSON: %w", err), dialogWin)
+				return
+			}
+			if strings.TrimSpace(cfg.Tag) == "" {
+				dialog.ShowError(fmt.Errorf("tag is required"), dialogWin)
+				return
+			}
+			scopeKind, idx := getScopeFromForm()
+			if existing != nil && existing.Wizard != nil {
+				cfg.Wizard = wizardbusiness.CloneOutbound(existing).Wizard
+			}
+			onSave(&cfg, scopeKind, idx)
+			if dialogWin != nil {
+				dialogWin.Close()
+			}
+			return
+		}
+		tag := strings.TrimSpace(tagEntry.Text)
+		if tag == "" {
+			dialog.ShowError(fmt.Errorf("tag is required"), dialogWin)
+			return
+		}
+		obType := "selector"
+		if typeSelect.Selected == "auto (urltest)" {
+			obType = "urltest"
+		}
+		scopeKind, idx := getScopeFromForm()
 
 		cfg := &config.OutboundConfig{
 			Tag:     tag,
@@ -221,13 +282,6 @@ func ShowEditDialog(
 		}
 	}
 
-	otherTagsBox := container.NewVBox()
-	for _, c := range otherTagChecks {
-		otherTagsBox.Add(c)
-	}
-	scrollOther := container.NewScroll(otherTagsBox)
-	scrollOther.SetMinSize(fyne.NewSize(0, 80))
-
 	form := container.NewVBox(
 		widget.NewLabel("Scope"),
 		scopeSelect,
@@ -256,6 +310,18 @@ func ShowEditDialog(
 	dialogScroll := container.NewScroll(scrollContent)
 	dialogScroll.SetMinSize(fyne.NewSize(400, 400))
 
+	tabs := container.NewAppTabs(
+		container.NewTabItem("Settings", dialogScroll),
+		container.NewTabItem("Raw", rawScroll),
+	)
+	tabs.OnSelected = func(t *container.TabItem) {
+		if t.Text == "Raw" {
+			currentTab = "raw"
+		} else {
+			currentTab = "settings"
+		}
+	}
+
 	cancelBtn := widget.NewButton("Cancel", func() {
 		if dialogWin != nil {
 			dialogWin.Close()
@@ -273,7 +339,7 @@ func ShowEditDialog(
 		buttonsContainer,
 		nil,
 		nil,
-		dialogScroll,
+		tabs,
 	)
 
 	app := fyne.CurrentApp()
@@ -281,8 +347,18 @@ func ShowEditDialog(
 		return
 	}
 	dialogWin = app.NewWindow(dialogTitle)
+	if editPresenter != nil {
+		editPresenter.SetOutboundEditWindow(dialogWin)
+		dialogWin.SetOnClosed(func() {
+			editPresenter.ClearOutboundEditWindow()
+			editPresenter.UpdateChildOverlay()
+		})
+	}
 	dialogWin.Resize(fyne.NewSize(440, 560))
 	dialogWin.CenterOnScreen()
 	dialogWin.SetContent(mainContent)
 	dialogWin.Show()
+	if editPresenter != nil {
+		editPresenter.UpdateChildOverlay()
+	}
 }

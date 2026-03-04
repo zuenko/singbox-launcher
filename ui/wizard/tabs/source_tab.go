@@ -11,14 +11,13 @@
 //
 // Взаимодействует с:
 //   - presenter - все действия пользователя (нажатия кнопок, ввод текста) обрабатываются через методы presenter
-//   - business - вызывает CheckURL, ParseAndPreview через presenter
+//   - business - вызывает ParseAndPreview через presenter (ApplyURLToParserConfig и т.д.)
 package tabs
 
 import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"image/color"
 
@@ -30,6 +29,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/core/config"
+	"singbox-launcher/core/config/subscription"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/platform"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
@@ -44,82 +44,38 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	model := presenter.Model()
 
 	// Section 1: Subscription URL or Direct Links
-	// We perform automatic URL checking on input change (debounced) instead of
-	// requiring the user to click a "Check" button.
-	// Add a padding placeholder container on the right to keep layout similar.
-	paddingRect := canvas.NewRectangle(color.Transparent)
-	paddingRect.SetMinSize(fyne.NewSize(10, 0)) // 10px padding on right
-	guiState.CheckURLContainer = container.NewHBox(
-		paddingRect,
-	)
-
 	urlLabel := widget.NewLabel("Subscription URL or Direct Links:")
 	urlLabel.Importance = widget.MediumImportance
 
 	guiState.SourceURLEntry = widget.NewMultiLineEntry()
 	guiState.SourceURLEntry.SetPlaceHolder("https://example.com/subscription\nor\nvless://...\nvmess://...\nhysteria2://...\nssh://...")
 	guiState.SourceURLEntry.Wrapping = fyne.TextWrapOff
+	// No automatic application: URLs are applied only when the user clicks Add.
 	guiState.SourceURLEntry.OnChanged = func(value string) {
-		model := presenter.Model()
-		model.PreviewNeedsParse = true
-		trimmed := strings.TrimSpace(value)
-		if err := wizardbusiness.ApplyURLToParserConfig(model, presenter, trimmed); err != nil {
-			debuglog.ErrorLog("source_tab: error applying URL to ParserConfig: %v", err)
-		}
-
-		// Debounce CheckURL: cancel previous timer and set a new one (2s after last change)
-		if guiState.CheckURLTimer != nil {
-			guiState.CheckURLTimer.Stop()
-			guiState.CheckURLTimer = nil
-		}
-
-		// Define the actual check logic as a reusable closure so we can reschedule
-		var doCheck func(string)
-		doCheck = func(v string) {
-			// This runs in goroutine from timer - coordinate with UI thread for state
-			fyne.Do(func() {
-				// If a check is currently in progress, reschedule after delay
-				if guiState.CheckURLInProgress {
-					// reschedule
-					guiState.CheckURLTimer = time.AfterFunc(2*time.Second, func() { doCheck(v) })
-					return
-				}
-				// Mark in-progress and sync
-				guiState.CheckURLInProgress = true
-				presenter.SyncGUIToModel()
-				// Run the check in background
-				go func() {
-					if err := wizardbusiness.CheckURL(presenter.Model(), presenter); err != nil {
-						debuglog.ErrorLog("source_tab: CheckURL failed: %v", err)
-					}
-					// Clear in-progress flag
-					fyne.Do(func() { guiState.CheckURLInProgress = false })
-				}()
-			})
-		}
-
-		// Schedule the check after debounce interval
-		guiState.CheckURLTimer = time.AfterFunc(2*time.Second, func() { doCheck(trimmed) })
+		presenter.Model().PreviewNeedsParse = true
 	}
 
-	// Hint under input field with Check button on right
 	hintLabel := widget.NewLabel("Supports subscription URLs (http/https) or direct links (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://). For multiple links, use a new line for each.")
 	hintLabel.Wrapping = fyne.TextWrapWord
+
+	addURLButton := widget.NewButton("Add", func() {
+		presenter.SyncGUIToModel()
+		trimmed := strings.TrimSpace(guiState.SourceURLEntry.Text)
+		if err := wizardbusiness.AppendURLsToParserConfig(model, presenter, trimmed); err != nil {
+			debuglog.ErrorLog("source_tab: Add URL error: %v", err)
+		}
+		model.PreviewNeedsParse = true
+		presenter.UpdateParserConfig(model.ParserConfigJSON)
+		if guiState.RefreshSourcesList != nil {
+			guiState.RefreshSourcesList()
+		}
+		// Clear the URL field after adding so the user can enter the next URL
+		guiState.SourceURLEntry.SetText("")
+	})
 
 	getFreeVPNButton := widget.NewButton("Get free VPN!", func() {
 		wizarddialogs.ShowGetFreeVPNDialog(presenter)
 	})
-
-	hintRow := container.NewBorder(
-		nil,                        // top
-		nil,                        // bottom
-		nil,                        // left
-		guiState.CheckURLContainer, // right - actions
-		hintLabel,                  // center - hint takes all available space
-	)
-
-	guiState.URLStatusLabel = widget.NewLabel("")
-	guiState.URLStatusLabel.Wrapping = fyne.TextWrapWord
 
 	// Limit width and height of URL input field (3 lines)
 	// Wrap MultiLineEntry in Scroll container to show scrollbars
@@ -135,18 +91,26 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 		urlEntryScroll,
 	)
 
-	// Header row with action on the right
+	// Header row: label, spacer, Get free VPN (Add is to the right of the field below)
 	urlHeader := container.NewHBox(
 		urlLabel,
 		layout.NewSpacer(),
 		getFreeVPNButton,
 	)
 
+	// URL field with Add button on the right, vertically centered with the field.
+	// Use Border so the entry takes all remaining width and Add stays compact on the right.
+	urlEntryRow := container.NewBorder(
+		nil, nil,
+		nil,
+		container.NewCenter(addURLButton),
+		urlEntryWithSize,
+	)
+
 	urlContainer := container.NewVBox(
-		urlHeader,               // Header with action
-		urlEntryWithSize,        // Input field with size limit (3 lines)
-		hintRow,                 // Hint with button on right
-		guiState.URLStatusLabel, // Status
+		urlHeader,   // Header with Get free VPN
+		urlEntryRow, // Input field + Add button on the right
+		hintLabel,   // Hint
 	)
 
 	// Section 2: Sources list (based on ParserConfig.ParserConfig.Proxies)
@@ -164,14 +128,19 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 			return
 		}
 
-		for i, proxy := range model.ParserConfig.ParserConfig.Proxies {
+		for i := range model.ParserConfig.ParserConfig.Proxies {
+			proxyPtr := &model.ParserConfig.ParserConfig.Proxies[i]
+			proxy := *proxyPtr
+			sourceIndex := i
+
 			label := proxy.Source
 			if label == "" {
-				label = fmt.Sprintf("Source %d", i+1)
+				label = fmt.Sprintf("Source %d", sourceIndex+1)
 			}
 			if len(label) > 40 {
 				label = label[:37] + "..."
 			}
+			shortLabel := label
 
 			fullURL := proxy.Source
 			tagPrefix := proxy.TagPrefix
@@ -197,17 +166,65 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 			}
 			tooltipText := strings.Join(tooltipLines, "\n")
 
-			// Use a regular button as a label-like widget that supports SetToolTip via fyne-tooltip.
-			sourceButton := widget.NewButton(label, nil)
+			sourceButton := widget.NewButton(shortLabel, nil)
 			sourceButton.Importance = widget.LowImportance
-
 			if tb, ok := interface{}(sourceButton).(interface{ SetToolTip(string) }); ok {
 				tb.SetToolTip(tooltipText)
 			}
 
+			prefixEntry := widget.NewEntry()
+			prefixEntry.SetText(proxy.TagPrefix)
+			prefixEntry.SetPlaceHolder("prefix")
+			prefixEntry.OnChanged = func(s string) {
+				if model.ParserConfig == nil || sourceIndex >= len(model.ParserConfig.ParserConfig.Proxies) {
+					return
+				}
+				model.ParserConfig.ParserConfig.Proxies[sourceIndex].TagPrefix = strings.TrimSpace(s)
+				serialized, err := wizardbusiness.SerializeParserConfig(model.ParserConfig)
+				if err != nil {
+					debuglog.ErrorLog("source_tab: SerializeParserConfig after prefix change: %v", err)
+					return
+				}
+				model.ParserConfigJSON = serialized
+				model.PreviewNeedsParse = true
+				presenter.UpdateParserConfig(serialized)
+				presenter.RefreshOutboundOptions()
+			}
+
+			viewBtn := widget.NewButton("View", func() {
+				if model.ParserConfig == nil || sourceIndex >= len(model.ParserConfig.ParserConfig.Proxies) {
+					return
+				}
+				prox := &model.ParserConfig.ParserConfig.Proxies[sourceIndex]
+				showSourceServersWindow(presenter, guiState.Window, shortLabel, prox.Source, prox.Skip)
+			})
+
+			delBtn := widget.NewButton("Del", func() {
+				if model.ParserConfig == nil || sourceIndex >= len(model.ParserConfig.ParserConfig.Proxies) {
+					return
+				}
+				proxies := &model.ParserConfig.ParserConfig.Proxies
+				*proxies = append((*proxies)[:sourceIndex], (*proxies)[sourceIndex+1:]...)
+				serialized, err := wizardbusiness.SerializeParserConfig(model.ParserConfig)
+				if err != nil {
+					debuglog.ErrorLog("source_tab: SerializeParserConfig after Del source: %v", err)
+					return
+				}
+				model.ParserConfigJSON = serialized
+				model.PreviewNeedsParse = true
+				presenter.UpdateParserConfig(serialized)
+				presenter.RefreshOutboundOptions()
+				if guiState.RefreshSourcesList != nil {
+					guiState.RefreshSourcesList()
+				}
+			})
+
 			row := container.NewHBox(
 				sourceButton,
 				layout.NewSpacer(),
+				prefixEntry,
+				viewBtn,
+				delBtn,
 			)
 			sourcesBox.Add(row)
 		}
@@ -222,46 +239,72 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	sourcesScroll := container.NewVScroll(sourcesBox)
 	sourcesScroll.SetMinSize(fyne.NewSize(0, 140))
 
-	// Section 3: Preview Generated Outbounds
-	previewLabel := widget.NewLabel("Preview")
-	previewLabel.Importance = widget.MediumImportance
+	// Section 3: Preview — servers from all sources (same as View, but combined at bottom of tab)
+	var previewNodes []*config.ParsedNode
+	previewStatusLabel := widget.NewLabel("Click Refresh to load servers from all sources.")
+	previewList := widget.NewList(
+		func() int { return len(previewNodes) },
+		func() fyne.CanvasObject { return widget.NewLabel("") },
+		func(id int, o fyne.CanvasObject) {
+			if id < len(previewNodes) {
+				o.(*widget.Label).SetText(nodeDisplayLine(previewNodes[id]))
+			}
+		},
+	)
+	previewScroll := container.NewScroll(previewList)
+	previewScroll.SetMinSize(fyne.NewSize(0, 180))
+	// 10px strip to the right of the list (scrollbar area)
+	previewScrollStrip := canvas.NewRectangle(color.Transparent)
+	previewScrollStrip.SetMinSize(fyne.NewSize(10, 0))
 
-	// Use Entry without Disable for black text, but make it read-only via OnChanged
-	guiState.OutboundsPreview = widget.NewMultiLineEntry()
-	guiState.OutboundsPreview.SetPlaceHolder("Generated outbounds will appear here after clicking Parse...")
-	guiState.OutboundsPreview.Wrapping = fyne.TextWrapOff
-	previewText := "Generated outbounds will appear here after clicking Parse..."
-	guiState.OutboundsPreview.SetText(previewText)
-	guiState.OutboundsPreviewLastText = previewText
-	// Make field effectively read-only: ignore programmatic updates, restore last preview on user edits
-	guiState.OutboundsPreview.OnChanged = func(text string) {
-		if guiState.OutboundsPreviewUpdating {
-			// Ignore programmatic updates
+	refreshPreview := func() {
+		if model.ParserConfig == nil || len(model.ParserConfig.ParserConfig.Proxies) == 0 {
+			previewNodes = nil
+			previewList.Refresh()
+			previewStatusLabel.SetText("No sources. Add URLs and click Refresh.")
 			return
 		}
-		// Restore last known preview text
-		if guiState.OutboundsPreviewLastText != "" {
-			guiState.OutboundsPreview.SetText(guiState.OutboundsPreviewLastText)
-		} else {
-			guiState.OutboundsPreview.SetText(previewText)
+		previewStatusLabel.SetText("Loading...")
+		proxies := model.ParserConfig.ParserConfig.Proxies
+		sources := make([]struct {
+			URL  string
+			Skip []map[string]string
+		}, len(proxies))
+		for i := range proxies {
+			sources[i].URL = proxies[i].Source
+			sources[i].Skip = proxies[i].Skip
 		}
+		go func() {
+			var all []*config.ParsedNode
+			var errorCount int
+			for _, s := range sources {
+				nodes, err := fetchAndParseSource(s.URL, s.Skip)
+				if err != nil {
+					debuglog.DebugLog("source_tab: preview fetch %q: %v", s.URL, err)
+					errorCount++
+					continue
+				}
+				all = append(all, nodes...)
+			}
+			fyne.Do(func() {
+				previewNodes = all
+				previewList.Refresh()
+				status := fmt.Sprintf("%d server(s) from %d source(s)", len(previewNodes), len(sources))
+				if errorCount > 0 {
+					status += fmt.Sprintf("  ⚠️ %d error(s)", errorCount)
+				}
+				previewStatusLabel.SetText(status)
+			})
+		}()
 	}
 
-	// Limit width and height of Preview field
-	previewScroll := container.NewScroll(guiState.OutboundsPreview)
-	previewScroll.Direction = container.ScrollBoth
-	// Create dummy Rectangle to set height via container.NewMax
-	previewHeightRect := canvas.NewRectangle(color.Transparent)
-	previewHeightRect.SetMinSize(fyne.NewSize(0, 90)) // ~8-9 lines (reduced by ~30px)
-	// Wrap in Max container with Rectangle to fix height
-	previewWithHeight := container.NewMax(
-		previewHeightRect,
-		previewScroll,
-	)
-
-	previewContainer := container.NewVBox(
-		previewLabel,
-		previewWithHeight,
+	previewRefreshBtn := widget.NewButton("Refresh", refreshPreview)
+	previewStatusRow := container.NewHBox(previewStatusLabel, layout.NewSpacer(), previewRefreshBtn)
+	// List full width, 20px strip on the right
+	previewListRow := container.NewBorder(nil, nil, nil, nil, previewScroll)
+	previewBox := container.NewVBox(
+		previewStatusRow,
+		previewListRow,
 	)
 
 	// Combine all sections
@@ -272,7 +315,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 		sourcesLabel,
 		sourcesScroll,
 		widget.NewSeparator(),
-		previewContainer,
+		previewBox,
 		widget.NewSeparator(),
 	)
 
@@ -281,6 +324,130 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	scrollContainer.SetMinSize(fyne.NewSize(0, 620))
 
 	return scrollContainer
+}
+
+// nodeDisplayLine returns a short one-line description for a parsed node (for list display).
+func nodeDisplayLine(node *config.ParsedNode) string {
+	if node == nil {
+		return ""
+	}
+	if node.Tag != "" {
+		return node.Tag
+	}
+	if node.Label != "" {
+		return node.Label
+	}
+	if node.Server != "" {
+		return fmt.Sprintf("%s:%d", node.Server, node.Port)
+	}
+	return node.Scheme
+}
+
+// fetchAndParseSource fetches a subscription URL or parses a direct link and returns parsed nodes.
+func fetchAndParseSource(sourceURL string, skip []map[string]string) ([]*config.ParsedNode, error) {
+	sourceURL = strings.TrimSpace(sourceURL)
+	if sourceURL == "" {
+		return nil, fmt.Errorf("empty source URL")
+	}
+	var nodes []*config.ParsedNode
+	if subscription.IsSubscriptionURL(sourceURL) {
+		content, err := subscription.FetchSubscription(sourceURL)
+		if err != nil {
+			return nil, err
+		}
+		contentStr := string(content)
+		contentStr = strings.ReplaceAll(contentStr, "\r\n", "\n")
+		contentStr = strings.ReplaceAll(contentStr, "\r", "\n")
+		for _, line := range strings.Split(contentStr, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			node, err := subscription.ParseNode(line, skip)
+			if err != nil {
+				continue
+			}
+			if node != nil {
+				nodes = append(nodes, node)
+			}
+		}
+		return nodes, nil
+	}
+	if subscription.IsDirectLink(sourceURL) {
+		node, err := subscription.ParseNode(sourceURL, skip)
+		if err != nil {
+			return nil, err
+		}
+		if node != nil {
+			nodes = append(nodes, node)
+		}
+		return nodes, nil
+	}
+	return nil, fmt.Errorf("not a subscription URL or direct link")
+}
+
+// showSourceServersWindow opens a separate window, fetches/parses the subscription and shows the server list (like Servers tab).
+// Only one View window is allowed; if already open, focus is moved to it.
+func showSourceServersWindow(presenter *wizardpresentation.WizardPresenter, parent fyne.Window, sourceLabel string, sourceURL string, skip []map[string]string) {
+	if presenter != nil {
+		if w := presenter.OpenViewWindow(); w != nil {
+			w.RequestFocus()
+			return
+		}
+	}
+	app := fyne.CurrentApp()
+	if app == nil {
+		return
+	}
+	title := "Servers — " + sourceLabel
+	if len(title) > 50 {
+		title = title[:47] + "..."
+	}
+	win := app.NewWindow(title)
+	if presenter != nil {
+		presenter.SetViewWindow(win)
+		win.SetOnClosed(func() {
+			presenter.ClearViewWindow()
+			presenter.UpdateChildOverlay()
+		})
+	}
+	statusLabel := widget.NewLabel("Loading...")
+	closeBtn := widget.NewButton("Close", func() { win.Close() })
+	topContent := container.NewBorder(nil, container.NewHBox(layout.NewSpacer(), closeBtn), nil, nil, statusLabel)
+	win.SetContent(topContent)
+	win.Resize(fyne.NewSize(420, 380))
+	win.CenterOnScreen()
+	win.Show()
+	if presenter != nil {
+		presenter.UpdateChildOverlay()
+	}
+
+	go func() {
+		nodes, err := fetchAndParseSource(sourceURL, skip)
+		fyne.Do(func() {
+			if err != nil {
+				statusLabel.SetText("Error: " + err.Error())
+				return
+			}
+			if len(nodes) == 0 {
+				statusLabel.SetText("No servers found.")
+				return
+			}
+			statusLabel.SetText(fmt.Sprintf("%d server(s)", len(nodes)))
+			list := widget.NewList(
+				func() int { return len(nodes) },
+				func() fyne.CanvasObject {
+					return widget.NewLabel("")
+				},
+				func(id int, o fyne.CanvasObject) {
+					o.(*widget.Label).SetText(nodeDisplayLine(nodes[id]))
+				},
+			)
+			scroll := container.NewScroll(list)
+			scroll.SetMinSize(fyne.NewSize(0, 280))
+			win.SetContent(container.NewBorder(statusLabel, container.NewHBox(layout.NewSpacer(), closeBtn), nil, nil, scroll))
+		})
+	}()
 }
 
 // CreateOutboundsAndParserConfigTab creates the Outbounds and ParserConfig tab UI.
@@ -357,7 +524,7 @@ func CreateOutboundsAndParserConfigTab(presenter *wizardpresentation.WizardPrese
 		}
 	}
 
-	configuratorContent := outbounds_configurator.NewConfiguratorContent(guiState.Window, pc, onConfiguratorApply)
+	configuratorContent := outbounds_configurator.NewConfiguratorContent(guiState.Window, pc, onConfiguratorApply, presenter)
 
 	// No Parse button on this tab per SPEC: update is automatic via configurator callback and tab switch (Rules/Preview).
 	headerRow := container.NewHBox(

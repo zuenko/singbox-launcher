@@ -1,5 +1,9 @@
 # SPEC: OUTBOUNDS_CONFIGURATOR — новая вкладочная структура визарда
 
+**Реализация:** см. [IMPLEMENTATION_REPORT.md](IMPLEMENTATION_REPORT.md) — там описано, как всё сделано в коде (в т.ч. отличия от пунктов ниже).
+
+---
+
 ## Проблема
 
 Текущая вкладка **"Sources and ParserConfig"** в визарде совмещает сразу три разных задачи:
@@ -21,18 +25,17 @@
 
 1. **Вкладка Sources**
    - Пользователь думает в терминах «подписки/ссылки → какие ноды получились».
-   - Он вводит URL подписок и прямые ссылки в многострочное поле и видит:
+   - Он вводит URL в многострочное поле и нажимает **Add** — URL добавляются к существующим источникам (дубликаты не добавляются). Видит:
      - подсказку по форматам URL и схемам;
-     - статус проверки URL;
-     - список источников (по одному на каждый `ProxySource`) с коротким label.
+     - список источников (по одному на каждый `ProxySource`) с коротким label, редактируемым `tag_prefix`, кнопками View и Del.
    - При наведении на элемент списка показывается tooltip с:
      - полным URL источника;
      - текущими `tag_prefix` / `tag_postfix` / `tag_mask` (если заданы);
      - количеством и списком тегов локальных outbounds этого источника.
-   - Внизу вкладки есть только read‑only Preview сгенерированных нод/селекторов со скроллом.
-   - На вкладке нет текста ParserConfig JSON и нет кнопки Parse.
+   - Внизу вкладки — блок Preview: кнопка Refresh и список распарсенных серверов по всем источникам (тот же парсинг, что и для View по одному источнику).
+   - На вкладке нет поля ParserConfig JSON и нет кнопки Parse; нет CheckURL/статуса проверки URL.
 
-2. **Вкладка Outbounds and ParserConfig**
+2. **Вкладка Outbounds** (в UI название вкладки — "Outbounds")
    - Пользователь управляет всеми outbounds в одном общем списке:
      - сначала локальные outbounds по каждому источнику;
      - затем глобальные outbounds из ParserConfig.
@@ -42,19 +45,15 @@
      - метка источника (Global или label source);
      - кнопки Edit и Delete.
    - Кнопка Add открывает диалог создания/редактирования outbound.
-   - В нижней/правой части вкладки расположен многострочный редактор ParserConfigJSON с кнопками Documentation и ChatGPT; отдельной кнопки Parse нет.
+   - В нижней/правой части вкладки расположен многострочный редактор ParserConfigJSON с кнопкой Documentation; кнопок Parse и ChatGPT на вкладке нет.
 
 3. **Синхронизация ParserConfig**
    - Источник правды — структура `config.ParserConfig` в модели визарда.
-   - Любые изменения:
-     - текста в SourceURLEntry на вкладке Sources;
-     - состава и порядка outbounds в конфигураторе;
-     - ручного текста ParserConfigJSON
-     приводят к обновлению структуры `config.ParserConfig`, её нормализации и пересериализации в ParserConfigJSON.
+   - Изменения состава/порядка outbounds в конфигураторе (и правки в списке Sources: prefix, Del) приводят к обновлению структуры ParserConfig и пересериализации. Ручной текст ParserConfigJSON применяется при уходе с вкладки Outbounds (валидация и откат при ошибке).
    - Списки Sources и Outbounds всегда пересчитываются из текущей структуры ParserConfig.
 
 4. **Диалог Edit/Add Outbound**
-   - Открывается из вкладки Outbounds and ParserConfig поверх основного окна визарда.
+   - Открывается из вкладки Outbounds как отдельное окно (аналогично диалогу добавления правил).
    - Позволяет задать:
      - scope (For all или For source: \<label\>);
      - tag, type (manual/auto), comment;
@@ -73,9 +72,9 @@
 
 1. **Вкладка 1: Sources**
    - Содержимое:
-     - многострочное поле SourceURLEntry (URL подписок + прямые ссылки), как сейчас;
-     - подсказка под полем (поддерживаемые схемы, одна ссылка на строку и т.п.);
-     - статус проверки URL (CheckURL, индикатор прогресса, текст статуса).
+     - многострочное поле SourceURLEntry (URL подписок + прямые ссылки);
+     - кнопка Add справа от поля (применение только по Add, дубликаты не добавляются), подсказка под полем;
+     - кнопка Get free VPN! в заголовке.
   - **Список Sources**:
      - компонент вида widget.List (или аналогичные контейнер + лейблы);
      - каждый элемент соответствует одному config.ProxySource из ParserConfig.ParserConfig.Proxies;
@@ -84,10 +83,8 @@
        - полный source URL;
        - текущие `tag_prefix`, `tag_postfix`, `tag_mask` (если заданы);
        - количество локальных outbounds для этого источника и список их тегов.
-   - **Preview нод / outbounds**:
-     - нижний блок показывает текстовое preview (read‑only) сгенерированных узлов и селекторов, аналогично текущему OutboundsPreview;
-     - поддерживается вертикальный/горизонтальный скролл.
-   - На вкладке **нет** поля ParserConfig JSON и **нет** кнопки Parse.
+   - **Preview**: нижний блок с кнопкой Refresh и списком распарсенных серверов по всем источникам (fetchAndParseSource по каждому ProxySource); список ограничен по высоте, справа полоса под скролл.
+   - На вкладке **нет** поля ParserConfig JSON и **нет** кнопки Parse. В списке Sources: редактируемое поле tag_prefix, кнопки View (окно с серверами по ссылке) и Del.
 
 2. **Вкладка 2: Outbounds and ParserConfig**
   - Верх/лево: **список outbounds** (конфигуратор):
@@ -104,20 +101,16 @@
      - кнопка **Down**:
        - доступна только если outbound не последний в своём scope;
        - меняет местами текущий outbound со следующим в том же слайсе;
-     - кнопка **Add** под/над списком открывает диалог создания outbound (см. ниже);
-     - после любых изменений список пересчитывается из актуального ParserConfig.
-   - Низ/право: **редактор ParserConfig JSON**:
-     - многострочное поле, содержащее сериализованный config.ParserConfig (поле ParserConfigJSON модели);
-     - кнопки **Documentation** и **ChatGPT** (как сейчас);
-     - кнопки **Parse** на этой вкладке **нет** — обновление делается автоматически.
+     - кнопка **Add** открывает окно создания outbound; после каждой операции (Up/Down/Edit/Del/Add) вызывается onApply: сериализация ParserConfig, обновление модели и UI.
+   - Редактор ParserConfig JSON выше списка; при уходе с вкладки вызывается ValidateAndApplyParserConfigFromEntry (применить или откатить ручные правки JSON). Кнопок Parse и ChatGPT нет.
 
 ### 2. Синхронизация ParserConfig
 
 3. Единый источник правды — структура config.ParserConfig в модели визарда (model.ParserConfig).
 4. ParserConfigJSON всегда является сериализацией этой структуры (через существующую нормализацию), а не независимым текстом.
 5. **Обновление из вкладки Sources**:
-   - изменение текста в SourceURLEntry по‑прежнему проходит через ApplyURLToParserConfig (debounce, CheckURL — без изменений по смыслу);
-   - ApplyURLToParserConfig обновляет model.ParserConfig (struct);
+   - применение URL только по кнопке Add через AppendURLsToParserConfig (добавление к существующим, без дубликатов); автоматического применения при вводе нет;
+   - AppendURLToParserConfig обновляет model.ParserConfig (struct);
    - после успешного применения:
      - ParserConfig нормализуется и сериализуется в ParserConfigJSON;
      - редактор ParserConfig на вкладке Outbounds and ParserConfig получает новое значение (через SyncModelToGUI/UpdateParserConfig);
@@ -170,17 +163,14 @@
 14. Логика генерации outbounds и Preview (ParseAndPreview, Rules‑tab, Preview‑tab) не меняется по сути, но опирается на обновлённый ParserConfig и ParserConfigJSON:
     - если раньше генерация привязывалась к кнопке Parse, теперь запуск Parse/Preview должен быть привязан к событиям изменения ParserConfig (URL, правки в Outbounds/JSON) и/или к переходу на Rules/Preview вкладки (как уже реализовано через TriggerParseForPreview/UpdateTemplatePreviewAsync).
 
-## Критерии приёмки
+## Критерии приёмки (реализовано)
 
-- [ ] Первая вкладка визарда называется **Sources**, не содержит поля ParserConfig JSON и кнопки Parse.
-- [ ] На вкладке Sources есть список источников (по ProxySource) и tooltip при наведении показывает полный URL и параметры (`tag_prefix`, `tag_postfix`, `tag_mask`, локальные outbounds).
-- [ ] Вторая вкладка называется **Outbounds and ParserConfig** и содержит:
-  - список outbounds (локальные по источникам → глобальные) с иконками Up/Down, кнопками Edit/Delete и кнопкой Add;
-  - редактор ParserConfig JSON с кнопками Documentation и ChatGPT.
-- [ ] Кнопки Up/Down перемещают outbound только внутри своего scope (локальные/глобальные) и корректно обновляют порядок в ParserConfig.
-- [ ] Отдельного окна Config Outbounds больше нет; весь функционал конфигуратора реализован во вкладке Outbounds and ParserConfig.
-- [ ] Любые изменения URL/links на вкладке Sources и любые операции с outbounds на вкладке Outbounds and ParserConfig приводят к обновлению model.ParserConfig и согласованного ParserConfigJSON **без ручного Parse**.
-- [ ] Ручное редактирование ParserConfig JSON при валидном содержимом обновляет структуру ParserConfig и списки Sources/Outbounds; при ошибке JSON пользователь видит понятное сообщение, и текст откатывается к последнему корректному состоянию.
-- [ ] Диалог Edit/Add соответствует полям и UX, описанным в разделе 3 (фиксированные ключи tag для filters и preferredDefault, addOutbounds только к тегам выше).
-- [ ] Поведение Rules‑/Preview‑вкладок не ломается: они продолжают использовать актуальный ParserConfig и корректно отражать изменения.
-- [ ] Все новые сообщения в UI на английском; логирование и обработка ошибок соответствуют constitution.md и IMPLEMENTATION_PROMPT.md (debuglog, dialogs.ShowError, отсутствие немотивированных _ = err).
+- [x] Первая вкладка называется **Sources**, не содержит поля ParserConfig JSON и кнопки Parse; применение URL только по кнопке Add (AppendURLsToParserConfig, дубликаты не добавляются).
+- [x] На вкладке Sources: список источников (по ProxySource) с редактируемым tag_prefix, View, Del; tooltip при наведении на label.
+- [x] Вторая вкладка называется **Outbounds**; содержит редактор ParserConfig JSON (Documentation), список outbounds (↑/↓, Edit, Del), Add; кнопок Parse и ChatGPT нет.
+- [x] Up/Down перемещают outbound только внутри своего scope; после операций конфигуратора вызывается onApply (сериализация, обновление модели и UI).
+- [x] Конфигуратор встроен во вкладку Outbounds; отдельного окна Config Outbounds нет.
+- [x] Изменения на Sources (Add, Del, prefix) и в конфигураторе Outbounds обновляют model.ParserConfig и ParserConfigJSON. Ручной JSON применяется при уходе с вкладки Outbounds (ValidateAndApplyParserConfigFromEntry).
+- [x] Диалог Add/Edit — отдельное окно; поля Scope, Tag, Type, Comment, Filters (tag), Preferred default (tag), AddOutbounds (direct-out, reject, теги выше).
+- [x] Rules/Preview используют актуальный ParserConfig.
+- [x] UI на английском; ошибки через dialogs.ShowError, логирование через debuglog.

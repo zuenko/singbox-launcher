@@ -22,6 +22,9 @@
 - **Diagnostics log viewer:** New Logs window from the Diagnostics tab with three tabs: Internal (live app logs via sink), Core (tail of `logs/sing-box.log` with auto-refresh every 5 seconds), and API (live Clash API requests). Supports level filters on Internal/API and shows newest entries at the top.
 - **Config:** `getConfigJSON` outputs trailing commas for all config readers. Windows TUN: removed netsh cleanup on stop (interfaces close normally).
 - **Config wizard — Outbounds tab:** Second tab renamed to "Outbounds". Parse and ChatGPT buttons removed; ParserConfig updates automatically when editing outbounds or switching to Rules/Preview. Add/Edit outbound opens in a separate window (like Add Rule). Edit/Del buttons have icons; Up/Down use ASCII ↑/↓. List has a 30px right margin for the scrollbar. Sources list and JSON editor stay in sync; leaving the Outbounds tab validates JSON and reverts on error.
+- **Config wizard — Edit Outbound:** Add/Edit outbound dialog now has two tabs: **Settings** (form as before) and **Raw** (editable JSON of the outbound). Scope is still chosen on the form; saving from Raw parses JSON and validates tag.
+- **Config wizard — Save without network:** Save no longer waits for outbounds parsing. It writes the current model state (existing generated outbounds or empty) to disk immediately, so saving works offline. After a successful save, config update from subscriptions (same as the main tab’s Update button) is triggered in the background.
+- **Config wizard — Save UX:** Progress bar stays at 5% during any wait (no 5–10% cycle). Status label left of Prev shows current step (Building config…, Saving file…, Validating…, Saving state…, Done). Save button remains visible on the last tab during parsing; if the user clicks Save while parsing is in progress elsewhere, the save flow no longer blocks on it.
 
 </details>
 
@@ -36,6 +39,9 @@
 - **Окно логов Diagnostics:** Новое окно Logs с вкладки Diagnostics: три вкладки — Internal (живые логи лаунчера через sink), Core (хвост `logs/sing-box.log` с автообновлением раз в 5 секунд) и API (живые запросы Clash API). Поддерживаются фильтры по уровню на Internal/API, новые записи отображаются сверху.
 - **Конфиг:** `getConfigJSON` выводит trailing commas для всех читателей конфига. Windows TUN: убрана очистка через netsh при остановке (интерфейсы закрываются сами).
 - **Визард конфига — вкладка Outbounds:** Вторая вкладка переименована в «Outbounds». Кнопки Parse и ChatGPT убраны; ParserConfig обновляется автоматически при правке outbounds и при переходе на Rules/Preview. Добавление и редактирование outbound открываются в отдельном окне (как добавление правила). У кнопок Edit/Del — иконки, у ↑/↓ — ASCII-символы. Справа в списке — отступ 30px под полосу прокрутки. Список Sources и редактор JSON синхронизированы; при уходе с вкладки Outbounds выполняется проверка JSON с откатом при ошибке.
+- **Визард конфига — диалог Edit Outbound:** В диалоге добавления/редактирования outbound две вкладки: **Settings** (форма как раньше) и **Raw** (редактируемый JSON outbound). Scope по-прежнему выбирается в форме; сохранение из Raw парсит JSON и проверяет tag.
+- **Визард конфига — сохранение без сети:** Save больше не ждёт парсинг outbounds. На диск сразу пишется текущее состояние модели (уже сгенерированные outbounds или пусто), поэтому сохранение возможно без интернета. После успешного Save в фоне запускается обновление конфига из подписок (то же, что кнопка Update на главной вкладке).
+- **Визард конфига — UX сохранения:** Прогресс-бар при ожидании остаётся на 5% (без цикла 5–10%). Слева от кнопки Prev показывается статус текущего шага (Building config…, Saving file…, Validating…, Saving state…, Done). Кнопка Save на последней вкладке не скрывается во время парсинга; при нажатии Save во время парсинга сохранение больше не блокируется ожиданием парсинга.
 
 </details>
 
