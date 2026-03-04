@@ -1,29 +1,88 @@
-# TASKS: Configurator Outbounds
+## TASKS: OUTBOUNDS_CONFIGURATOR
 
-## Этап 1: Кнопка и открытие окна
+### Этап 1. Перестройка вкладок визарда
 
-- [ ] **1.1** В `ui/wizard/tabs/source_tab.go` добавить кнопку "Config Outbounds" в headerRow (рядом с Parse / Documentation).
-- [ ] **1.2** Обработчик кнопки: SyncGUIToModel; парсить model.ParserConfigJSON в config.ParserConfig; при пустом/невалидном JSON показать dialog с ошибкой и не открывать окно.
-- [ ] **1.3** При валидном парсинге открыть окно конфигуратора (новый пакет ui/wizard/outbounds_configurator), передать копию ParserConfig и callback: сериализовать, обновить model.ParserConfigJSON и model.ParserConfig, вызвать presenter.UpdateParserConfig(serialized).
+- [ ] В `wizard.go` (или месте создания табов визарда) выделить из текущего `CreateSourceTab` два таба:
+  - `Sources` — работа с источниками и Preview;
+  - `Outbounds and ParserConfig` — работа с outbounds и текстовым ParserConfigJSON.
+- [ ] Убедиться, что вкладка `Sources` содержит только:
+  - многострочное поле `SourceURLEntry` с подсказкой и текущей логикой `ApplyURLToParserConfig` + CheckURL;
+  - статус проверки URL;
+  - список Sources;
+  - read‑only Preview сгенерированных нод/селекторов.
+- [ ] Удалить с вкладки `Sources` поле ParserConfigJSON и элементы управления ParserConfig (ParseButton, Config Outbounds, Documentation/ChatGPT).
+- [ ] Добавить во визард вторую вкладку `Outbounds and ParserConfig` с контейнером под список outbounds и редактор ParserConfigJSON.
 
-## Этап 2: Окно конфигуратора (список)
+### Этап 2. Вкладка Sources: Sources‑лист и Preview
 
-- [ ] **2.1** Создать пакет `ui/wizard/outbounds_configurator`, файл `configurator.go`: NewWindow(parserConfig *config.ParserConfig, parent fyne.Window, onApply func(*config.ParserConfig)) — создаёт окно с заголовком "Config Outbounds".
-- [ ] **2.2** В окне: список всех outbounds — сначала ParserConfig.outbounds (подпись "Global"), затем для каждого proxies[i] — блок с подписью источника (source URL или "Source 1", "Source 2") и proxies[i].Outbounds. Каждая строка: label (tag, type), кнопки Edit, Delete.
-- [ ] **2.3** Кнопка Add: открыть диалог добавления (scope, tag, type, …); при Save вставить outbound в нужное место (global или proxies[i].Outbounds) и обновить список в окне.
-- [ ] **2.4** Edit: открыть диалог с заполненными полями; при Save заменить выбранный outbound и обновить список.
-- [ ] **2.5** Delete: удалить outbound из слайса и обновить список.
-- [ ] **2.6** Кнопка Close: вызвать onApply(parserConfig), закрыть окно. Конфигуратор работает с переданной копией и модифицирует её; callback получает указатель на тот же объект.
+- [ ] Реализовать список Sources поверх `ParserConfig.ParserConfig.Proxies`:
+  - один элемент на каждый `ProxySource`;
+  - короткий label (обрезанный URL или `Source N`).
+- [ ] Интегрировать tooltip’ы для элементов списка через `fyne-tooltip`:
+  - полный URL источника;
+  - `tag_prefix`, `tag_postfix`, `tag_mask`;
+  - количество и список тегов локальных outbounds этого источника.
+- [ ] Разместить read‑only Preview нод/селекторов внизу вкладки `Sources` (re‑use существующего `OutboundsPreview` из `source_tab.go`).
+- [ ] Убедиться, что список Sources и tooltip’ы автоматически обновляются при изменении ParserConfig (после `ApplyURLToParserConfig`, после правок в outbounds и ParserConfigJSON).
 
-## Этап 3: Диалог Edit/Add
+### Этап 3. Вкладка Outbounds and ParserConfig: список outbounds
 
-- [ ] **3.1** Файл `edit_dialog.go`: ShowOutboundEditDialog(parent, parserConfig, existing *OutboundConfig, scopeKind string, sourceIndex int, existingTags []string, onSave func(cfg *OutboundConfig, scopeKind string, sourceIndex int)).
-- [ ] **3.2** Поля: Scope (For all / For source: …), Tag, Type (manual/auto), Comment, Filters (минимум: один ключ tag со значением, поддержка отрицания в значении или чекбокс), Preferred default (одна пара), AddOutbounds (чекбоксы direct-out, reject + выбор из existingTags).
-- [ ] **3.3** При Save: собрать OutboundConfig, вызвать onSave; закрыть диалог.
+- [ ] На базе существующего `ui/wizard/outbounds_configurator/configurator.go`:
+  - вынести построение списка outbounds (`collectRows`, `tagsAbove`, Up/Down, Edit/Delete/Add) в отдельную функцию/компонент, возвращающую `fyne.CanvasObject`;
+  - использовать этот компонент внутри вкладки `Outbounds and ParserConfig` вместо отдельного окна.
+- [ ] Обеспечить, чтобы общий список outbounds строился в порядке:
+  - сначала локальные `proxies[i].outbounds` по каждому источнику;
+  - затем глобальные `ParserConfig.outbounds`.
+- [ ] Для каждой строки списка отрисовать:
+  - иконки Up/Down слева (только внутри своего scope);
+  - текст `tag (type) — SourceLabel` (`Global` или label источника);
+  - справа кнопки Edit и Delete.
+- [ ] Реализовать поведение кнопки Up:
+  - доступна, если outbound не первый в своём scope;
+  - меняет местами текущий элемент с предыдущим в том же слайсе (переиспользовать `moveOutboundUp`).
+- [ ] Реализовать поведение кнопки Down:
+  - доступна, если outbound не последний в своём scope;
+  - меняет местами текущий элемент со следующим в том же слайсе (переиспользовать `moveOutboundDown`).
+- [ ] Добавить кнопку Add, открывающую диалог создания outbound.
 
-## Этап 4: Интеграция и проверка
+### Этап 4. Диалог Edit/Add Outbound
 
-- [ ] **4.1** Убедиться, что при закрытии конфигуратора визард получает обновлённый ParserConfig JSON и виджет обновляется (SyncModelToGUI или UpdateParserConfig).
-- [ ] **4.2** Логирование: debuglog при открытии/закрытии конфигуратора, при Apply, при ошибках парсинга.
-- [ ] **4.3** Сообщения пользователю на английском; ошибки через dialogs.ShowError.
-- [ ] **4.4** Проверка: go build ./..., go test ./..., go vet ./...
+- [ ] Переиспользовать существующий диалог `ShowEditDialog` из `edit_dialog.go`, вызвая его из новой вкладки `Outbounds and ParserConfig` (parent = окно визарда).
+- [ ] Добавить/проверить поле Scope:
+  - опции For all (глобальный outbound) и For source: `<SourceLabel>` (локальный).
+- [ ] Добавить/проверить поля Tag, Type (manual/auto), Comment.
+- [ ] Реализовать/уточнить блок Filters:
+  - фиксированный ключ `tag` (лейбл, нередактируемый);
+  - редактируемое значение‑паттерн (в том числе `!/regex/i` и т.п.).
+- [ ] Реализовать/уточнить блок Preferred default:
+  - фиксированный ключ `tag`;
+  - строка‑паттерн выбора узла по умолчанию.
+- [ ] Реализовать/уточнить блок AddOutbounds:
+  - чекбоксы `direct-out`, `reject`;
+  - чекбоксы по тегам других outbounds, находящихся **выше** в общем списке.
+- [ ] Оформить диалог с вертикальным скроллом и отступом справа под полосу прокрутки, чтобы скролл не перекрывал поля (как в текущем `edit_dialog.go`).
+
+### Этап 5. Синхронизация ParserConfig
+
+- [ ] Убедиться, что изменения в `SourceURLEntry` обрабатываются через `ApplyURLToParserConfig` и обновляют структуру `config.ParserConfig` в модели визарда.
+- [ ] После успешного применения URL:
+  - нормализовать ParserConfig;
+  - пересериализовать в `ParserConfigJSON`;
+  - обновить редактор ParserConfigJSON во второй вкладке и списки Sources/Outbounds.
+- [ ] Реализовать операции Edit/Add/Delete/Up/Down для списка outbounds так, чтобы они:
+  - изменяли только структуру ParserConfig (локальные и глобальные outbounds) в модели визарда;
+  - после этого вызывали нормализацию и пересериализацию в `ParserConfigJSON`;
+  - обновляли UI (список outbounds, Preview нод/селекторов).
+- [ ] Настроить обработку ручного редактирования ParserConfigJSON во второй вкладке:
+  - парсинг текста при потере фокуса / по debounce / при переключении вкладки;
+  - при успешном парсинге — замену структуры `config.ParserConfig` и пересчёт списков Sources/Outbounds;
+  - при ошибке — показ `dialogs.ShowError` и откат текста к последнему валидному состоянию.
+
+### Этап 6. Интеграция с Rules/Preview и финальная проверка
+
+- [ ] Привязать запуск Parse/Preview к изменениям ParserConfig и/или переходу на вкладки Rules/Preview (используя существующие механизмы `TriggerParseForPreview` / `UpdateTemplatePreviewAsync` вместо кнопки Parse).
+- [ ] Убедиться, что вкладки Rules/Preview используют актуальный ParserConfig и корректно отражают изменения из обеих новых вкладок.
+- [ ] Постепенно убрать отдельное окно Config Outbounds:
+  - на первом шаге — использовать общую реализацию списка/диалога и для вкладки, и для окна;
+  - после стабилизации новой вкладки — удалить кнопку `Config Outbounds` из `source_tab.go` и функцию `Show` из `outbounds_configurator`.
+- [ ] Пройтись по критериям приёмки SPEC и проверить, что все пункты выполняются.
