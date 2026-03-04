@@ -258,10 +258,13 @@ func initializeWizardContent(presenter *wizardpresentation.WizardPresenter, guiS
 // createWizardTabs создает табы визарда.
 // Возвращает контейнер табов и ссылки на Rules и Preview табы.
 func createWizardTabs(presenter *wizardpresentation.WizardPresenter, guiState *wizardpresentation.GUIState) (*container.AppTabs, *container.TabItem, *container.TabItem) {
-	// Create first tab
-	tab1 := wizardtabs.CreateSourceTab(presenter)
-	tab1Item := container.NewTabItem("Sources & ParserConfig", tab1)
-	tabs := container.NewAppTabs(tab1Item)
+	// Create first two tabs: Sources and Outbounds and ParserConfig
+	sourcesTab := wizardtabs.CreateSourcesTab(presenter)
+	sourcesTabItem := container.NewTabItem("Sources", sourcesTab)
+	outboundsTab := wizardtabs.CreateOutboundsAndParserConfigTab(presenter)
+	outboundsTabItem := container.NewTabItem("Outbounds and ParserConfig", outboundsTab)
+
+	tabs := container.NewAppTabs(sourcesTabItem, outboundsTabItem)
 	guiState.Tabs = tabs
 
 	// Overlay that redirects clicks to open rule dialog when present
