@@ -6,7 +6,10 @@ import (
 	"strconv"
 	"strings"
 
+	"image/color"
+
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
@@ -76,34 +79,41 @@ func ShowEditDialog(
 		}
 	}
 
-	// Filters: one line "tag" = "!/(🇷🇺)/i" or "/regex/i"
-	filterKeyEntry := widget.NewEntry()
-	filterKeyEntry.SetText("tag")
-	filterKeyEntry.SetPlaceHolder("key: tag, host, scheme, label")
+	// Filters: fixed key "tag", value editable
+	filterKeyLabel := widget.NewLabel("tag")
 	filterValEntry := widget.NewEntry()
 	filterValEntry.SetPlaceHolder("e.g. /🇳🇱/i or !/(🇷🇺)/i")
 	if existing != nil && existing.Filters != nil {
-		for k, v := range existing.Filters {
-			filterKeyEntry.SetText(k)
+		if v, ok := existing.Filters["tag"]; ok {
 			if s, ok := v.(string); ok {
 				filterValEntry.SetText(s)
 			}
-			break
+		} else {
+			for _, v := range existing.Filters {
+				if s, ok := v.(string); ok {
+					filterValEntry.SetText(s)
+					break
+				}
+			}
 		}
 	}
 
-	// Preferred default (one key-value)
-	defKeyEntry := widget.NewEntry()
-	defKeyEntry.SetText("tag")
+	// Preferred default: fixed key "tag", value editable
+	defKeyLabel := widget.NewLabel("tag")
 	defValEntry := widget.NewEntry()
 	defValEntry.SetPlaceHolder("e.g. /🇳🇱/i")
 	if existing != nil && existing.PreferredDefault != nil {
-		for k, v := range existing.PreferredDefault {
-			defKeyEntry.SetText(k)
+		if v, ok := existing.PreferredDefault["tag"]; ok {
 			if s, ok := v.(string); ok {
 				defValEntry.SetText(s)
 			}
-			break
+		} else {
+			for _, v := range existing.PreferredDefault {
+				if s, ok := v.(string); ok {
+					defValEntry.SetText(s)
+					break
+				}
+			}
 		}
 	}
 
@@ -171,15 +181,13 @@ func ShowEditDialog(
 			}
 		}
 
-		filterKey := strings.TrimSpace(filterKeyEntry.Text)
 		filterVal := strings.TrimSpace(filterValEntry.Text)
-		if filterKey != "" && filterVal != "" {
-			cfg.Filters = map[string]interface{}{filterKey: filterVal}
+		if filterVal != "" {
+			cfg.Filters = map[string]interface{}{"tag": filterVal}
 		}
-		defKey := strings.TrimSpace(defKeyEntry.Text)
 		defVal := strings.TrimSpace(defValEntry.Text)
-		if defKey != "" && defVal != "" {
-			cfg.PreferredDefault = map[string]interface{}{defKey: defVal}
+		if defVal != "" {
+			cfg.PreferredDefault = map[string]interface{}{"tag": defVal}
 		}
 
 		var addOb []string
@@ -210,7 +218,7 @@ func ShowEditDialog(
 	scrollOther := container.NewScroll(otherTagsBox)
 	scrollOther.SetMinSize(fyne.NewSize(0, 80))
 
-	d := dialog.NewCustomConfirm("Edit Outbound", "Save", "Cancel", container.NewVBox(
+	form := container.NewVBox(
 		widget.NewLabel("Scope"),
 		scopeSelect,
 		widget.NewLabel("Tag"),
@@ -220,17 +228,29 @@ func ShowEditDialog(
 		widget.NewLabel("Comment"),
 		commentEntry,
 		widget.NewLabel("Filters (key and value; use !/regex/i for negation)"),
-		container.NewGridWithColumns(2, filterKeyEntry, filterValEntry),
+		container.NewGridWithColumns(2, filterKeyLabel, filterValEntry),
 		widget.NewLabel("Preferred default (filter for default node)"),
-		container.NewGridWithColumns(2, defKeyEntry, defValEntry),
+		container.NewGridWithColumns(2, defKeyLabel, defValEntry),
 		widget.NewLabel("Add outbounds at start (direct-out, reject, others)"),
 		container.NewHBox(directCheck, rejectCheck),
 		scrollOther,
-	), func(ok bool) {
+	)
+	// Right margin inside scroll so the scrollbar does not overlap form elements
+	const scrollbarGap = 20
+	rightGap := canvas.NewRectangle(color.Transparent)
+	rightGap.SetMinSize(fyne.NewSize(scrollbarGap, 0))
+	formWithGap := container.NewBorder(nil, nil, nil, rightGap, form)
+	widthSpacer := canvas.NewRectangle(color.Transparent)
+	widthSpacer.SetMinSize(fyne.NewSize(400, 0))
+	scrollContent := container.NewMax(widthSpacer, formWithGap)
+	dialogScroll := container.NewScroll(scrollContent)
+	dialogScroll.SetMinSize(fyne.NewSize(400, 400))
+
+	d := dialog.NewCustomConfirm("Edit Outbound", "Save", "Cancel", dialogScroll, func(ok bool) {
 		if ok {
 			save()
 		}
 	}, parent)
-	d.Resize(fyne.NewSize(420, 520))
+	d.Resize(fyne.NewSize(440, 560))
 	d.Show()
 }
