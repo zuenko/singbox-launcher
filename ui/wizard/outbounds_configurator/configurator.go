@@ -1,5 +1,5 @@
-// Package outbounds_configurator provides the Config Outbounds window for the wizard:
-// list of all outbounds (global + per-source), Edit/Delete/Add, and apply back to ParserConfig.
+// Package outbounds_configurator provides reusable UI for configuring outbounds in the wizard:
+// list of all outbounds (global + per-source), Edit/Delete/Add, and helpers to apply changes back to ParserConfig.
 package outbounds_configurator
 
 import (
@@ -7,14 +7,11 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/core/config"
-	"singbox-launcher/internal/debuglog"
-	wizardbusiness "singbox-launcher/ui/wizard/business"
 )
 
 // outboundRow identifies one outbound in the list (global or per-source).
@@ -122,24 +119,22 @@ func moveOutboundDown(parserConfig *config.ParserConfig, r outboundRow) {
 	}
 }
 
-// Show opens the Config Outbounds window. parserConfig is modified in place; onApply is called with it when the user closes the window.
-func Show(_ fyne.Window, parserConfig *config.ParserConfig, onApply func(*config.ParserConfig)) {
-	debuglog.DebugLog("outbounds_configurator: open")
-	w := fyne.CurrentApp().NewWindow("Config Outbounds")
-	w.Resize(fyne.NewSize(560, 420))
+// NewConfiguratorContent builds a reusable outbounds configurator content for embedding into tabs.
+// parserConfig is modified in place; callers are responsible for serializing and syncing it back.
+func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfig) fyne.CanvasObject {
+	listContent := container.NewVBox()
 
-	var listContent *fyne.Container
 	var refreshList func()
-
 	refreshList = func() {
 		rows := collectRows(parserConfig)
-		items := make([]fyne.CanvasObject, 0, len(rows)+1)
+		items := make([]fyne.CanvasObject, 0, len(rows))
 		for rowIdx, r := range rows {
 			r := r
 			rowIdx := rowIdx
 			label := r.Outbound.Tag + " (" + r.Outbound.Type + ") — " + r.SourceLabel
 			canUp := rowIdx > 0 && sameScope(rows[rowIdx], rows[rowIdx-1])
 			canDown := rowIdx < len(rows)-1 && sameScope(rows[rowIdx], rows[rowIdx+1])
+
 			upBtn := widget.NewButtonWithIcon("", theme.MoveUpIcon(), func() {
 				rowsNow := collectRows(parserConfig)
 				idx := -1
@@ -158,6 +153,7 @@ func Show(_ fyne.Window, parserConfig *config.ParserConfig, onApply func(*config
 			if !canUp {
 				upBtn.Disable()
 			}
+
 			downBtn := widget.NewButtonWithIcon("", theme.MoveDownIcon(), func() {
 				rowsNow := collectRows(parserConfig)
 				idx := -1
@@ -176,6 +172,7 @@ func Show(_ fyne.Window, parserConfig *config.ParserConfig, onApply func(*config
 			if !canDown {
 				downBtn.Disable()
 			}
+
 			editBtn := widget.NewButton("Edit", func() {
 				rowsNow := collectRows(parserConfig)
 				idx := -1
@@ -186,11 +183,12 @@ func Show(_ fyne.Window, parserConfig *config.ParserConfig, onApply func(*config
 					}
 				}
 				tagsForAdd := tagsAbove(rowsNow, idx)
-				ShowEditDialog(w, parserConfig, r.Outbound, r.IsGlobal, r.SourceIndex, tagsForAdd, func(updated *config.OutboundConfig, scopeKind string, sourceIndex int) {
+				ShowEditDialog(parent, parserConfig, r.Outbound, r.IsGlobal, r.SourceIndex, tagsForAdd, func(updated *config.OutboundConfig, scopeKind string, sourceIndex int) {
 					*r.Outbound = *updated
 					refreshList()
 				})
 			})
+
 			delBtn := widget.NewButton("Delete", func() {
 				rowsNow := collectRows(parserConfig)
 				idx := -1
@@ -213,6 +211,7 @@ func Show(_ fyne.Window, parserConfig *config.ParserConfig, onApply func(*config
 				}
 				refreshList()
 			})
+
 			row := container.NewHBox(upBtn, downBtn, widget.NewLabel(label), layout.NewSpacer(), editBtn, delBtn)
 			items = append(items, row)
 		}
@@ -220,12 +219,11 @@ func Show(_ fyne.Window, parserConfig *config.ParserConfig, onApply func(*config
 		listContent.Refresh()
 	}
 
-	listContent = container.NewVBox()
 	refreshList()
 
 	addBtn := widget.NewButton("Add", func() {
 		existingTags := collectAllTags(parserConfig)
-		ShowEditDialog(w, parserConfig, nil, true, -1, existingTags, func(updated *config.OutboundConfig, scopeKind string, sourceIndex int) {
+		ShowEditDialog(parent, parserConfig, nil, true, -1, existingTags, func(updated *config.OutboundConfig, scopeKind string, sourceIndex int) {
 			if scopeKind == "global" || sourceIndex < 0 {
 				parserConfig.ParserConfig.Outbounds = append(parserConfig.ParserConfig.Outbounds, *updated)
 			} else {
@@ -238,27 +236,14 @@ func Show(_ fyne.Window, parserConfig *config.ParserConfig, onApply func(*config
 		})
 	})
 
-	closeBtn := widget.NewButton("Close", func() {
-		serialized, err := wizardbusiness.SerializeParserConfig(parserConfig)
-		if err != nil {
-			dialog.ShowError(err, w)
-			return
-		}
-		debuglog.DebugLog("outbounds_configurator: apply and close, len=%d", len(serialized))
-		w.Close()
-		onApply(parserConfig)
-	})
-
 	scroll := container.NewScroll(listContent)
 	scroll.SetMinSize(fyne.NewSize(0, 280))
+
 	top := container.NewBorder(nil, nil, nil, addBtn, widget.NewLabel("Outbounds (local per source first, then global; lower can use upper in addOutbounds):"))
-	content := container.NewBorder(
+	return container.NewBorder(
 		top,
-		container.NewHBox(closeBtn),
+		nil,
 		nil, nil,
 		scroll,
 	)
-	w.SetContent(content)
-	w.CenterOnScreen()
-	w.Show()
 }
