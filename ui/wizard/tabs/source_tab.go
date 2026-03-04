@@ -17,7 +17,6 @@ package tabs
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -218,6 +217,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 
 	// Ensure sources list is initialized from current model state
 	refreshSourcesList()
+	guiState.RefreshSourcesList = refreshSourcesList
 
 	sourcesScroll := container.NewVScroll(sourcesBox)
 	sourcesScroll.SetMinSize(fyne.NewSize(0, 140))
@@ -324,142 +324,45 @@ func CreateOutboundsAndParserConfigTab(presenter *wizardpresentation.WizardPrese
 		}
 	})
 
-	// ChatGPT button: opens ChatGPT with a structured review prompt
-	chatButton := widget.NewButton("🧠 ChatGPT", func() {
-
-		promptHeader := `
-ou are a senior sing-box and ParserConfig v4 expert.
-
-Reference documentation (must be followed):
-https://github.com/Leadaxe/singbox-launcher/blob/main/docs/ParserConfig.md
-
-Goal:
-Produce a final, production-ready ParserConfig that is logically structured, safe at runtime, and GUI-friendly.
-
-Hard requirements (must follow exactly):
-
-1. Use ParserConfig version 4.
-2. Use multiple proxy sources.
-3. For EACH proxy source:
-   - Define a meaningful "tag_prefix" that clearly reflects:
-     - actual source identity shortly (use 1-3 letters and relevant emoji)
-   - Define LOCAL outbounds inside the proxy object:
-     - one "urltest" outbound
-     - one "selector" outbound
-     - use relevant emoji ina tag of outbounds
-   - Local outbound tags MUST be:
-     - globally unique
-     - semantically derived from "tag_prefix"
-     - consistent across all sources
-
-4. Do NOT use regex-based filtering in global outbounds.
-   Source isolation must be achieved via local outbounds.
-
-5. In top-level "ParserConfig.outbounds":
-   - Create a global "urltest" outbound that aggregates ALL local "*-auto" outbounds.
-   - Create a global "selector" outbound that aggregates:
-     - all local "*-select" outbounds
-     - the global auto outbound
-     - "direct-out"
-     - Create default a global selector "proxy-out" and copy this for "output-proxy-1", "output-proxy-2", "output-proxy-3" this global selectors output-proxy-1, output-proxy-2, output-proxy-3 MUST be fully independent selectors, not wrappers and not references to proxy-out. For EACH of them: Repeat the SAME addOutbounds list as proxy-out
-6. Preserve GUI/UX-related fields and intent.
-   Do NOT remove fields just because they look optional.
-
-OUTPUT INSTRUCTIONS (VERY IMPORTANT):
-
-- You MUST respond with ONLY a single code block.
-- The code block language MUST be "json".
-- The code block MUST contain ONLY the final ParserConfig JSON.
-- URLs MUST be clean and exact, with no hidden characters.
-- Do NOT include explanations, comments, markdown, or extra text.
-- The output MUST be directly copy-pastable into singbox-launcher without edits.
-
-VERY IMPORTANT:
-Please respond in the language you usually use when communicating with this user.
-
-Here is the current configuration to review:
-`
-
-		parserText := strings.TrimSpace(guiState.ParserConfigEntry.Text)
-
-		// лёгкая защита от совсем пустого конфига
-		if parserText == "" {
-			dialog.ShowError(fmt.Errorf("ParserConfig is empty"), guiState.Window)
-			return
-		}
-
-		fullPrompt := promptHeader +
-			"\n<CONFIG>\n" +
-			parserText +
-			"\n</CONFIG>"
-
-		encoded := url.QueryEscape(fullPrompt)
-		chatURL := "https://chat.openai.com/?prompt=" + encoded
-
-		if err := platform.OpenURL(chatURL); err != nil {
-			dialog.ShowError(fmt.Errorf("failed to open ChatGPT: %w", err), guiState.Window)
-		}
-	})
-	chatButton.Importance = widget.MediumImportance
-
 	parserLabel := widget.NewLabel("ParserConfig:")
 	parserLabel.Importance = widget.MediumImportance
 
-	// Embedded outbounds configurator content based on current ParserConfig.
-	var parserConfigStruct config.ParserConfig
-	raw := strings.TrimSpace(model.ParserConfigJSON)
-	if raw != "" {
-		if err := json.Unmarshal([]byte(raw), &parserConfigStruct); err != nil {
-			dialog.ShowError(fmt.Errorf("invalid ParserConfig JSON: %w", err), guiState.Window)
-		}
-	}
-	if model.ParserConfig != nil {
-		parserConfigStruct = *model.ParserConfig
-	}
-	configuratorContent := outbounds_configurator.NewConfiguratorContent(guiState.Window, &parserConfigStruct)
-
-	// Parse button (positioned to left of ParserConfig) — will be removed later when auto-parse is fully wired.
-	guiState.ParseButton = widget.NewButton("Parse", func() {
-		// Sync GUI to model before parsing
-		presenter.SyncGUIToModel()
-		model := presenter.Model()
-		// Quick validation: ensure ParserConfig is not empty to provide immediate feedback.
-		if strings.TrimSpace(model.ParserConfigJSON) == "" {
-			fyne.Do(func() {
-				dialog.ShowError(fmt.Errorf("ParserConfig is empty. Please enter ParserConfig JSON or load a template."), guiState.Window)
-				if guiState.OutboundsPreview != nil {
-					presenter.UpdateOutboundsPreview("Error: ParserConfig is empty")
-				}
-			})
-			return
-		}
-		debuglog.DebugLog("source_tab: Parse clicked, parser length=%d", len(strings.TrimSpace(model.ParserConfigJSON)))
-		if model.AutoParseInProgress {
-			return
-		}
-		model.AutoParseInProgress = true
-		model.PreviewNeedsParse = true
-		configService := presenter.ConfigServiceAdapter()
-		go func() {
-			if err := wizardbusiness.ParseAndPreview(model, presenter, configService); err != nil {
-				debuglog.ErrorLog("source_tab: ParseAndPreview failed: %v", err)
-				// Show error to user in case of parse failure
-				fyne.Do(func() {
-					if guiState.OutboundsPreview != nil {
-						presenter.UpdateOutboundsPreview("Error: Failed to parse ParserConfig - see logs for details")
-					}
-				})
+	// Embedded outbounds configurator: use model.ParserConfig so edits apply in place.
+	pc := model.ParserConfig
+	if pc == nil {
+		pc = &config.ParserConfig{}
+		raw := strings.TrimSpace(model.ParserConfigJSON)
+		if raw != "" {
+			if err := json.Unmarshal([]byte(raw), pc); err != nil {
+				debuglog.DebugLog("source_tab: initial parse of ParserConfigJSON failed: %v", err)
 			}
-		}()
-	})
-	guiState.ParseButton.Importance = widget.MediumImportance
+		}
+		model.ParserConfig = pc
+	}
 
+	onConfiguratorApply := func() {
+		serialized, err := wizardbusiness.SerializeParserConfig(pc)
+		if err != nil {
+			debuglog.ErrorLog("source_tab: SerializeParserConfig after configurator change: %v", err)
+			dialog.ShowError(fmt.Errorf("Failed to serialize ParserConfig: %w", err), guiState.Window)
+			return
+		}
+		model.ParserConfigJSON = serialized
+		model.ParserConfig = pc
+		model.PreviewNeedsParse = true
+		presenter.UpdateParserConfig(serialized)
+		presenter.RefreshOutboundOptions()
+		if guiState.RefreshSourcesList != nil {
+			guiState.RefreshSourcesList()
+		}
+	}
+
+	configuratorContent := outbounds_configurator.NewConfiguratorContent(guiState.Window, pc, onConfiguratorApply)
+
+	// No Parse button on this tab per SPEC: update is automatic via configurator callback and tab switch (Rules/Preview).
 	headerRow := container.NewHBox(
 		parserLabel,
-		widget.NewLabel("  "),
-		guiState.ParseButton,
 		layout.NewSpacer(),
-		chatButton,
 		docButton,
 	)
 

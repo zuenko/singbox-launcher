@@ -258,11 +258,11 @@ func initializeWizardContent(presenter *wizardpresentation.WizardPresenter, guiS
 // createWizardTabs создает табы визарда.
 // Возвращает контейнер табов и ссылки на Rules и Preview табы.
 func createWizardTabs(presenter *wizardpresentation.WizardPresenter, guiState *wizardpresentation.GUIState) (*container.AppTabs, *container.TabItem, *container.TabItem) {
-	// Create first two tabs: Sources and Outbounds and ParserConfig
+	// Create first two tabs: Sources and Outbounds
 	sourcesTab := wizardtabs.CreateSourcesTab(presenter)
 	sourcesTabItem := container.NewTabItem("Sources", sourcesTab)
 	outboundsTab := wizardtabs.CreateOutboundsAndParserConfigTab(presenter)
-	outboundsTabItem := container.NewTabItem("Outbounds and ParserConfig", outboundsTab)
+	outboundsTabItem := container.NewTabItem("Outbounds", outboundsTab)
 
 	tabs := container.NewAppTabs(sourcesTabItem, outboundsTabItem)
 	guiState.Tabs = tabs
@@ -422,18 +422,28 @@ func setupTabChangeHandler(presenter *wizardpresentation.WizardPresenter, guiSta
 	// Initialize button container
 	updateNavigationButtons(guiState, tabs, *currentTabIndex)
 
+	var previousTabIndex int = -1
+
 	// Update buttons when switching tabs
 	tabs.OnChanged = func(item *container.TabItem) {
 		// Sync GUI to model before switching
 		presenter.SyncGUIToModel()
 
 		// Update current tab index
+		var newIndex int
 		for i, tabItem := range tabs.Items {
 			if tabItem == item {
+				newIndex = i
 				*currentTabIndex = i
 				break
 			}
 		}
+
+		// When leaving Outbounds tab: validate JSON, apply or revert
+		if previousTabIndex >= 0 && previousTabIndex < len(tabs.Items) && tabs.Items[previousTabIndex].Text == "Outbounds" {
+			presenter.ValidateAndApplyParserConfigFromEntry()
+		}
+		previousTabIndex = newIndex
 
 		// Handle tab-specific actions
 		if item == rulesTabItem {

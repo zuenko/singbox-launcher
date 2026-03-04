@@ -78,6 +78,12 @@ type GUIState struct {
 	ButtonsContainer fyne.CanvasObject
 	Tabs             *container.AppTabs
 
+	// Optional refresh for Sources list (set by CreateSourcesTab); called from SyncModelToGUI.
+	RefreshSourcesList func()
+
+	// Last valid ParserConfig JSON for revert on validation error (e.g. on tab switch from Outbounds tab).
+	LastValidParserConfigJSON string
+
 	// UI-флаги состояния операций
 	CheckURLInProgress       bool
 	CheckURLTimer            *time.Timer

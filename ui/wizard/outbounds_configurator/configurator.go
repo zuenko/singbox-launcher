@@ -3,9 +3,11 @@
 package outbounds_configurator
 
 import (
+	"image/color"
 	"strconv"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
@@ -120,8 +122,8 @@ func moveOutboundDown(parserConfig *config.ParserConfig, r outboundRow) {
 }
 
 // NewConfiguratorContent builds a reusable outbounds configurator content for embedding into tabs.
-// parserConfig is modified in place; callers are responsible for serializing and syncing it back.
-func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfig) fyne.CanvasObject {
+// parserConfig is modified in place. onApply is called after each mutation (Edit/Add/Delete/Up/Down) so the caller can serialize and sync.
+func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfig, onApply func()) fyne.CanvasObject {
 	listContent := container.NewVBox()
 
 	var refreshList func()
@@ -132,10 +134,14 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 			r := r
 			rowIdx := rowIdx
 			label := r.Outbound.Tag + " (" + r.Outbound.Type + ") — " + r.SourceLabel
+			const maxLabelLen = 56
+			if len(label) > maxLabelLen {
+				label = label[:maxLabelLen-3] + "..."
+			}
 			canUp := rowIdx > 0 && sameScope(rows[rowIdx], rows[rowIdx-1])
 			canDown := rowIdx < len(rows)-1 && sameScope(rows[rowIdx], rows[rowIdx+1])
 
-			upBtn := widget.NewButtonWithIcon("", theme.MoveUpIcon(), func() {
+			upBtn := widget.NewButton("↑", func() {
 				rowsNow := collectRows(parserConfig)
 				idx := -1
 				for i := range rowsNow {
@@ -149,12 +155,15 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 				}
 				moveOutboundUp(parserConfig, rowsNow[idx])
 				refreshList()
+				if onApply != nil {
+					onApply()
+				}
 			})
 			if !canUp {
 				upBtn.Disable()
 			}
 
-			downBtn := widget.NewButtonWithIcon("", theme.MoveDownIcon(), func() {
+			downBtn := widget.NewButton("↓", func() {
 				rowsNow := collectRows(parserConfig)
 				idx := -1
 				for i := range rowsNow {
@@ -168,12 +177,15 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 				}
 				moveOutboundDown(parserConfig, rowsNow[idx])
 				refreshList()
+				if onApply != nil {
+					onApply()
+				}
 			})
 			if !canDown {
 				downBtn.Disable()
 			}
 
-			editBtn := widget.NewButton("Edit", func() {
+			editBtn := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() {
 				rowsNow := collectRows(parserConfig)
 				idx := -1
 				for i := range rowsNow {
@@ -186,10 +198,13 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 				ShowEditDialog(parent, parserConfig, r.Outbound, r.IsGlobal, r.SourceIndex, tagsForAdd, func(updated *config.OutboundConfig, scopeKind string, sourceIndex int) {
 					*r.Outbound = *updated
 					refreshList()
+					if onApply != nil {
+						onApply()
+					}
 				})
 			})
 
-			delBtn := widget.NewButton("Delete", func() {
+			delBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
 				rowsNow := collectRows(parserConfig)
 				idx := -1
 				for i := range rowsNow {
@@ -210,9 +225,17 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 					prox.Outbounds = append(prox.Outbounds[:r2.IndexInSlice], prox.Outbounds[r2.IndexInSlice+1:]...)
 				}
 				refreshList()
+				if onApply != nil {
+					onApply()
+				}
 			})
 
-			row := container.NewHBox(upBtn, downBtn, widget.NewLabel(label), layout.NewSpacer(), editBtn, delBtn)
+			// Add fixed 30px transparent padding on the right inside the row,
+			// so scrollbar has its own visual strip without increasing label width.
+			rightPadding := canvas.NewRectangle(color.Transparent)
+			rightPadding.SetMinSize(fyne.NewSize(10, 0))
+
+			row := container.NewHBox(upBtn, downBtn, widget.NewLabel(label), layout.NewSpacer(), editBtn, delBtn, rightPadding)
 			items = append(items, row)
 		}
 		listContent.Objects = items
@@ -233,13 +256,16 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 				parserConfig.ParserConfig.Proxies[sourceIndex].Outbounds = append(parserConfig.ParserConfig.Proxies[sourceIndex].Outbounds, *updated)
 			}
 			refreshList()
+			if onApply != nil {
+				onApply()
+			}
 		})
 	})
 
 	scroll := container.NewScroll(listContent)
 	scroll.SetMinSize(fyne.NewSize(0, 280))
 
-	top := container.NewBorder(nil, nil, nil, addBtn, widget.NewLabel("Outbounds (local per source first, then global; lower can use upper in addOutbounds):"))
+	top := container.NewBorder(nil, nil, nil, addBtn, widget.NewLabel("Outbounds:"))
 	return container.NewBorder(
 		top,
 		nil,

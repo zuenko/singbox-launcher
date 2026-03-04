@@ -1,4 +1,5 @@
 // edit_dialog.go provides the Add/Edit outbound dialog for the configurator.
+// The dialog is shown as a separate window (like the Add Rule dialog).
 package outbounds_configurator
 
 import (
@@ -12,13 +13,14 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/core/config"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 )
 
-// ShowEditDialog opens a modal to add or edit an outbound. existing may be nil for add.
+// ShowEditDialog opens a separate window to add or edit an outbound. existing may be nil for add.
 // onSave is called with the new config, scopeKind ("global" or "source") and sourceIndex (when scope is source).
 func ShowEditDialog(
 	parent fyne.Window,
@@ -30,6 +32,10 @@ func ShowEditDialog(
 	onSave func(updated *config.OutboundConfig, scopeKind string, sourceIndex int),
 ) {
 	isAdd := existing == nil
+	dialogTitle := "Edit Outbound"
+	if isAdd {
+		dialogTitle = "Add Outbound"
+	}
 
 	tagEntry := widget.NewEntry()
 	if existing != nil {
@@ -139,10 +145,11 @@ func ShowEditDialog(
 		}
 	}
 
+	var dialogWin fyne.Window
 	save := func() {
 		tag := strings.TrimSpace(tagEntry.Text)
 		if tag == "" {
-			dialog.ShowError(fmt.Errorf("tag is required"), parent)
+			dialog.ShowError(fmt.Errorf("tag is required"), dialogWin)
 			return
 		}
 		obType := "selector"
@@ -209,6 +216,9 @@ func ShowEditDialog(
 			cfg.Wizard = wizardbusiness.CloneOutbound(existing).Wizard
 		}
 		onSave(cfg, scopeKind, idx)
+		if dialogWin != nil {
+			dialogWin.Close()
+		}
 	}
 
 	otherTagsBox := container.NewVBox()
@@ -246,11 +256,33 @@ func ShowEditDialog(
 	dialogScroll := container.NewScroll(scrollContent)
 	dialogScroll.SetMinSize(fyne.NewSize(400, 400))
 
-	d := dialog.NewCustomConfirm("Edit Outbound", "Save", "Cancel", dialogScroll, func(ok bool) {
-		if ok {
-			save()
+	cancelBtn := widget.NewButton("Cancel", func() {
+		if dialogWin != nil {
+			dialogWin.Close()
 		}
-	}, parent)
-	d.Resize(fyne.NewSize(440, 560))
-	d.Show()
+	})
+	saveBtn := widget.NewButton("Save", func() { save() })
+
+	buttonsContainer := container.NewHBox(
+		layout.NewSpacer(),
+		cancelBtn,
+		saveBtn,
+	)
+	mainContent := container.NewBorder(
+		nil,
+		buttonsContainer,
+		nil,
+		nil,
+		dialogScroll,
+	)
+
+	app := fyne.CurrentApp()
+	if app == nil {
+		return
+	}
+	dialogWin = app.NewWindow(dialogTitle)
+	dialogWin.Resize(fyne.NewSize(440, 560))
+	dialogWin.CenterOnScreen()
+	dialogWin.SetContent(mainContent)
+	dialogWin.Show()
 }
