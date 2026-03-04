@@ -18,6 +18,7 @@
 - **Ping test concurrency (Clash API)** — The `test` button on the Servers tab now pings proxies in parallel with a limited number of concurrent requests (20 by default), making full-list ping tests noticeably faster while keeping Clash API load under control. Errors from these tests are also reflected in Ping button tooltips.
 - **Ping test endpoints & pinning (Clash API)** — Ping delay endpoint is now configurable from the UI (GStatic, Google, Gosuslugi, YaStatic, or a custom URL). In the proxy list, `direct-out` (if present) and the currently active proxy are always pinned to the top, regardless of sort order.
 - **Config:** `getConfigJSON` outputs trailing commas for all config readers. Windows TUN: removed netsh cleanup on stop (interfaces close normally).
+- **Config wizard — Outbounds tab:** Second tab renamed to "Outbounds". Parse and ChatGPT buttons removed; ParserConfig updates automatically when editing outbounds or switching to Rules/Preview. Add/Edit outbound opens in a separate window (like Add Rule). Edit/Del buttons have icons; Up/Down use ASCII ↑/↓. List has a 30px right margin for the scrollbar. Sources list and JSON editor stay in sync; leaving the Outbounds tab validates JSON and reverts on error.
 
 ---
 
@@ -33,3 +34,4 @@
 - **Параллельный Ping test (Clash API)** — кнопка `test` во вкладке Servers теперь пингует прокси параллельно, с ограничением числа одновременных запросов (по умолчанию 20), что заметно ускоряет полную проверку списка и не перегружает Clash API. Ошибки из этих тестов также попадают в tooltip кнопок Ping.
 - **Ping endpoints и закрепление сверху (Clash API)** — endpoint проверки Ping теперь настраивается из UI (GStatic, Google, Gosuslugi, YaStatic или произвольный URL). В списке прокси `direct-out` (если есть) и текущий активный прокси всегда закреплены вверху, независимо от выбранной сортировки.
 - **Конфиг:** `getConfigJSON` выводит trailing commas для всех читателей конфига. Windows TUN: убрана очистка через netsh при остановке (интерфейсы закрываются сами).
+- **Визард конфига — вкладка Outbounds:** Вторая вкладка переименована в «Outbounds». Кнопки Parse и ChatGPT убраны; ParserConfig обновляется автоматически при правке outbounds и при переходе на Rules/Preview. Добавление и редактирование outbound открываются в отдельном окне (как добавление правила). У кнопок Edit/Del — иконки, у ↑/↓ — ASCII-символы. Справа в списке — отступ 30px под полосу прокрутки. Список Sources и редактор JSON синхронизированы; при уходе с вкладки Outbounds выполняется проверка JSON с откатом при ошибке.

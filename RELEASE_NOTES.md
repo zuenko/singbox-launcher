@@ -21,6 +21,7 @@
 - **Logging:** Default log level is now build-based (release = Warn, dev = Verbose). Removed `SINGBOX_DEBUG` env var. API log level follows global level; `logFile` param removed from API methods. Less noise: core version and stability timer are cached.
 - **Diagnostics log viewer:** New Logs window from the Diagnostics tab with three tabs: Internal (live app logs via sink), Core (tail of `logs/sing-box.log` with auto-refresh every 5 seconds), and API (live Clash API requests). Supports level filters on Internal/API and shows newest entries at the top.
 - **Config:** `getConfigJSON` outputs trailing commas for all config readers. Windows TUN: removed netsh cleanup on stop (interfaces close normally).
+- **Config wizard — Outbounds tab:** Second tab renamed to "Outbounds". Parse and ChatGPT buttons removed; ParserConfig updates automatically when editing outbounds or switching to Rules/Preview. Add/Edit outbound opens in a separate window (like Add Rule). Edit/Del buttons have icons; Up/Down use ASCII ↑/↓. List has a 30px right margin for the scrollbar. Sources list and JSON editor stay in sync; leaving the Outbounds tab validates JSON and reverts on error.
 
 </details>
 
@@ -34,6 +35,7 @@
 - **Логирование:** Уровень логов по умолчанию зависит от сборки (release = Warn, dev = Verbose). Убрана переменная `SINGBOX_DEBUG`. Уровень api.log следует глобальному; параметр `logFile` убран из методов API. Меньше шума: кэшируются версия ядра и таймер стабильности.
 - **Окно логов Diagnostics:** Новое окно Logs с вкладки Diagnostics: три вкладки — Internal (живые логи лаунчера через sink), Core (хвост `logs/sing-box.log` с автообновлением раз в 5 секунд) и API (живые запросы Clash API). Поддерживаются фильтры по уровню на Internal/API, новые записи отображаются сверху.
 - **Конфиг:** `getConfigJSON` выводит trailing commas для всех читателей конфига. Windows TUN: убрана очистка через netsh при остановке (интерфейсы закрываются сами).
+- **Визард конфига — вкладка Outbounds:** Вторая вкладка переименована в «Outbounds». Кнопки Parse и ChatGPT убраны; ParserConfig обновляется автоматически при правке outbounds и при переходе на Rules/Preview. Добавление и редактирование outbound открываются в отдельном окне (как добавление правила). У кнопок Edit/Del — иконки, у ↑/↓ — ASCII-символы. Справа в списке — отступ 30px под полосу прокрутки. Список Sources и редактор JSON синхронизированы; при уходе с вкладки Outbounds выполняется проверка JSON с откатом при ошибке.
 
 </details>
 
