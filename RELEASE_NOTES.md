@@ -2,6 +2,32 @@
 
 ## Последний релиз / Latest release
 
+**v0.8.2** — полное описание (full details): [docs/release_notes/0-8-2.md](docs/release_notes/0-8-2.md)
+
+<details>
+<summary><b>🇷🇺 Кратко (v0.8.2)</b></summary>
+
+- Единый диалог «загрузка не удалась» для sing-box, wintun, шаблона, SRS
+- Локальное скачивание SRS в `bin/rule-sets/`; кнопка SRS во вкладке Rules
+- Windows: стабильнее start/stop (AttachConsole + taskkill)
+- Логи: уровень по сборке (release = Warn); окно логов Diagnostics (Internal, Core, API)
+- Clash API: ошибки Ping в tooltip; параллельный test; настраиваемый endpoint; закрепление direct-out и активного прокси
+- Визард: вкладка Outbounds, Edit Outbound (Settings + Raw), Save без сети и Update в фоне, статус при сохранении, пустое поле URL при загрузке, префиксы по умолчанию, копирование источника по клику
+
+</details>
+
+<details>
+<summary><b>🇬🇧 Summary (v0.8.2)</b></summary>
+
+- Unified “download failed” dialog for sing-box, wintun, template, SRS
+- SRS local download to `bin/rule-sets/`; SRS button in Rules tab
+- Windows: more stable start/stop (AttachConsole + taskkill)
+- Logging: build-based level (release = Warn); Diagnostics log viewer (Internal, Core, API)
+- Clash API: Ping errors in tooltip; parallel test; configurable endpoint; pin direct-out and active proxy
+- Wizard: Outbounds tab, Edit Outbound (Settings + Raw), Save without network and background Update, save status, empty URL field on load, default prefixes, copy source on click
+
+</details>
+
 **v0.8.1** — полное описание (full details): [docs/release_notes/0-8-1.md](docs/release_notes/0-8-1.md)
 
 **v0.8.0** — полное описание (full details): [docs/release_notes/0-8-0.md](docs/release_notes/0-8-0.md)
@@ -9,62 +35,6 @@
 <details>
 <summary><b>Что не вошло в релиз / Not yet released</b></summary>
 
-Изменения после v0.8.1 (changes since v0.8.1): [upcoming.md](docs/release_notes/upcoming.md)
-
-<details>
-<summary><b>🇬🇧 English (upcoming)</b></summary>
-
-### Highlights
-- **Unified “download failed” dialog** — When download of sing-box, wintun.dll, config template, or SRS fails, one dialog is shown: short message, “Open download page” link with a copy-URL button, “Open folder”, and “Close”. Same behavior for all resources.
-- **SRS local download** — Rule-set files (SRS) from `raw.githubusercontent.com` are now downloaded locally to `bin/rule-sets/`. SRS button (⬇/🔄/✔️) in Rules tab; tooltip on hover shows original URL from template. Removed `go-any-way-githubusercontent` outbound and `download_detour`/`update_interval` from rule_set.
-- **Windows:** Start/stop is more stable. Graceful stop via console (AttachConsole + CTRL_BREAK) when the core has a console; fallback to taskkill. taskkill tries without `/F` first, then with `/F` on error (same for Kill by name in Help tab). Fewer crashes and WinTun issues on restart.
-- **Logging:** Default log level is now build-based (release = Warn, dev = Verbose). Removed `SINGBOX_DEBUG` env var. API log level follows global level; `logFile` param removed from API methods. Less noise: core version and stability timer are cached.
-- **Diagnostics log viewer:** New Logs window from the Diagnostics tab with three tabs: Internal (live app logs via sink), Core (tail of `logs/sing-box.log` with auto-refresh every 5 seconds), and API (live Clash API requests). Supports level filters on Internal/API and shows newest entries at the top.
-- **Config:** `getConfigJSON` outputs trailing commas for all config readers. Windows TUN: removed netsh cleanup on stop (interfaces close normally).
-- **Config wizard — Outbounds tab:** Second tab renamed to "Outbounds". Parse and ChatGPT buttons removed; ParserConfig updates automatically when editing outbounds or switching to Rules/Preview. Add/Edit outbound opens in a separate window (like Add Rule). Edit/Del buttons have icons; Up/Down use ASCII ↑/↓. List has a 30px right margin for the scrollbar. Sources list and JSON editor stay in sync; leaving the Outbounds tab validates JSON and reverts on error.
-- **Config wizard — Edit Outbound:** Add/Edit outbound dialog now has two tabs: **Settings** (form as before) and **Raw** (editable JSON of the outbound). Scope is still chosen on the form; saving from Raw parses JSON and validates tag.
-- **Config wizard — Save without network:** Save no longer waits for outbounds parsing. It writes the current model state (existing generated outbounds or empty) to disk immediately, so saving works offline. After a successful save, config update from subscriptions (same as the main tab’s Update button) is triggered in the background.
-- **Config wizard — Save UX:** Progress bar stays at 5% during any wait (no 5–10% cycle). Status label left of Prev shows current step (Building config…, Saving file…, Validating…, Saving state…, Done). Save button remains visible on the last tab during parsing; if the user clicks Save while parsing is in progress elsewhere, the save flow no longer blocks on it.
-
-</details>
-
-<details>
-<summary><b>🇷🇺 Русская версия (upcoming)</b></summary>
-
-### Основное
-- **Единый диалог «загрузка не удалась»** — при ошибке загрузки sing-box, wintun.dll, шаблона конфига или SRS показывается один диалог: короткое сообщение, ссылка «Open download page» с кнопкой копирования URL, «Open folder» и «Close». Одинаковое поведение для всех ресурсов.
-- **Локальное скачивание SRS** — rule-set файлы с `raw.githubusercontent.com` скачиваются локально в `bin/rule-sets/`. Кнопка SRS (⬇/🔄/✔️) во вкладке Rules; при наведении — tooltip с оригинальным URL из шаблона. Удалены outbound `go-any-way-githubusercontent` и `download_detour`/`update_interval` из rule_set.
-- **Windows:** Запуск и остановка работают стабильнее. Мягкая остановка по консоли (AttachConsole + CTRL_BREAK), при необходимости — fallback на taskkill. taskkill сначала без `/F`, при ошибке — с `/F` (так же для Kill по имени во вкладке Help). Меньше крашей и проблем с WinTun при перезапуске.
-- **Логирование:** Уровень логов по умолчанию зависит от сборки (release = Warn, dev = Verbose). Убрана переменная `SINGBOX_DEBUG`. Уровень api.log следует глобальному; параметр `logFile` убран из методов API. Меньше шума: кэшируются версия ядра и таймер стабильности.
-- **Окно логов Diagnostics:** Новое окно Logs с вкладки Diagnostics: три вкладки — Internal (живые логи лаунчера через sink), Core (хвост `logs/sing-box.log` с автообновлением раз в 5 секунд) и API (живые запросы Clash API). Поддерживаются фильтры по уровню на Internal/API, новые записи отображаются сверху.
-- **Конфиг:** `getConfigJSON` выводит trailing commas для всех читателей конфига. Windows TUN: убрана очистка через netsh при остановке (интерфейсы закрываются сами).
-- **Визард конфига — вкладка Outbounds:** Вторая вкладка переименована в «Outbounds». Кнопки Parse и ChatGPT убраны; ParserConfig обновляется автоматически при правке outbounds и при переходе на Rules/Preview. Добавление и редактирование outbound открываются в отдельном окне (как добавление правила). У кнопок Edit/Del — иконки, у ↑/↓ — ASCII-символы. Справа в списке — отступ 30px под полосу прокрутки. Список Sources и редактор JSON синхронизированы; при уходе с вкладки Outbounds выполняется проверка JSON с откатом при ошибке.
-- **Визард конфига — диалог Edit Outbound:** В диалоге добавления/редактирования outbound две вкладки: **Settings** (форма как раньше) и **Raw** (редактируемый JSON outbound). Scope по-прежнему выбирается в форме; сохранение из Raw парсит JSON и проверяет tag.
-- **Визард конфига — сохранение без сети:** Save больше не ждёт парсинг outbounds. На диск сразу пишется текущее состояние модели (уже сгенерированные outbounds или пусто), поэтому сохранение возможно без интернета. После успешного Save в фоне запускается обновление конфига из подписок (то же, что кнопка Update на главной вкладке).
-- **Визард конфига — UX сохранения:** Прогресс-бар при ожидании остаётся на 5% (без цикла 5–10%). Слева от кнопки Prev показывается статус текущего шага (Building config…, Saving file…, Validating…, Saving state…, Done). Кнопка Save на последней вкладке не скрывается во время парсинга; при нажатии Save во время парсинга сохранение больше не блокируется ожиданием парсинга.
-
-</details>
-
-</details>
-
----
-
-<details>
-<summary><b>🇬🇧 English (v0.8.1)</b></summary>
-
-### Highlights
-- **Fix** — Config no longer corrupted after "Update" or timer refresh ([#31](https://github.com/Leadaxe/singbox-launcher/issues/31)).
-- **macOS TUN** — privileged launch path for TUN on macOS; optional system helper for reliable TUN when running without full admin rights.
-- **Refactoring** — `core/config/generator.go` → `outbound_generator.go`, `ui/wizard/business/generator.go` → `create_config.go`; simplified outbounds assembly (dynamic between @ParserSTART/@ParserEND + static, comma only when both present).
-
-</details>
-
-<details>
-<summary><b>🇷🇺 Русская версия (v0.8.1)</b></summary>
-
-### Основное
-- **Исправление** — конфиг больше не портится после «Обновить» или обновления по таймеру ([#31](https://github.com/Leadaxe/singbox-launcher/issues/31)).
-- **TUN на macOS** — привилегированный запуск для TUN на macOS; опциональный системный хелпер для стабильной работы TUN без полных прав администратора.
-- **Рефакторинг** — переименование генераторов: `core/config/generator.go` → `outbound_generator.go`, `ui/wizard/business/generator.go` → `create_config.go`; упрощённая сборка outbounds (динамические между @ParserSTART/@ParserEND и статические, запятая только при наличии обоих блоков).
+Черновик следующего релиза (draft): [upcoming.md](docs/release_notes/upcoming.md)
 
 </details>
