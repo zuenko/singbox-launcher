@@ -300,25 +300,25 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 
 			var freeVPNDialog dialog.Dialog
 			applyButton := widget.NewButton("Apply configuration", func() {
-				// Load state using the same logic as LoadState
-				if err := presenter.LoadState(stateFile); err != nil {
-					debuglog.ErrorLog("Failed to load state from get_free.json: %v", err)
-					dialog.ShowError(fmt.Errorf("Не удалось применить конфигурацию:\n\n%w", err), guiState.Window)
-					return
-				}
-
-				debuglog.InfoLog("Successfully applied configuration from get_free.json")
-				// Clear URL field and model so links from get_free do not remain (SyncModelToGUI would refill from model otherwise)
-				presenter.Model().SourceURLs = ""
-				if guiState.SourceURLEntry != nil {
-					guiState.SourceURLEntry.SetText("")
-				}
-				dialog.ShowInformation("Success", "Configuration from get_free.json has been applied successfully!", guiState.Window)
-
-				// Close the dialog
-				if freeVPNDialog != nil {
-					freeVPNDialog.Hide()
-				}
+				dialog.ShowConfirm("Apply configuration", "Applying this configuration will replace your current sources and rules. Continue?", func(confirmed bool) {
+					if !confirmed {
+						return
+					}
+					if err := presenter.LoadState(stateFile); err != nil {
+						debuglog.ErrorLog("Failed to load state from get_free.json: %v", err)
+						dialog.ShowError(fmt.Errorf("Failed to apply configuration:\n\n%w", err), guiState.Window)
+						return
+					}
+					debuglog.InfoLog("Successfully applied configuration from get_free.json")
+					presenter.Model().SourceURLs = ""
+					if guiState.SourceURLEntry != nil {
+						guiState.SourceURLEntry.SetText("")
+					}
+					dialog.ShowInformation("Success", "Configuration from get_free.json has been applied successfully!", guiState.Window)
+					if freeVPNDialog != nil {
+						freeVPNDialog.Hide()
+					}
+				}, guiState.Window)
 			})
 
 			spacer := canvas.NewRectangle(color.Transparent)
