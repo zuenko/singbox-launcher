@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/core/config"
+	wizardmodels "singbox-launcher/ui/wizard/models"
 )
 
 // OutboundEditPresenter is used to register the Edit/Add window with the wizard overlay (single instance, focus redirect).
@@ -22,6 +23,7 @@ type OutboundEditPresenter interface {
 	SetOutboundEditWindow(fyne.Window)
 	ClearOutboundEditWindow()
 	UpdateChildOverlay()
+	Model() *wizardmodels.WizardModel
 }
 
 // outboundRow identifies one outbound in the list (global or per-source).

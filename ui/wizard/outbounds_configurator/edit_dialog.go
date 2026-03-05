@@ -18,6 +18,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/core/config"
+	"singbox-launcher/internal/platform"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 )
 
@@ -180,6 +181,26 @@ func ShowEditDialog(
 	rawScroll := container.NewScroll(rawEntry)
 	rawScroll.SetMinSize(fyne.NewSize(400, 360))
 
+	// Raw documentation button (opens ParserConfig.md "Секция outbounds")
+	rawDocButton := widget.NewButton("📖 Documentation", func() {
+		docURL := "https://github.com/Leadaxe/singbox-launcher/blob/main/docs/ParserConfig.md#%D1%81%D0%B5%D0%BA%D1%86%D0%B8%D1%8F-outbounds"
+		if err := platform.OpenURL(docURL); err != nil {
+			dialog.ShowError(fmt.Errorf("failed to open documentation: %w", err), parent)
+		}
+	})
+	rawHeader := container.NewHBox(
+		widget.NewLabel("Raw outbound JSON"),
+		layout.NewSpacer(),
+		rawDocButton,
+	)
+	rawContainer := container.NewBorder(
+		rawHeader,
+		nil,
+		nil,
+		nil,
+		rawScroll,
+	)
+
 	var currentTab string = "settings"
 
 	var dialogWin fyne.Window
@@ -197,37 +218,28 @@ func ShowEditDialog(
 		}
 		return scopeKind, idx
 	}
-	save := func() {
+	// buildConfigForPreview builds a config.OutboundConfig snapshot based on current UI state.
+	// It is used by the Preview tab; errors are returned to be shown inline.
+	buildConfigForPreview := func() (*config.OutboundConfig, error) {
 		if currentTab == "raw" {
 			var cfg config.OutboundConfig
 			if err := json.Unmarshal([]byte(rawEntry.Text), &cfg); err != nil {
-				dialog.ShowError(fmt.Errorf("invalid JSON: %w", err), dialogWin)
-				return
+				return nil, fmt.Errorf("invalid outbound JSON: %w", err)
 			}
 			if strings.TrimSpace(cfg.Tag) == "" {
-				dialog.ShowError(fmt.Errorf("tag is required"), dialogWin)
-				return
+				return nil, fmt.Errorf("tag is required")
 			}
-			scopeKind, idx := getScopeFromForm()
-			if existing != nil && existing.Wizard != nil {
-				cfg.Wizard = wizardbusiness.CloneOutbound(existing).Wizard
-			}
-			onSave(&cfg, scopeKind, idx)
-			if dialogWin != nil {
-				dialogWin.Close()
-			}
-			return
+			return &cfg, nil
 		}
+
 		tag := strings.TrimSpace(tagEntry.Text)
 		if tag == "" {
-			dialog.ShowError(fmt.Errorf("tag is required"), dialogWin)
-			return
+			return nil, fmt.Errorf("tag is required")
 		}
 		obType := "selector"
 		if typeSelect.Selected == "auto (urltest)" {
 			obType = "urltest"
 		}
-		scopeKind, idx := getScopeFromForm()
 
 		cfg := &config.OutboundConfig{
 			Tag:     tag,
@@ -272,6 +284,38 @@ func ShowEditDialog(
 		}
 		cfg.AddOutbounds = addOb
 
+		return cfg, nil
+	}
+
+	save := func() {
+		if currentTab == "raw" {
+			var cfg config.OutboundConfig
+			if err := json.Unmarshal([]byte(rawEntry.Text), &cfg); err != nil {
+				dialog.ShowError(fmt.Errorf("invalid JSON: %w", err), dialogWin)
+				return
+			}
+			if strings.TrimSpace(cfg.Tag) == "" {
+				dialog.ShowError(fmt.Errorf("tag is required"), dialogWin)
+				return
+			}
+			scopeKind, idx := getScopeFromForm()
+			if existing != nil && existing.Wizard != nil {
+				cfg.Wizard = wizardbusiness.CloneOutbound(existing).Wizard
+			}
+			onSave(&cfg, scopeKind, idx)
+			if dialogWin != nil {
+				dialogWin.Close()
+			}
+			return
+		}
+
+		cfg, err := buildConfigForPreview()
+		if err != nil {
+			dialog.ShowError(err, dialogWin)
+			return
+		}
+		scopeKind, idx := getScopeFromForm()
+
 		// Preserve wizard if editing
 		if existing != nil && existing.Wizard != nil {
 			cfg.Wizard = wizardbusiness.CloneOutbound(existing).Wizard
@@ -310,14 +354,171 @@ func ShowEditDialog(
 	dialogScroll := container.NewScroll(scrollContent)
 	dialogScroll.SetMinSize(fyne.NewSize(400, 400))
 
+	// Preview tab: uses preview cache from the wizard model (via editPresenter.Model()).
+	previewStatusLabel := widget.NewLabel("Switch to Preview to see nodes for this outbound.")
+	type previewRow struct {
+		text  string
+		color color.Color
+	}
+	var previewRows []previewRow
+	previewList := widget.NewList(
+		func() int { return len(previewRows) },
+		func() fyne.CanvasObject { return canvas.NewText("", color.White) },
+		func(id int, o fyne.CanvasObject) {
+			if id < 0 || id >= len(previewRows) {
+				return
+			}
+			if txt, ok := o.(*canvas.Text); ok {
+				txt.Text = previewRows[id].text
+				txt.Color = previewRows[id].color
+			}
+		},
+	)
+	previewListScroll := container.NewScroll(previewList)
+	previewListScroll.SetMinSize(fyne.NewSize(400, 320))
+	previewContent := container.NewBorder(
+		previewStatusLabel,
+		nil,
+		nil,
+		nil,
+		previewListScroll,
+	)
+
+	buildPreview := func() {
+		previewRows = nil
+		previewList.Refresh()
+
+		if editPresenter == nil {
+			previewStatusLabel.SetText("Preview is not available in this context (no presenter).")
+			return
+		}
+		model := editPresenter.Model()
+		if model == nil {
+			previewStatusLabel.SetText("Preview is not available: wizard model is nil.")
+			return
+		}
+
+		cfg, err := buildConfigForPreview()
+		if err != nil {
+			previewStatusLabel.SetText("Failed to build preview: invalid outbound JSON. Please switch to the \"Raw\" tab and fix JSON first.")
+			return
+		}
+
+		// Ensure preview cache is up to date.
+		errorCount, err := wizardbusiness.RebuildPreviewCache(model)
+		if err != nil {
+			previewStatusLabel.SetText(fmt.Sprintf("Failed to build preview cache: %v", err))
+			return
+		}
+		allNodes := model.PreviewNodes
+		if len(allNodes) == 0 {
+			previewStatusLabel.SetText("No nodes available for preview. Please configure sources and try again.")
+			return
+		}
+
+		// Use core/config helper to get filtered nodes and default tag, consistent with generator logic.
+		filteredNodes, defaultTag := config.PreviewSelectorNodes(allNodes, *cfg)
+		filteredSet := make(map[*config.ParsedNode]bool, len(filteredNodes))
+		for _, n := range filteredNodes {
+			filteredSet[n] = true
+		}
+
+		// Map node pointer to source label using PreviewNodesBySource and ParserConfig.
+		sourceLabels := make(map[*config.ParsedNode]string)
+		if model.ParserConfig != nil && model.PreviewNodesBySource != nil {
+			for si, nodes := range model.PreviewNodesBySource {
+				if si < 0 || si >= len(model.ParserConfig.ParserConfig.Proxies) {
+					continue
+				}
+				proxy := model.ParserConfig.ParserConfig.Proxies[si]
+				label := proxy.Source
+				if label == "" {
+					label = fmt.Sprintf("Source %d", si+1)
+				}
+				if len(label) > 40 {
+					label = label[:37] + "..."
+				}
+				for _, n := range nodes {
+					sourceLabels[n] = label
+				}
+			}
+		}
+
+		// Build rows: default node first, then the rest in original allNodes order.
+		defaultRows := make([]previewRow, 0)
+		otherRows := make([]previewRow, 0, len(allNodes))
+
+		for _, node := range allNodes {
+			inSelector := filteredSet[node]
+			isDefault := inSelector && node.Tag == defaultTag
+
+			src := sourceLabels[node]
+			if src == "" {
+				src = "Unknown source"
+			}
+			text := node.Tag
+			if text == "" {
+				// Fallback formatting when tag is empty.
+				if node.Label != "" {
+					text = node.Label
+				} else if node.Server != "" {
+					text = fmt.Sprintf("%s:%d", node.Server, node.Port)
+				} else {
+					text = node.Scheme
+				}
+			}
+			text = fmt.Sprintf("%s — %s", text, src)
+			if isDefault {
+				text = "[default] " + text
+			}
+
+			var rowColor color.Color
+			switch {
+			case isDefault:
+				rowColor = color.RGBA{R: 0, G: 128, B: 255, A: 255} // blue
+			case inSelector:
+				rowColor = color.RGBA{R: 0, G: 160, B: 0, A: 255} // green
+			default:
+				rowColor = color.RGBA{R: 200, G: 0, B: 0, A: 255} // red
+			}
+
+			row := previewRow{text: text, color: rowColor}
+			if isDefault {
+				defaultRows = append(defaultRows, row)
+			} else {
+				otherRows = append(otherRows, row)
+			}
+		}
+
+		previewRows = append(defaultRows, otherRows...)
+		previewList.Refresh()
+
+		status := fmt.Sprintf("%d node(s) total, %d matched filters", len(allNodes), len(filteredNodes))
+		if defaultTag != "" {
+			status += fmt.Sprintf(", default: %s", defaultTag)
+		}
+		if len(cfg.AddOutbounds) > 0 {
+			status += fmt.Sprintf(" | Also includes: %s", strings.Join(cfg.AddOutbounds, ", "))
+		}
+		if errorCount > 0 {
+			status += fmt.Sprintf(" | ⚠️ %d source error(s)", errorCount)
+		}
+		previewStatusLabel.SetText(status)
+	}
+
 	tabs := container.NewAppTabs(
 		container.NewTabItem("Settings", dialogScroll),
-		container.NewTabItem("Raw", rawScroll),
+		container.NewTabItem("Raw", rawContainer),
+		container.NewTabItem("Preview", previewContent),
 	)
 	tabs.OnSelected = func(t *container.TabItem) {
-		if t.Text == "Raw" {
+		switch t.Text {
+		case "Raw":
 			currentTab = "raw"
-		} else {
+		case "Preview":
+			currentTab = "preview"
+			buildPreview()
+		default:
 			currentTab = "settings"
 		}
 	}

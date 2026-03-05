@@ -35,6 +35,7 @@ import (
 	"singbox-launcher/internal/platform"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizarddialogs "singbox-launcher/ui/wizard/dialogs"
+	wizardmodels "singbox-launcher/ui/wizard/models"
 	"singbox-launcher/ui/wizard/outbounds_configurator"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
 )
@@ -200,6 +201,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 				}
 				model.ParserConfigJSON = serialized
 				model.PreviewNeedsParse = true
+				wizardbusiness.InvalidatePreviewCache(model)
 				presenter.UpdateParserConfig(serialized)
 				presenter.RefreshOutboundOptions()
 			}
@@ -225,6 +227,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 				}
 				model.ParserConfigJSON = serialized
 				model.PreviewNeedsParse = true
+				wizardbusiness.InvalidatePreviewCache(model)
 				presenter.UpdateParserConfig(serialized)
 				presenter.RefreshOutboundOptions()
 				if guiState.RefreshSourcesList != nil {
@@ -278,31 +281,23 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 			return
 		}
 		previewStatusLabel.SetText("Loading...")
-		proxies := model.ParserConfig.ParserConfig.Proxies
-		sources := make([]struct {
-			URL  string
-			Skip []map[string]string
-		}, len(proxies))
-		for i := range proxies {
-			sources[i].URL = proxies[i].Source
-			sources[i].Skip = proxies[i].Skip
-		}
+
 		go func() {
-			var all []*config.ParsedNode
-			var errorCount int
-			for _, s := range sources {
-				nodes, err := fetchAndParseSource(s.URL, s.Skip)
+			errorCount, err := wizardbusiness.RebuildPreviewCache(model)
+			presenter.UpdateUI(func() {
 				if err != nil {
-					debuglog.DebugLog("source_tab: preview fetch %q: %v", s.URL, err)
-					errorCount++
-					continue
+					previewNodes = nil
+					previewList.Refresh()
+					previewStatusLabel.SetText("Error: " + err.Error())
+					return
 				}
-				all = append(all, nodes...)
-			}
-			fyne.Do(func() {
-				previewNodes = all
+				previewNodes = model.PreviewNodes
 				previewList.Refresh()
-				status := fmt.Sprintf("%d server(s) from %d source(s)", len(previewNodes), len(sources))
+				sourcesCount := 0
+				if model.ParserConfig != nil {
+					sourcesCount = len(model.ParserConfig.ParserConfig.Proxies)
+				}
+				status := fmt.Sprintf("%d server(s) from %d source(s)", len(previewNodes), sourcesCount)
 				if errorCount > 0 {
 					status += fmt.Sprintf("  ⚠️ %d error(s)", errorCount)
 				}
@@ -436,7 +431,45 @@ func showSourceServersWindow(presenter *wizardpresentation.WizardPresenter, pare
 	}
 
 	go func() {
-		nodes, err := fetchAndParseSource(sourceURL, skip)
+		var nodes []*config.ParsedNode
+		var err error
+
+		tryCache := func(model *wizardmodels.WizardModel) bool {
+			if model == nil || model.ParserConfig == nil || model.PreviewNodesBySource == nil {
+				return false
+			}
+			for i, ps := range model.ParserConfig.ParserConfig.Proxies {
+				if ps.Source == sourceURL {
+					if nodesForSource, ok := model.PreviewNodesBySource[i]; ok {
+						nodes = nodesForSource
+						return true
+					}
+					break
+				}
+			}
+			return false
+		}
+
+		if presenter != nil {
+			model := presenter.Model()
+			if tryCache(model) {
+				// Use existing cache (e.g. after user clicked Refresh).
+			} else if model != nil {
+				// Cache empty or source not in cache: rebuild so View matches other previews, then use cache.
+				_, cacheErr := wizardbusiness.RebuildPreviewCache(model)
+				if cacheErr != nil {
+					err = cacheErr
+				} else {
+					tryCache(model)
+				}
+			}
+		}
+
+		// Fallback: if cache did not provide nodes (e.g. URL not in ParserConfig), load directly.
+		if nodes == nil && err == nil {
+			nodes, err = fetchAndParseSource(sourceURL, skip)
+		}
+
 		fyne.Do(func() {
 			if err != nil {
 				statusLabel.SetText("Error: " + err.Error())
@@ -530,6 +563,7 @@ func CreateOutboundsAndParserConfigTab(presenter *wizardpresentation.WizardPrese
 		model.ParserConfigJSON = serialized
 		model.ParserConfig = pc
 		model.PreviewNeedsParse = true
+		wizardbusiness.InvalidatePreviewCache(model)
 		presenter.UpdateParserConfig(serialized)
 		presenter.RefreshOutboundOptions()
 		if guiState.RefreshSourcesList != nil {

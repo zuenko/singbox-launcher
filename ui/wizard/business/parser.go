@@ -494,6 +494,7 @@ func updateAndSerializeParserConfig(
 	updater.UpdateParserConfig(serialized)
 	model.ParserConfig = parserConfig
 	model.PreviewNeedsParse = true
+	InvalidatePreviewCache(model)
 	return nil
 }
 

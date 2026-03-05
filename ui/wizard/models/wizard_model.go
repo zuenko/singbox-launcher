@@ -70,6 +70,10 @@ type WizardModel struct {
 	// Template preview текст (кэш для оптимизации)
 	TemplatePreviewText string
 
+	// Preview кеш для распарсенных нод (используется всеми Preview/View, включая вкладку Preview в Edit Outbound)
+	PreviewNodes         []*config.ParsedNode
+	PreviewNodesBySource map[int][]*config.ParsedNode
+
 	// ExecDir — директория исполняемого файла (для путей к SRS и т.д.)
 	ExecDir string
 }

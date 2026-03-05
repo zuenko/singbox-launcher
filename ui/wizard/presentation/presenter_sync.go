@@ -105,6 +105,7 @@ func (p *WizardPresenter) ValidateAndApplyParserConfigFromEntry() {
 	if text == "" {
 		p.model.ParserConfigJSON = ""
 		p.model.ParserConfig = nil
+		wizardbusiness.InvalidatePreviewCache(p.model)
 		p.guiState.LastValidParserConfigJSON = ""
 		return
 	}
@@ -139,4 +140,5 @@ func (p *WizardPresenter) ValidateAndApplyParserConfigFromEntry() {
 		p.guiState.RefreshSourcesList()
 	}
 	p.model.PreviewNeedsParse = true
+	wizardbusiness.InvalidatePreviewCache(p.model)
 }

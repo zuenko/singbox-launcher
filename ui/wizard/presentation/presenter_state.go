@@ -222,6 +222,7 @@ func (p *WizardPresenter) restoreParserConfig(stateFile *wizardmodels.WizardStat
 	}
 
 	p.model.ParserConfig = &stateFile.ParserConfig
+	wizardbusiness.InvalidatePreviewCache(p.model)
 
 	// Сериализуем parser_config в JSON строку
 	parserConfigJSON, err := wizardbusiness.SerializeParserConfig(&stateFile.ParserConfig)

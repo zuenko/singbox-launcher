@@ -805,3 +805,27 @@ func matchesPattern(value, pattern string) bool {
 	// Literal match
 	return value == pattern
 }
+
+// PreviewSelectorNodes returns nodes that match outboundConfig.Filters and the default tag
+// based on outboundConfig.PreferredDefault. It is used by UI layers to build a selector
+// preview that is consistent with the real selector generation logic.
+//
+// allNodes must be the same set of nodes that will be used for selector generation
+// (i.e. result of the same LoadNodesFromSource pipeline that GenerateOutboundsFromParserConfig uses).
+func PreviewSelectorNodes(allNodes []*ParsedNode, outboundConfig OutboundConfig) ([]*ParsedNode, string) {
+	filtered := filterNodesForSelector(allNodes, outboundConfig.Filters)
+
+	defaultTag := ""
+	if len(outboundConfig.PreferredDefault) > 0 {
+		preferredFilter := convertFilterToStringMap(outboundConfig.PreferredDefault)
+		for _, node := range filtered {
+			if matchesFilter(node, preferredFilter) {
+				defaultTag = node.Tag
+				break
+			}
+		}
+	}
+
+	return filtered, defaultTag
+}
+
