@@ -23,12 +23,12 @@ import (
 )
 
 // ShowEditDialog opens a separate window to add or edit an outbound. existing may be nil for add.
+// ParserConfig is taken from the model (editPresenter.Model()) so the dialog always uses current sources.
 // onSave is called with the new config, scopeKind ("global" or "source") and sourceIndex (when scope is source).
-// editPresenter is optional; when set, only one Edit/Add window is allowed and it is registered for overlay/focus.
+// editPresenter is required (Model() is used to get ParserConfig); when set, only one Edit/Add window is allowed.
 func ShowEditDialog(
 	parent fyne.Window,
 	editPresenter OutboundEditPresenter,
-	parserConfig *config.ParserConfig,
 	existing *config.OutboundConfig,
 	isGlobal bool,
 	sourceIndex int,
@@ -40,6 +40,11 @@ func ShowEditDialog(
 			w.RequestFocus()
 			return
 		}
+	}
+	parserConfig := getParserConfig(editPresenter.Model())
+	if parserConfig == nil {
+		dialog.ShowError(fmt.Errorf("ParserConfig is not available"), parent)
+		return
 	}
 	isAdd := existing == nil
 	dialogTitle := "Edit Outbound"
@@ -506,6 +511,57 @@ func ShowEditDialog(
 		previewStatusLabel.SetText(status)
 	}
 
+	// syncRawToForm parses the Raw tab JSON and updates Settings form fields (tag, type, comment, filters, etc.).
+	// Called when user switches from Raw to Settings so the form reflects the raw JSON.
+	syncRawToForm := func() {
+		var cfg config.OutboundConfig
+		if err := json.Unmarshal([]byte(rawEntry.Text), &cfg); err != nil {
+			return // invalid JSON: leave form as is
+		}
+		if strings.TrimSpace(cfg.Tag) == "" {
+			return
+		}
+		tagEntry.SetText(cfg.Tag)
+		if cfg.Type == "urltest" {
+			typeSelect.SetSelected("auto (urltest)")
+		} else {
+			typeSelect.SetSelected("manual (selector)")
+		}
+		commentEntry.SetText(cfg.Comment)
+		filterValEntry.SetText("")
+		if cfg.Filters != nil {
+			if v, ok := cfg.Filters["tag"]; ok {
+				if s, ok := v.(string); ok {
+					filterValEntry.SetText(s)
+				}
+			}
+		}
+		defValEntry.SetText("")
+		if cfg.PreferredDefault != nil {
+			if v, ok := cfg.PreferredDefault["tag"]; ok {
+				if s, ok := v.(string); ok {
+					defValEntry.SetText(s)
+				}
+			}
+		}
+		directCheck.SetChecked(false)
+		rejectCheck.SetChecked(false)
+		for _, c := range otherTagChecks {
+			c.SetChecked(false)
+		}
+		if len(cfg.AddOutbounds) > 0 {
+			for _, t := range cfg.AddOutbounds {
+				if t == "direct-out" {
+					directCheck.SetChecked(true)
+				} else if t == "reject" {
+					rejectCheck.SetChecked(true)
+				} else if c, ok := otherTagsMap[t]; ok {
+					c.SetChecked(true)
+				}
+			}
+		}
+	}
+
 	tabs := container.NewAppTabs(
 		container.NewTabItem("Settings", dialogScroll),
 		container.NewTabItem("Raw", rawContainer),
@@ -520,6 +576,7 @@ func ShowEditDialog(
 			buildPreview()
 		default:
 			currentTab = "settings"
+			syncRawToForm()
 		}
 	}
 

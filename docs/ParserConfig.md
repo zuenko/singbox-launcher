@@ -2,7 +2,7 @@
 
 ## Назначение
 
-Парсер обновляет файл `bin/config.json`, загружая подписки (поддерживаются протоколы: VLESS, VMess, Trojan, Shadowsocks, Hysteria2, SSH), фильтруя и группируя их в селекторы. Результат записывается в секцию между маркерами `/** @ParserSTART */` и `/** @ParserEND */`.
+Парсер обновляет файл `bin/config.json`, загружая подписки (поддерживаются протоколы: VLESS, VMess, Trojan, Shadowsocks, Hysteria2, SSH, WireGuard), фильтруя и группируя их в селекторы. Результат записывается в секции между маркерами `/** @ParserSTART */` и `/** @ParserEND */` (outbounds), а узлы WireGuard — между `/** @ParserSTART_E */` и `/** @ParserEND_E */` (endpoints). Секция **endpoints** (WireGuard) поддерживается в sing-box начиная с версии **1.11**.
 
 ## Версионирование конфигурации
 
@@ -48,7 +48,7 @@
       "proxies": [
         {
           // URL подписки (Base64 или plain-текст)
-          // Поддерживаются: VLESS, VMess, Trojan, Shadowsocks, Hysteria2
+          // Поддерживаются: VLESS, VMess, Trojan, Shadowsocks, Hysteria2, WireGuard
           "source": "https://your-subscription-url.com/subscription",
           
           // Прямые ссылки на прокси-серверы (необязательно)
@@ -59,7 +59,8 @@
             "trojan://password@server.com:443?security=tls&sni=example.com#🇺🇸 United States",
             "hysteria2://password@server.com:443?sni=example.com&insecure=1#🇺🇸 United States",
             "hy2://password@server.com:443?sni=example.com#🇺🇸 United States (short form)",
-            "ssh://root:admin@127.0.0.1:22#Local SSH"
+            "ssh://root:admin@127.0.0.1:22#Local SSH",
+            "wireguard://privatekey@10.0.0.1:51820?publickey=...&address=10.10.10.2/32&allowedips=0.0.0.0/0,::/0#WireGuard VPN"
           ],
           
           // Фильтры для исключения узлов (необязательно)
@@ -187,8 +188,8 @@
 
 | Поле          | Тип      | Обязательное | Описание |
 |---------------|----------|--------------|----------|
-| `source`      | string   | Да           | URL подписки (поддерживаются протоколы: VLESS, VMess, Trojan, Shadowsocks, Hysteria2, SSH). Допускаются Base64 и plain-текст. |
-| `connections` | array    | Нет          | Массив прямых ссылок (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://). Можно комбинировать с подписками. Подробнее о форматах URI см. раздел [Форматы URI для прямых ссылок](#форматы-uri-для-прямых-ссылок). |
+| `source`      | string   | Да           | URL подписки (поддерживаются протоколы: VLESS, VMess, Trojan, Shadowsocks, Hysteria2, SSH, WireGuard). Допускаются Base64 и plain-текст. |
+| `connections` | array    | Нет          | Массив прямых ссылок (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://, wireguard://). Можно комбинировать с подписками. Узлы WireGuard попадают в секцию `endpoints` конфига (требуется sing-box 1.11+). Подробнее о форматах URI см. раздел [Форматы URI для прямых ссылок](#форматы-uri-для-прямых-ссылок). |
 | `skip`        | array    | Нет          | Список фильтров. Если хотя бы один совпал — узел пропускается. |
 | `tag_prefix`  | string   | Нет          | Префикс, добавляемый ко всем тегам узлов из этого источника (версия 4). Применяется перед оригинальным тегом. Поддерживает переменные: `{$tag}`, `{$scheme}`, `{$protocol}`, `{$server}`, `{$port}`, `{$label}`, `{$comment}`, `{$num}`. Игнорируется, если указан `tag_mask`. |
 | `tag_postfix` | string   | Нет          | Постфикс, добавляемый ко всем тегам узлов из этого источника (версия 4). Применяется после оригинального тега. Поддерживает те же переменные, что и `tag_prefix`. Игнорируется, если указан `tag_mask`. |
@@ -552,7 +553,7 @@ migrateV2ToV3() - если версия 2 (или после v1→v2)
      - Скачивается содержимое подписки (поддерживаются Base64 и plain-текст)
      - Декодируется и парсится список прокси-серверов
    - Для каждой прямой ссылки из `proxies[].connections`:
-     - Парсится прямая ссылка (vless://, vmess://, trojan://, ss://, hysteria2:// или hy2://, ssh://) и добавляется в список прокси
+     - Парсится прямая ссылка (vless://, vmess://, trojan://, ss://, hysteria2:// или hy2://, ssh://, wireguard://) и добавляется в список прокси
 
 4. **Поддерживаемые протоколы**
    - ✅ VLESS
@@ -561,6 +562,7 @@ migrateV2ToV3() - если версия 2 (или после v1→v2)
    - ✅ Shadowsocks (SS)
    - ✅ Hysteria2
    - ✅ SSH
+   - ✅ WireGuard (попадает в секцию endpoints; sing-box 1.11+)
 
 ### Форматы URI для прямых ссылок
 
@@ -700,6 +702,22 @@ ssh://user@server.com:22?private_key_path=$HOME/.ssh/id_rsa#Git Server
 ssh://root:password@192.168.1.1:22?private_key_path=/path/to/key&host_key=ecdsa-sha2-nistp256%20AAAA...&client_version=SSH-2.0-OpenSSH_7.4p1#My SSH Server
 ```
 
+#### WireGuard (`wireguard://`)
+Узлы WireGuard записываются в секцию **endpoints** конфига (не в outbounds). Требуется **sing-box 1.11+**.
+
+Формат URI: `wireguard://<PRIVATE_KEY>@<SERVER_IP>:<PORT>?publickey=...&address=...&allowedips=...`
+
+**Обязательные параметры query:** `publickey` (base64), `address` (CIDR, например `10.10.10.2/32`), `allowedips` (CIDR через запятую, например `0.0.0.0/0,::/0`). Спецсимволы в параметрах — URL-encode (`/` → `%2F`, `,` → `%2C`).
+
+**Необязательные:** `mtu` (по умолчанию 1420), `keepalive`, `presharedkey`, `listenport`, `name`, `dns`.
+
+**Пример:**
+```
+wireguard://privatekey-base64@10.0.0.1:51820?publickey=server-pubkey-base64&address=10.10.10.2%2F32&allowedips=0.0.0.0%2F0%2C%3A%3A%2F0&keepalive=25&mtu=1420#My WG
+```
+
+**Детали разбора:** Приватный ключ из userinfo декодируется через URL-decode (PathUnescape). В query-параметрах `publickey` и `presharedkey` символ `+` (в base64) сохраняется при разборе. В сгенерированном endpoint поле `listen_port` добавляется только при ненулевом значении `listenport` в URI.
+
 5. **Извлечение информации**
    - Из каждого URI извлекается:
      - **Тег (tag)**: левая часть комментария до `|` (например, `🇳🇱Нидерланды`)
@@ -712,7 +730,7 @@ ssh://root:password@192.168.1.1:22?private_key_path=/path/to/key&host_key=ecdsa-
    - Узлы с дублирующимися тегами автоматически переименовываются (добавляется суффикс `-2`, `-3` и т.д.)
 
 7. **Генерация JSON узлов**
-   - Узлы сериализуются в JSON (VLESS/VMess/Trojan/SS)
+   - Узлы VLESS/VMess/Trojan/SS/Hysteria2/SSH сериализуются в outbounds; узлы WireGuard — в endpoints (sing-box 1.11+)
    - Комментарии выводятся из `label`
    - Порядок полей оптимизирован для читаемости
 
@@ -724,7 +742,8 @@ ssh://root:password@192.168.1.1:22?private_key_path=/path/to/key&host_key=ecdsa-
    - `preferredDefault` определяет значение поля `default`
 
 9. **Запись результата**
-   - Блок между маркерами `/** @ParserSTART */` и `/** @ParserEND */` заменяется на новый контент
+   - Блок между маркерами `/** @ParserSTART */` и `/** @ParserEND */` заменяется на новый контент (outbounds)
+   - Блок между `/** @ParserSTART_E */` и `/** @ParserEND_E */` — на сгенерированные endpoints (WireGuard), если маркеры присутствуют в конфиге
    - Обновляется поле `last_updated` в секции `parser`
    - Все операции выполняются в одном проходе (одно чтение, одна запись файла)
 

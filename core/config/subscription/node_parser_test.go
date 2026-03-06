@@ -24,6 +24,8 @@ func TestIsDirectLink(t *testing.T) {
 		{"Hysteria2 link", "hysteria2://password@server:443", true},
 		{"Hysteria2 short form (hy2://)", "hy2://password@server:443", true},
 		{"SSH link", "ssh://user@server:22", true},
+		{"WireGuard link", "wireguard://key@10.0.0.1:51820?publickey=x&address=10.10.10.2/32&allowedips=0.0.0.0/0", true},
+		{"WireGuard with spaces", "  wireguard://key@host:51820?publickey=x&address=10.0.0.2/32&allowedips=0.0.0.0/0  ", true},
 		{"HTTP URL", "https://example.com/subscription", false},
 		{"Empty string", "", false},
 		{"Whitespace VLESS", "  vless://uuid@server:443  ", true},
@@ -975,6 +977,135 @@ func TestParseNode_SSH(t *testing.T) {
 				t.Errorf("Expected outbound user '%s', got '%v'", node.UUID, node.Outbound["user"])
 			}
 		})
+	}
+}
+
+// TestParseNode_Wireguard tests parsing WireGuard URI (wireguard://).
+func TestParseNode_Wireguard(t *testing.T) {
+	// Valid: minimal required params (publickey, address, allowedips)
+	validURI := "wireguard://aDHCHnkcdMjnq0bF+V4fARkbJBW8cWjuYoVjKfUwsXo=@212.232.78.237:51820?publickey=fiK9ZG990zunr5cpRnx%2BSOVW2rVKKqFoVxmHMHAvAFk%3D&address=10.10.10.2%2F32&allowedips=0.0.0.0%2F0%2C%3A%3A%2F0"
+	node, err := ParseNode(validURI, nil)
+	if err != nil {
+		t.Fatalf("ParseNode(wireguard) unexpected error: %v", err)
+	}
+	if node == nil {
+		t.Fatal("Expected node, got nil")
+	}
+	if node.Scheme != "wireguard" {
+		t.Errorf("Expected scheme wireguard, got %q", node.Scheme)
+	}
+	if node.Server != "212.232.78.237" {
+		t.Errorf("Expected server 212.232.78.237, got %q", node.Server)
+	}
+	if node.Port != 51820 {
+		t.Errorf("Expected port 51820, got %d", node.Port)
+	}
+	if node.Outbound == nil {
+		t.Fatal("Expected Outbound (endpoint) set")
+	}
+	if typ, _ := node.Outbound["type"].(string); typ != "wireguard" {
+		t.Errorf("Expected outbound type wireguard, got %q", typ)
+	}
+	// private_key must preserve '+' (not decoded to space)
+	if pk, _ := node.Outbound["private_key"].(string); pk != "aDHCHnkcdMjnq0bF+V4fARkbJBW8cWjuYoVjKfUwsXo=" {
+		t.Errorf("Expected private_key to preserve '+', got %q", pk)
+	}
+	// listen_port omitted when 0 (sing-box optional)
+	if _, has := node.Outbound["listen_port"]; has {
+		t.Errorf("Expected listen_port omitted when 0, got %v", node.Outbound["listen_port"])
+	}
+	switch mtu := node.Outbound["mtu"].(type) {
+	case int:
+		if mtu != 1420 {
+			t.Errorf("Expected mtu 1420 (default), got %d", mtu)
+		}
+	case float64:
+		if mtu != 1420 {
+			t.Errorf("Expected mtu 1420, got %v", mtu)
+		}
+	default:
+		t.Errorf("Expected mtu 1420, got %v", node.Outbound["mtu"])
+	}
+	var peer map[string]interface{}
+	switch p := node.Outbound["peers"].(type) {
+	case []map[string]interface{}:
+		if len(p) != 1 {
+			t.Fatalf("Expected one peer, got %d", len(p))
+		}
+		peer = p[0]
+	case []interface{}:
+		if len(p) != 1 {
+			t.Fatalf("Expected one peer, got %v", node.Outbound["peers"])
+		}
+		peer, _ = p[0].(map[string]interface{})
+	default:
+		t.Fatalf("Expected peers slice, got %T %v", node.Outbound["peers"], node.Outbound["peers"])
+	}
+	if peer == nil {
+		t.Fatal("Expected peer to be non-nil")
+	}
+	if addr, _ := peer["address"].(string); addr != "212.232.78.237" {
+		t.Errorf("Expected peer address 212.232.78.237, got %q", addr)
+	}
+	if portInt, ok := peer["port"].(int); ok {
+		if portInt != 51820 {
+			t.Errorf("Expected peer port 51820, got %d", portInt)
+		}
+	} else if portF, ok := peer["port"].(float64); !ok || portF != 51820 {
+		t.Errorf("Expected peer port 51820, got %v", peer["port"])
+	}
+	if pk, _ := peer["public_key"].(string); pk == "" {
+		t.Error("Expected peer public_key set")
+	}
+	allowedIPs := peer["allowed_ips"]
+	switch a := allowedIPs.(type) {
+	case []interface{}:
+		if len(a) < 1 {
+			t.Errorf("Expected allowed_ips non-empty, got %v", allowedIPs)
+		}
+	case []string:
+		if len(a) < 1 {
+			t.Errorf("Expected allowed_ips non-empty, got %v", allowedIPs)
+		}
+	default:
+		t.Errorf("Expected allowed_ips array, got %T %v", allowedIPs, allowedIPs)
+	}
+
+	// Invalid: missing publickey
+	_, err = ParseNode("wireguard://key@10.0.0.1:51820?address=10.10.10.2/32&allowedips=0.0.0.0/0", nil)
+	if err == nil {
+		t.Error("Expected error when publickey is missing")
+	}
+	// Invalid: missing address
+	_, err = ParseNode("wireguard://key@10.0.0.1:51820?publickey=x&allowedips=0.0.0.0/0", nil)
+	if err == nil {
+		t.Error("Expected error when address is missing")
+	}
+	// Invalid: missing allowedips
+	_, err = ParseNode("wireguard://key@10.0.0.1:51820?publickey=x&address=10.10.10.2/32", nil)
+	if err == nil {
+		t.Error("Expected error when allowedips is missing")
+	}
+	// Invalid: missing hostname
+	_, err = ParseNode("wireguard://key@:51820?publickey=x&address=10.10.10.2/32&allowedips=0.0.0.0/0", nil)
+	if err == nil {
+		t.Error("Expected error when hostname is missing")
+	}
+
+	// Tag from fragment (#label): url.Parse may not set Fragment for wireguard, so we extract from raw URI
+	uriWithFragment := validURI + "#wg-test-tag"
+	node2, err := ParseNode(uriWithFragment, nil)
+	if err != nil {
+		t.Fatalf("ParseNode(wireguard with fragment) unexpected error: %v", err)
+	}
+	if node2 == nil {
+		t.Fatal("Expected node, got nil")
+	}
+	if node2.Tag != "wg-test-tag" {
+		t.Errorf("Expected tag from fragment #wg-test-tag, got %q", node2.Tag)
+	}
+	if tag, _ := node2.Outbound["tag"].(string); tag != "wg-test-tag" {
+		t.Errorf("Expected endpoint tag wg-test-tag, got %q", tag)
 	}
 }
 

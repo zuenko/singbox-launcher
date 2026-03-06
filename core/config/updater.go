@@ -26,6 +26,18 @@ func logDuplicateTagStatistics(tagCounts map[string]int, logPrefix string) {
 	}
 }
 
+// indentEndpointsBlock prefixes each line with indent (for pretty endpoints block in config).
+func indentEndpointsBlock(s, indent string) string {
+	if s == "" {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = indent + line
+	}
+	return strings.Join(lines, "\n")
+}
+
 // UpdateConfigFromSubscriptions updates config.json from subscriptions
 // This is the main function that coordinates the update process
 func UpdateConfigFromSubscriptions(
@@ -57,8 +69,8 @@ func UpdateConfigFromSubscriptions(
 
 	selectorsJSON := result.OutboundsJSON
 
-	// Final check: ensure we have content to write
-	if len(selectorsJSON) == 0 {
+	// Final check: ensure we have something to write (outbounds and/or endpoints)
+	if len(selectorsJSON) == 0 && len(result.EndpointsJSON) == 0 {
 		if progressCallback != nil {
 			progressCallback(-1, "Error: nothing to write to configuration")
 		}
@@ -71,7 +83,9 @@ func UpdateConfigFromSubscriptions(
 	}
 
 	content := strings.Join(selectorsJSON, "\n")
-	if err := WriteToConfig(configPath, content, parserConfig); err != nil {
+	// Join with ",\n" so array elements are separated by comma (each EndpointsJSON item can be multiline)
+	endpointsContent := strings.Join(result.EndpointsJSON, ",\n")
+	if err := WriteToConfig(configPath, content, endpointsContent, parserConfig); err != nil {
 		if progressCallback != nil {
 			progressCallback(-1, fmt.Sprintf("Write error: %v", err))
 		}
@@ -88,9 +102,11 @@ func UpdateConfigFromSubscriptions(
 	return nil
 }
 
-// WriteToConfig writes content between @ParserSTART and @ParserEND markers
-// Also updates @ParserConfig block with last_updated timestamp in a single file write
-func WriteToConfig(configPath string, content string, parserConfig *ParserConfig) error {
+// WriteToConfig writes outbounds content between @ParserSTART and @ParserEND, and optionally
+// endpoints content between @ParserSTART_E and @ParserEND_E. Also updates @ParserConfig block.
+// If endpointsContent is non-empty and markers @ParserSTART_E/@ParserEND_E exist, that block is updated.
+// If endpoints markers are missing, only outbounds block is updated (no error).
+func WriteToConfig(configPath string, content string, endpointsContent string, parserConfig *ParserConfig) error {
 	// Read config file
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -99,7 +115,7 @@ func WriteToConfig(configPath string, content string, parserConfig *ParserConfig
 
 	configStr := string(data)
 
-	// Find markers
+	// Find outbounds markers
 	startMarker := "/** @ParserSTART */"
 	endMarker := "/** @ParserEND */"
 
@@ -116,6 +132,19 @@ func WriteToConfig(configPath string, content string, parserConfig *ParserConfig
 
 	// Build new content with updated @ParserSTART/@ParserEND section
 	newContent := configStr[:startIdx+len(startMarker)] + "\n" + content + "\n" + configStr[endIdx:]
+
+	// If endpoints content provided, replace block between @ParserSTART_E and @ParserEND_E
+	if endpointsContent != "" {
+		startE := "/** @ParserSTART_E */"
+		endE := "/** @ParserEND_E */"
+		idxEStart := strings.Index(newContent, startE)
+		idxEEnd := strings.Index(newContent, endE)
+		if idxEStart != -1 && idxEEnd != -1 && idxEEnd > idxEStart {
+			// Indent each line so the block matches wizard output (4 spaces)
+			indented := indentEndpointsBlock(endpointsContent, "    ")
+			newContent = newContent[:idxEStart+len(startE)] + "\n" + indented + "\n" + newContent[idxEEnd:]
+		}
+	}
 
 	// Also update @ParserConfig block if parserConfig is provided
 	if parserConfig != nil {

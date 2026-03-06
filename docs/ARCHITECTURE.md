@@ -150,16 +150,16 @@ singbox-launcher/
 │       │   │   - readConfigFile()                   # Чтение config.json
 │       │   │   - cleanJSONC()                       # Очистка JSONC
 │       │   │
-│       ├── outbound_generator.go  # Генерация outbounds (ноды + селекторы)
-│       │   │   - GenerateNodeJSON()                          # Генерация JSON узла
+│       ├── outbound_generator.go  # Генерация outbounds и endpoints (ноды + селекторы)
+│       │   │   - GenerateNodeJSON() / GenerateEndpointJSON()  # Генерация JSON узла (outbound или WireGuard endpoint)
 │       │   │   - GenerateSelectorWithFilteredAddOutbounds() # Генерация селектора с фильтрацией
-│       │   │   - GenerateOutboundsFromParserConfig()        # Оркестрация: buildOutboundsInfo, computeOutboundValidity, generateSelectorJSONs
-│       │   │   - OutboundGenerationResult struct             # Результат генерации
+│       │   │   - GenerateOutboundsFromParserConfig()        # Оркестрация: wireguard → EndpointsJSON, остальные → OutboundsJSON
+│       │   │   - OutboundGenerationResult struct             # Результат (OutboundsJSON, EndpointsJSON, счётчики)
 │       │   │   - outboundInfo struct                         # Информация о динамическом селекторе
 │       │   │
 │       ├── updater.go          # Обновление конфигурации
-│       │   │   - UpdateConfigFromSubscriptions()        # Обновление из подписок
-│       │   │   - writeToConfig()                        # Запись в config.json
+│       │   │   - UpdateConfigFromSubscriptions()        # Обновление из подписок (outbounds + endpoints)
+│       │   │   - writeToConfig()                        # Запись в config.json (@ParserSTART/E, @ParserSTART_E/END_E)
 │       │   │
 │       ├── parser/             # Парсинг ParserConfig блока
 │       │   ├── factory.go      # Фабрика ParserConfig
@@ -365,15 +365,15 @@ singbox-launcher/
 │       │   │   │   - parseParserConfigForApply()            # Парсинг ParserConfig
 │       │   │   │   - classifyInputLines()                   # Классификация строк на подписки/connections
 │       │   │   │   - preserveExistingProperties()           # Сохранение существующих свойств
-│       │   │   │   - createSubscriptionProxies()            # Создание ProxySource для подписок
+│       │   │   │   - toProxyInputs() / buildProxiesFromInputs()  # Единая сборка ProxySource (подписки + connection)
 │       │   │   │   - restoreTagPrefixAndPostfix()           # Восстановление тегов
-│       │   │   │   - connectionsMatch()                    # Сравнение connections
-│       │   │   │   - matchOrCreateConnectionProxy()          # Сопоставление или создание connection proxy
+│       │   │   │   - connectionsMatch() / isConnectionOnlyProxy()  # Сравнение и определение типа proxy
 │       │   │   │   - updateAndSerializeParserConfig()       # Обновление и сериализация
 │       │   │   │
 │       │   ├── create_config.go  # Сборка конфигурации из шаблона
 │       │   │   │   - BuildTemplateConfig()                   # Построение конфигурации
 │       │   │   │   - BuildParserOutboundsBlock()             # Построение блока outbounds
+│       │   │   │   - buildEndpointsSection()                  # Блок endpoints (WireGuard) @ParserSTART_E/@ParserEND_E
 │       │   │   │   - MergeRouteSection()                      # Объединение route секции
 │       │   │   │
 │       │   ├── formatting.go   # Форматирование и константы
@@ -563,18 +563,19 @@ singbox-launcher/
 
 **outbound_generator.go**
 - `GenerateNodeJSON()` - генерация JSON узла из ParsedNode (vless, vmess, trojan, shadowsocks, hysteria2)
+- `GenerateEndpointJSON()` - генерация JSON строки для WireGuard endpoint (ноды с Scheme wireguard)
 - `GenerateSelectorWithFilteredAddOutbounds()` - генерация селектора с фильтрацией addOutbounds
-- `GenerateOutboundsFromParserConfig()` - генерация outbounds из конфигурации (трехпроходный алгоритм)
+- `GenerateOutboundsFromParserConfig()` - генерация outbounds и endpoints (wireguard-ноды → EndpointsJSON, остальные → OutboundsJSON; трёхпроходный алгоритм для селекторов)
   - Pass 1: Создание outboundsInfo и подсчет узлов
   - Pass 2: Топологическая сортировка зависимостей и расчет валидности
   - Pass 3: Генерация JSON только для валидных селекторов
-- `OutboundGenerationResult` struct - результат генерации (статистика и JSON строки)
+- `OutboundGenerationResult` struct - результат генерации (OutboundsJSON, EndpointsJSON, статистика и счётчики)
 - `outboundInfo` struct - информация о динамическом селекторе (для трехпроходного алгоритма)
 - `filterNodesForSelector()` - фильтрация узлов для селектора
 - `matchesFilter()`, `getNodeValue()`, `matchesPattern()` - вспомогательные функции фильтрации
 
 **updater.go**
-- `UpdateConfigFromSubscriptions()` - обновление config.json из подписок
+- `UpdateConfigFromSubscriptions()` - обновление config.json из подписок (запись outbounds и endpoints между маркерами @ParserSTART/@ParserEND и @ParserSTART_E/@ParserEND_E)
 - `writeToConfig()` - запись конфигурации в файл
 
 **parser/** - Работа с ParserConfig блоком
@@ -782,21 +783,21 @@ singbox-launcher/
 
 **business/** - Бизнес-логика (без GUI зависимостей)
 - `parser.go`:
-  - `ParseAndPreview()` - парсинг ParserConfig и генерация outbounds через ConfigService
-  - `ApplyURLToParserConfig()` - применение URL к ParserConfig (основная функция)
+  - `ParseAndPreview()` - парсинг ParserConfig и генерация outbounds/endpoints через ConfigService (модель берётся из `UIUpdater.Model()`)
+  - `ApplyURLToParserConfig()` / `AppendURLsToParserConfig()` - применение/добавление URL к ParserConfig
     - `validateApplyURLInput()` - проверка входных данных перед применением URL
     - `parseParserConfigForApply()` - парсинг ParserConfig из JSON строки
     - `classifyInputLines()` - классификация входных строк на подписки и прямые ссылки
     - `preserveExistingProperties()` - сохранение существующих свойств из текущего ParserConfig
-    - `createSubscriptionProxies()` - создание ProxySource для каждой подписки
+    - `toProxyInputs()` / `buildProxiesFromInputs()` - единая сборка списка ProxySource (подписки и connection-only), общий индекс 1:, 2:, …
     - `restoreTagPrefixAndPostfix()` - восстановление tag_prefix и tag_postfix из сохраненных свойств
-    - `connectionsMatch()` - проверка совпадения двух массивов connections (порядок не важен)
-    - `matchOrCreateConnectionProxy()` - сопоставление connections с существующим ProxySource или создание нового
+    - `connectionsMatch()` / `isConnectionOnlyProxy()` - сравнение connections и определение типа proxy
     - `updateAndSerializeParserConfig()` - обновление ParserConfig и сериализация его
-  - Все функции работают с `WizardModel` и используют `UIUpdater` для обновления GUI
+  - Бизнес-функции принимают `UIUpdater` (с методом `Model()`) и получают модель из него
 - `create_config.go`:
   - `BuildTemplateConfig()` - построение финальной конфигурации из шаблона и модели
   - `BuildParserOutboundsBlock()` - формирование блока outbounds из сгенерированных outbounds
+  - `buildEndpointsSection()` - формирование блока endpoints (WireGuard) между @ParserSTART_E и @ParserEND_E
   - `MergeRouteSection()` - объединение правил маршрутизации из шаблона и пользовательских правил
   - `FormatSectionJSON()`, `IndentMultiline()` - вспомогательные функции форматирования JSON
 - `validator.go`:
@@ -827,7 +828,7 @@ singbox-launcher/
   - `EnsureDefaultAvailableOutbounds()` - обеспечение наличия обязательных outbounds (direct-out, reject, drop)
   - `EnsureFinalSelected()` - обеспечение выбранного final outbound в модели
 - `ui_updater.go`:
-  - `UIUpdater` interface - интерфейс для обновления GUI из бизнес-логики (реализуется в презентере)
+  - `UIUpdater` interface - интерфейс для обновления GUI и доступа к модели: `Model()`, `UpdateParserConfig()`, `UpdateTemplatePreview()`, `UpdateSaveProgress()`, `UpdateSaveButtonText()` (реализуется в презентере)
 - `config_service.go`:
   - `ConfigService` interface - интерфейс для генерации outbounds из ParserConfig
   - `ConfigServiceAdapter` - адаптер для core.ConfigService

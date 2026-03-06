@@ -32,9 +32,10 @@ const (
 	RejectActionMethod = "drop"
 )
 
-// OutboundStats содержит статистику по outbounds для preview.
+// OutboundStats содержит статистику по outbounds и endpoints для preview.
 type OutboundStats struct {
 	NodesCount           int
+	EndpointsCount       int // WireGuard endpoint nodes
 	LocalSelectorsCount  int
 	GlobalSelectorsCount int
 }
@@ -48,8 +49,9 @@ type WizardModel struct {
 	// Источники
 	SourceURLs string
 
-	// Сгенерированные outbounds
+	// Сгенерированные outbounds и endpoints (WireGuard)
 	GeneratedOutbounds []string
+	GeneratedEndpoints []string
 	OutboundStats      OutboundStats
 
 	// Template данные
@@ -86,5 +88,6 @@ func NewWizardModel() *WizardModel {
 		SelectableRuleStates: make([]*RuleState, 0),
 		CustomRules:          make([]*RuleState, 0),
 		GeneratedOutbounds:   make([]string, 0),
+		GeneratedEndpoints:    make([]string, 0),
 	}
 }

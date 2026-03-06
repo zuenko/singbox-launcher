@@ -263,7 +263,8 @@ The unified template consists of four main sections:
 
 **Important points**:
 - `inbounds`: Should be an empty array `[]` — it will be filled from `params` based on the platform
-- `outbounds`: Contains only static outbounds (like `direct-out`). Generated proxy outbounds from the parser are automatically inserted at the beginning of this array
+- `outbounds`: Contains only static outbounds (like `direct-out`). Generated proxy outbounds from the parser are automatically inserted at the beginning of this array (between markers `/** @ParserSTART */` and `/** @ParserEND */`).
+- `endpoints`: (Optional.) Empty array `[]` by default. WireGuard nodes from sources are written between `/** @ParserSTART_E */` and `/** @ParserEND_E */`. Requires sing-box 1.11+. See [ParserConfig.md](ParserConfig.md) for `wireguard://` links.
 - `route.rules`: Contains only basic universal rules (hijack-dns, ip_is_private, local). User-selectable rules are defined in `selectable_rules`
 - `route.rule_set`: Contains only shared rule sets used by multiple rules or DNS rules. Rule sets specific to individual selectable rules are defined within those rules
 

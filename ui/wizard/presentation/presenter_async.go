@@ -60,7 +60,7 @@ func (p *WizardPresenter) TriggerParseForPreview() {
 		configService := &wizardbusiness.ConfigServiceAdapter{
 			CoreConfigService: ac.ConfigService,
 		}
-		if err := wizardbusiness.ParseAndPreview(p.model, p, configService); err != nil {
+		if err := wizardbusiness.ParseAndPreview(p, configService); err != nil {
 			debuglog.ErrorLog("TriggerParseForPreview: ParseAndPreview failed: %v", err)
 			return
 		}

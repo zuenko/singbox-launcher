@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"singbox-launcher/core"
-	"singbox-launcher/core/config"
 	"singbox-launcher/core/services"
 	"singbox-launcher/internal/debuglog"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
@@ -283,15 +282,15 @@ func (p *WizardPresenter) restoreCustomRules(persistedRules []wizardmodels.Persi
 	}
 }
 
-// extractSourceURLsFromParserConfig извлекает SourceURLs из ParserConfig.
+// extractSourceURLsFromParserConfig извлекает SourceURLs из модели (p.model.ParserConfig).
 // Объединяет Source и Connections из всех ProxySource в одну строку, разделенную переносами строк.
-func (p *WizardPresenter) extractSourceURLsFromParserConfig(parserConfig *config.ParserConfig) string {
-	if parserConfig == nil || len(parserConfig.ParserConfig.Proxies) == 0 {
+func (p *WizardPresenter) extractSourceURLsFromParserConfig() string {
+	if p.model.ParserConfig == nil || len(p.model.ParserConfig.ParserConfig.Proxies) == 0 {
 		return ""
 	}
 
 	lines := make([]string, 0)
-	for _, proxySource := range parserConfig.ParserConfig.Proxies {
+	for _, proxySource := range p.model.ParserConfig.ParserConfig.Proxies {
 		if proxySource.Source != "" {
 			lines = append(lines, proxySource.Source)
 		}

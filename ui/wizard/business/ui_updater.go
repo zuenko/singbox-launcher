@@ -13,8 +13,12 @@
 //   - presentation/presenter_ui_updater.go - WizardPresenter реализует интерфейс UIUpdater
 package business
 
-// UIUpdater предоставляет методы для обновления GUI из бизнес-логики.
+import wizardmodels "singbox-launcher/ui/wizard/models"
+
+// UIUpdater предоставляет методы для обновления GUI и доступа к модели из бизнес-логики.
 type UIUpdater interface {
+	// Model возвращает текущую модель визарда (business читает данные из неё, не получая модель аргументом).
+	Model() *wizardmodels.WizardModel
 	// UpdateParserConfig обновляет текст ParserConfig
 	UpdateParserConfig(text string)
 	// UpdateTemplatePreview обновляет текст preview шаблона

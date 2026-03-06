@@ -128,6 +128,7 @@
       "independent_cache": false
     },
     "inbounds": [],
+    "endpoints": [],
     "outbounds": [
       { "type": "direct", "tag": "direct-out" }
     ],

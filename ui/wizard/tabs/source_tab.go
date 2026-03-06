@@ -43,7 +43,6 @@ import (
 // CreateSourcesTab creates the Sources tab UI (URLs, URL status and preview).
 func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObject {
 	guiState := presenter.GUIState()
-	model := presenter.Model()
 
 	// Section 1: Subscription URL or Direct Links
 	urlLabel := widget.NewLabel("Subscription URL or Direct Links:")
@@ -63,11 +62,13 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	addURLButton := widget.NewButton("Add", func() {
 		presenter.SyncGUIToModel()
 		trimmed := strings.TrimSpace(guiState.SourceURLEntry.Text)
-		if err := wizardbusiness.AppendURLsToParserConfig(model, presenter, trimmed); err != nil {
+		if err := wizardbusiness.AppendURLsToParserConfig(presenter, trimmed); err != nil {
 			debuglog.ErrorLog("source_tab: Add URL error: %v", err)
 		}
-		model.PreviewNeedsParse = true
-		presenter.UpdateParserConfig(model.ParserConfigJSON)
+		m := presenter.Model()
+		m.PreviewNeedsParse = true
+		m.TemplatePreviewNeedsUpdate = true // so Preview tab refreshes when opened
+		presenter.UpdateParserConfig(m.ParserConfigJSON)
 		if guiState.RefreshSourcesList != nil {
 			guiState.RefreshSourcesList()
 		}
@@ -123,21 +124,39 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 
 	refreshSourcesList := func() {
 		sourcesBox.Objects = sourcesBox.Objects[:0]
-
-		if model.ParserConfig == nil || len(model.ParserConfig.ParserConfig.Proxies) == 0 {
+		m := presenter.Model()
+		if m.ParserConfig == nil || len(m.ParserConfig.ParserConfig.Proxies) == 0 {
 			sourcesBox.Add(widget.NewLabel("No sources defined in ParserConfig."))
 			sourcesBox.Refresh()
 			return
 		}
 
-		for i := range model.ParserConfig.ParserConfig.Proxies {
-			proxyPtr := &model.ParserConfig.ParserConfig.Proxies[i]
-			proxy := *proxyPtr
-			sourceIndex := i
+		for i := range m.ParserConfig.ParserConfig.Proxies {
+			// IIFE so each row's closures capture the correct index (avoids loop variable capture bug)
+			func(sourceIndex int) {
+				proxyPtr := &m.ParserConfig.ParserConfig.Proxies[sourceIndex]
+				proxy := *proxyPtr
 
 			label := proxy.Source
 			if label == "" {
-				label = fmt.Sprintf("Source %d", sourceIndex+1)
+				// Prefer first node's tag/label from preview when block has only Connections (no URL)
+				if len(proxy.Connections) > 0 && m.PreviewNodesBySource != nil &&
+					sourceIndex < len(m.PreviewNodesBySource) && len(m.PreviewNodesBySource[sourceIndex]) > 0 {
+					first := m.PreviewNodesBySource[sourceIndex][0]
+					if first.Tag != "" {
+						label = first.Tag
+					} else if first.Label != "" {
+						label = first.Label
+					}
+				}
+				if label == "" {
+					// Connection-only block (no subscription URL): show as "Connections" or "Connections N"
+					if len(proxy.Connections) > 0 {
+						label = fmt.Sprintf("Connections %d", sourceIndex+1)
+					} else {
+						label = fmt.Sprintf("Source %d", sourceIndex+1)
+					}
+				}
 			}
 			if len(label) > 40 {
 				label = label[:37] + "..."
@@ -190,44 +209,47 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 			prefixEntry.SetText(proxy.TagPrefix)
 			prefixEntry.SetPlaceHolder("prefix")
 			prefixEntry.OnChanged = func(s string) {
-				if model.ParserConfig == nil || sourceIndex >= len(model.ParserConfig.ParserConfig.Proxies) {
+				m := presenter.Model()
+				if m.ParserConfig == nil || sourceIndex >= len(m.ParserConfig.ParserConfig.Proxies) {
 					return
 				}
-				model.ParserConfig.ParserConfig.Proxies[sourceIndex].TagPrefix = strings.TrimSpace(s)
-				serialized, err := wizardbusiness.SerializeParserConfig(model.ParserConfig)
+				m.ParserConfig.ParserConfig.Proxies[sourceIndex].TagPrefix = strings.TrimSpace(s)
+				serialized, err := wizardbusiness.SerializeParserConfig(m.ParserConfig)
 				if err != nil {
 					debuglog.ErrorLog("source_tab: SerializeParserConfig after prefix change: %v", err)
 					return
 				}
-				model.ParserConfigJSON = serialized
-				model.PreviewNeedsParse = true
-				wizardbusiness.InvalidatePreviewCache(model)
+				m.ParserConfigJSON = serialized
+				m.PreviewNeedsParse = true
+				wizardbusiness.InvalidatePreviewCache(m)
 				presenter.UpdateParserConfig(serialized)
 				presenter.RefreshOutboundOptions()
 			}
 
 			viewBtn := widget.NewButton("View", func() {
-				if model.ParserConfig == nil || sourceIndex >= len(model.ParserConfig.ParserConfig.Proxies) {
+				m := presenter.Model()
+				if m.ParserConfig == nil || sourceIndex >= len(m.ParserConfig.ParserConfig.Proxies) {
 					return
 				}
-				prox := &model.ParserConfig.ParserConfig.Proxies[sourceIndex]
+				prox := &m.ParserConfig.ParserConfig.Proxies[sourceIndex]
 				showSourceServersWindow(presenter, guiState.Window, shortLabel, prox.Source, prox.Skip)
 			})
 
 			delBtn := widget.NewButton("Del", func() {
-				if model.ParserConfig == nil || sourceIndex >= len(model.ParserConfig.ParserConfig.Proxies) {
+				m := presenter.Model()
+				if m.ParserConfig == nil || sourceIndex >= len(m.ParserConfig.ParserConfig.Proxies) {
 					return
 				}
-				proxies := &model.ParserConfig.ParserConfig.Proxies
+				proxies := &m.ParserConfig.ParserConfig.Proxies
 				*proxies = append((*proxies)[:sourceIndex], (*proxies)[sourceIndex+1:]...)
-				serialized, err := wizardbusiness.SerializeParserConfig(model.ParserConfig)
+				serialized, err := wizardbusiness.SerializeParserConfig(m.ParserConfig)
 				if err != nil {
 					debuglog.ErrorLog("source_tab: SerializeParserConfig after Del source: %v", err)
 					return
 				}
-				model.ParserConfigJSON = serialized
-				model.PreviewNeedsParse = true
-				wizardbusiness.InvalidatePreviewCache(model)
+				m.ParserConfigJSON = serialized
+				m.PreviewNeedsParse = true
+				wizardbusiness.InvalidatePreviewCache(m)
 				presenter.UpdateParserConfig(serialized)
 				presenter.RefreshOutboundOptions()
 				if guiState.RefreshSourcesList != nil {
@@ -243,6 +265,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 				delBtn,
 			)
 			sourcesBox.Add(row)
+			}(i)
 		}
 
 		sourcesBox.Refresh()
@@ -274,7 +297,8 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	previewScrollStrip.SetMinSize(fyne.NewSize(10, 0))
 
 	refreshPreview := func() {
-		if model.ParserConfig == nil || len(model.ParserConfig.ParserConfig.Proxies) == 0 {
+		m := presenter.Model()
+		if m.ParserConfig == nil || len(m.ParserConfig.ParserConfig.Proxies) == 0 {
 			previewNodes = nil
 			previewList.Refresh()
 			previewStatusLabel.SetText("No sources. Add URLs and click Refresh.")
@@ -283,7 +307,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 		previewStatusLabel.SetText("Loading...")
 
 		go func() {
-			errorCount, err := wizardbusiness.RebuildPreviewCache(model)
+			errorCount, err := wizardbusiness.RebuildPreviewCache(m)
 			presenter.UpdateUI(func() {
 				if err != nil {
 					previewNodes = nil
@@ -291,11 +315,12 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 					previewStatusLabel.SetText("Error: " + err.Error())
 					return
 				}
-				previewNodes = model.PreviewNodes
+				// m was updated in place by RebuildPreviewCache(m)
+				previewNodes = m.PreviewNodes
 				previewList.Refresh()
 				sourcesCount := 0
-				if model.ParserConfig != nil {
-					sourcesCount = len(model.ParserConfig.ParserConfig.Proxies)
+				if m.ParserConfig != nil {
+					sourcesCount = len(m.ParserConfig.ParserConfig.Proxies)
 				}
 				status := fmt.Sprintf("%d server(s) from %d source(s)", len(previewNodes), sourcesCount)
 				if errorCount > 0 {
@@ -501,7 +526,6 @@ func showSourceServersWindow(presenter *wizardpresentation.WizardPresenter, pare
 // later it will be extended to embed the outbounds configurator list directly.
 func CreateOutboundsAndParserConfigTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObject {
 	guiState := presenter.GUIState()
-	model := presenter.Model()
 
 	// ParserConfig multi-line editor
 	guiState.ParserConfigEntry = widget.NewMultiLineEntry()
@@ -540,38 +564,43 @@ func CreateOutboundsAndParserConfigTab(presenter *wizardpresentation.WizardPrese
 	parserLabel := widget.NewLabel("ParserConfig:")
 	parserLabel.Importance = widget.MediumImportance
 
-	// Embedded outbounds configurator: use model.ParserConfig so edits apply in place.
-	pc := model.ParserConfig
-	if pc == nil {
-		pc = &config.ParserConfig{}
-		raw := strings.TrimSpace(model.ParserConfigJSON)
+	// Ensure model.ParserConfig is set so configurator can edit it (configurator reads via editPresenter.Model()).
+	m := presenter.Model()
+	if m.ParserConfig == nil {
+		pc := &config.ParserConfig{}
+		raw := strings.TrimSpace(m.ParserConfigJSON)
 		if raw != "" {
 			if err := json.Unmarshal([]byte(raw), pc); err != nil {
 				debuglog.DebugLog("source_tab: initial parse of ParserConfigJSON failed: %v", err)
 			}
 		}
-		model.ParserConfig = pc
+		m.ParserConfig = pc
 	}
 
 	onConfiguratorApply := func() {
-		serialized, err := wizardbusiness.SerializeParserConfig(pc)
+		m := presenter.Model()
+		serialized, err := wizardbusiness.SerializeParserConfig(m.ParserConfig)
 		if err != nil {
 			debuglog.ErrorLog("source_tab: SerializeParserConfig after configurator change: %v", err)
 			dialog.ShowError(fmt.Errorf("Failed to serialize ParserConfig: %w", err), guiState.Window)
 			return
 		}
-		model.ParserConfigJSON = serialized
-		model.ParserConfig = pc
-		model.PreviewNeedsParse = true
-		wizardbusiness.InvalidatePreviewCache(model)
-		presenter.UpdateParserConfig(serialized)
+		m.ParserConfigJSON = serialized
+		m.PreviewNeedsParse = true
+		wizardbusiness.InvalidatePreviewCache(m)
+		// Update entry synchronously so that switching to another tab does not overwrite
+		// the model with stale entry content in SyncGUIToModel (UpdateParserConfig queues via fyne.Do).
+		guiState.ParserConfigUpdating = true
+		guiState.ParserConfigEntry.SetText(serialized)
+		guiState.ParserConfigUpdating = false
+		guiState.LastValidParserConfigJSON = serialized
 		presenter.RefreshOutboundOptions()
 		if guiState.RefreshSourcesList != nil {
 			guiState.RefreshSourcesList()
 		}
 	}
 
-	configuratorContent := outbounds_configurator.NewConfiguratorContent(guiState.Window, pc, onConfiguratorApply, presenter)
+	configuratorContent := outbounds_configurator.NewConfiguratorContent(guiState.Window, presenter, onConfiguratorApply)
 
 	// No Parse button on this tab per SPEC: update is automatic via configurator callback and tab switch (Rules/Preview).
 	headerRow := container.NewHBox(
