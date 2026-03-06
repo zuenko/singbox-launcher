@@ -49,7 +49,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	urlLabel.Importance = widget.MediumImportance
 
 	guiState.SourceURLEntry = widget.NewMultiLineEntry()
-	guiState.SourceURLEntry.SetPlaceHolder("https://example.com/subscription\nor\nvless://...\nvmess://...\nhysteria2://...\nssh://...")
+	guiState.SourceURLEntry.SetPlaceHolder("https://your-subscription-url-here")
 	guiState.SourceURLEntry.Wrapping = fyne.TextWrapOff
 	// No automatic application: URLs are applied only when the user clicks Add.
 	guiState.SourceURLEntry.OnChanged = func(value string) {
