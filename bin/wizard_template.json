@@ -218,7 +218,7 @@
     },
     {
       "label": "2ip.io for VPN IP test",
-      "description": "Direct route for 2ip.io to check VPN IP.",
+      "description": "Route for 2ip.io to check VPN IP.",
       "rule": { "domain": ["2ip.io"], "outbound": "proxy-out" }
     },
     {
@@ -228,7 +228,7 @@
     },
     {
       "label": "2ip.ru your direct ip test",
-      "description": "Direct route for 2ip.ru to check your IP.",
+      "description": "Route for 2ip.ru to check your IP.",
       "rule": { "domain": ["2ip.ru"], "outbound": "direct-out" }
     },
     {
@@ -377,12 +377,27 @@
   "params": [
     {
       "name": "inbounds",
-      "platforms": ["windows", "linux", "darwin-tun"],
+      "platforms": ["windows", "linux"],
       "value": [
         {
           "type": "tun",
           "tag": "tun-in",
           "interface_name": "singbox-tun0",
+          "address": ["172.16.0.1/30"],
+          "mtu": 1492,
+          "auto_route": true,
+          "strict_route": false,
+          "stack": "system"
+        }
+      ]
+    },
+    {
+      "name": "inbounds",
+      "platforms": ["darwin-tun"],
+      "value": [
+        {
+          "type": "tun",
+          "tag": "tun-in",
           "address": ["172.16.0.1/30"],
           "mtu": 1492,
           "auto_route": true,
