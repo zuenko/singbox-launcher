@@ -2,6 +2,32 @@
 
 ## Последний релиз / Latest release
 
+**v0.8.3** — полное описание (full details): [docs/release_notes/0-8-3.md](docs/release_notes/0-8-3.md)
+
+<details>
+<summary><b>🇷🇺 Кратко (v0.8.3)</b></summary>
+
+- Парсер wireguard://; секция endpoints в конфиге (sing-box 1.11+)
+- Шаблон визарда почищен, TUN на macOS возвращён
+- Исправлено падение Clash API на названиях с `#` и `//` (jsonc.ToJSON)
+- Визард: кеш превью, View по источнику из кеша, Get free VPN — подтверждение, диалог Outbound (Raw→Settings), конфигуратор синхронно, смена Scope при редактировании
+- Визард: модель как источник истины (Model(), единый префикс 1:/2:/3:, унифицированная сборка прокси)
+- Исправлено исчезновение источников после reopen визарда, смены префиксов и сохранения
+
+</details>
+
+<details>
+<summary><b>🇬🇧 Summary (v0.8.3)</b></summary>
+
+- Parser wireguard://; config endpoints section (sing-box 1.11+)
+- Wizard template cleaned up; TUN on macOS restored
+- Fixed Clash API failing on names with `#` and `//` (jsonc.ToJSON)
+- Wizard: preview cache, View uses cache, Get free VPN confirmation, Outbound dialog (Raw→Settings), configurator sync, Scope when editing
+- Wizard: model as source of truth (Model(), unified prefix 1:/2:/3:, proxy list building)
+- Fixed sources disappearing after reopen, changing prefixes, and save
+
+</details>
+
 **v0.8.2** — полное описание (full details): [docs/release_notes/0-8-2.md](docs/release_notes/0-8-2.md)
 
 <details>
