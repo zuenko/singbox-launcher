@@ -78,8 +78,8 @@ type CoreVersionInfo struct {
 	Error            string
 }
 
-// FallbackVersion - фиксированная версия для использования, если не удается получить последнюю
-const FallbackVersion = "1.12.21"
+// FallbackVersion - фиксированная версия для использования, если не удается получить последнюю (актуальная стабильная на момент релиза)
+const FallbackVersion = "1.13.1"
 
 // GetLatestCoreVersion получает последнюю версию sing-box (с fallback на фиксированную версию)
 func (ac *AppController) GetLatestCoreVersion() (string, error) {

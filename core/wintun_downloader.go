@@ -70,18 +70,18 @@ func (ac *AppController) DownloadWintunDLL(ctx context.Context, progressChan cha
 		}
 	}()
 
-	// 2. Download ZIP archive (primary: wintun.net, 30s timeout; fallback: GitHub assets)
-	zipURL := fmt.Sprintf(WinTunDownloadURL, WinTunVersion)
+	// 2. Download ZIP archive (primary: GitHub assets, 30s timeout; fallback: wintun.net)
 	zipPath := filepath.Join(tempDir, fmt.Sprintf("wintun-%s.zip", WinTunVersion))
 
 	progressChan <- DownloadProgress{Progress: 10, Message: "Downloading wintun.dll...", Status: "downloading"}
 	ctxFirst, cancelFirst := context.WithTimeout(ctx, 30*time.Second)
 	defer cancelFirst()
-	err := ac.downloadFileFromURL(ctxFirst, zipURL, zipPath, progressChan)
+	err := ac.downloadFileFromURL(ctxFirst, winTunGitHubFallbackURL(), zipPath, progressChan)
 	if err != nil {
-		debuglog.InfoLog("DownloadWintunDLL: primary URL failed, trying GitHub fallback: %v", err)
+		debuglog.InfoLog("DownloadWintunDLL: GitHub URL failed, trying wintun.net fallback: %v", err)
 		progressChan <- DownloadProgress{Progress: 10, Message: "Downloading wintun.dll (fallback)...", Status: "downloading"}
-		err = ac.downloadFileFromURL(ctx, winTunGitHubFallbackURL(), zipPath, progressChan)
+		zipURL := fmt.Sprintf(WinTunDownloadURL, WinTunVersion)
+		err = ac.downloadFileFromURL(ctx, zipURL, zipPath, progressChan)
 	}
 	if err != nil {
 		progressChan <- DownloadProgress{

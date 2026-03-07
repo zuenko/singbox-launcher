@@ -15,6 +15,9 @@
 - Диагностика: настройки STUN (свой сервер, на Mac — SOCKS5/напрямую), ссылка на список STUN-серверов
 - Diagnostics: две кнопки (окно логов, папка логов) с иконками; повторное нажатие — фокус на открытое окно; в Help убрана кнопка «Open Logs Folder»
 - Исправлено исчезновение источников после reopen визарда, смены префиксов и сохранения
+- Логи: Internal до Trace при открытом окне; wintun — загрузка с GitHub, затем wintun.net, таймаут 1 мин без данных
+- Core: подсказки «?» у Sing-box и Wintun (Open bin folder, ссылка), краткий статус «❌ not found», Fallback 1.13.1
+- Автообновление конфига: 2 попытки, сброс счётчика при Start
 
 </details>
 
@@ -29,6 +32,9 @@
 - Diagnostics: STUN settings (custom server, on Mac SOCKS5/direct), link to STUN server list
 - Diagnostics: two buttons (log window, logs folder) with icons; reopening focuses existing window; Help «Open Logs Folder» removed
 - Fixed sources disappearing after reopen, changing prefixes, and save
+- Logs: Internal up to Trace when window open; wintun download from GitHub then wintun.net, 1 min idle timeout
+- Core: help «?» for Sing-box and Wintun (Open bin folder, link), short status «❌ not found», Fallback 1.13.1
+- Auto-update: 2 attempts, counter reset on Start
 
 </details>
 

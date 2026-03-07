@@ -17,6 +17,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/core"
@@ -29,15 +30,16 @@ import (
 	wizardtemplate "singbox-launcher/ui/wizard/template"
 )
 
-const downloadPlaceholderWidth = 180
+const downloadPlaceholderWidth = 120
 
 // CoreDashboardTab управляет вкладкой Core Dashboard
 type CoreDashboardTab struct {
 	controller *core.AppController
 
 	// UI elements
-	statusLabel               *widget.Label // Full status: "Core Status" + icon + text
-	singboxStatusLabel        *widget.Label // sing-box status (version or "not found")
+	statusLabel               *widget.Label  // Full status: "Core Status" + icon + text
+	singboxStatusLabel        *widget.Label  // sing-box status (version or "not found")
+	singboxHelpBtn            *widget.Button // "?" help button, hidden when Download is hidden
 	downloadButton            *widget.Button
 	downloadProgress          *widget.ProgressBar // Progress bar for download
 	downloadContainer         fyne.CanvasObject   // Container for button/progress bar
@@ -45,6 +47,7 @@ type CoreDashboardTab struct {
 	startButton               *widget.Button      // Start button
 	stopButton                *widget.Button      // Stop button
 	wintunStatusLabel         *widget.Label       // wintun.dll status
+	wintunHelpBtn             *widget.Button      // "?" help button, hidden when Download is hidden
 	wintunDownloadButton      *widget.Button      // wintun.dll download button
 	wintunDownloadProgress    *widget.ProgressBar // Progress bar for wintun.dll download
 	wintunDownloadContainer   fyne.CanvasObject   // Container for wintun button/progress bar
@@ -316,6 +319,35 @@ func (tab *CoreDashboardTab) createVersionBlock() fyne.CanvasObject {
 	title := widget.NewLabel("Sing-box")
 	title.Importance = widget.MediumImportance
 
+	singboxHelpBtn := widget.NewButton("?", func() {
+		msg := "sing-box is the core binary.\n\n"
+		if suffix := core.SingboxAssetSuffix(); suffix != "" {
+			fileName := "sing-box-*-" + suffix
+			if v := tab.controller.GetCachedVersion(); v != "" {
+				fileName = fmt.Sprintf("sing-box-%s-%s", v, suffix)
+			}
+			msg += fmt.Sprintf("Look for: %s\n", fileName)
+		}
+		msg += "Extract the binary into the bin folder.\n\n" +
+			"You can download with the button above, or manually from:"
+		binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
+		urlLink := widget.NewHyperlink(constants.SingboxReleasesURL, nil)
+		_ = urlLink.SetURLFromString(constants.SingboxReleasesURL)
+		urlLink.OnTapped = func() {
+			if err := platform.OpenURL(constants.SingboxReleasesURL); err != nil {
+				ShowError(tab.controller.GetMainWindow(), err)
+			}
+		}
+		openBinBtn := widget.NewButtonWithIcon("Open bin folder", theme.FolderOpenIcon(), func() {
+			if err := platform.OpenFolder(binDir); err != nil {
+				ShowError(tab.controller.GetMainWindow(), err)
+			}
+		})
+		content := container.NewVBox(widget.NewLabel(msg), urlLink, openBinBtn)
+		dialogs.ShowCustom(tab.controller.GetMainWindow(), "Sing-box", "Close", content)
+	})
+	tab.singboxHelpBtn = singboxHelpBtn
+
 	tab.singboxStatusLabel = widget.NewLabel("Checking...")
 	tab.singboxStatusLabel.Wrapping = fyne.TextWrapOff
 
@@ -347,6 +379,7 @@ func (tab *CoreDashboardTab) createVersionBlock() fyne.CanvasObject {
 		layout.NewSpacer(),
 		tab.singboxStatusLabel,
 		tab.downloadContainer,
+		tab.singboxHelpBtn,
 	)
 }
 
@@ -386,7 +419,6 @@ func (tab *CoreDashboardTab) setDownloadState(component downloadComponentState, 
 	}
 
 	// Управление кнопкой (если прогресс виден, кнопка всегда скрыта)
-	buttonVisible := false
 	if progressVisible {
 		// Если показываем прогресс, кнопка всегда скрыта
 		if component.button != nil {
@@ -404,12 +436,11 @@ func (tab *CoreDashboardTab) setDownloadState(component downloadComponentState, 
 			component.button.Show()
 			component.button.Enable()
 		}
-		buttonVisible = true
 	}
 
 	// Управление placeholder: показывать если есть кнопка ИЛИ прогресс-бар
 	if component.placeholder != nil {
-		if buttonVisible || progressVisible {
+		if progressVisible || buttonText != "" {
 			component.placeholder.Show()
 		} else {
 			component.placeholder.Hide()
@@ -429,6 +460,13 @@ func (tab *CoreDashboardTab) setWintunState(statusText string, buttonText string
 		placeholder: tab.wintunDownloadPlaceholder,
 	}
 	tab.setDownloadState(component, statusText, buttonText, progress)
+	if tab.wintunHelpBtn != nil {
+		if buttonText != "" || progress >= 0 {
+			tab.wintunHelpBtn.Show()
+		} else {
+			tab.wintunHelpBtn.Hide()
+		}
+	}
 }
 
 // setSingboxState - управляет состоянием sing-box (лейбл, кнопка, прогресс)
@@ -443,6 +481,13 @@ func (tab *CoreDashboardTab) setSingboxState(statusText string, buttonText strin
 		placeholder: tab.downloadPlaceholder,
 	}
 	tab.setDownloadState(component, statusText, buttonText, progress)
+	if tab.singboxHelpBtn != nil {
+		if buttonText != "" || progress >= 0 {
+			tab.singboxHelpBtn.Show()
+		} else {
+			tab.singboxHelpBtn.Hide()
+		}
+	}
 }
 
 // updateBinaryStatus проверяет наличие бинарника и обновляет статус
@@ -600,75 +645,50 @@ func (tab *CoreDashboardTab) updateConfigInfo() {
 	tab.updateRunningStatus()
 }
 
-// updateVersionInfo обновляет информацию о версии (по аналогии с updateWintunStatus)
-// Теперь полностью асинхронная - не блокирует UI
+// updateVersionInfo обновляет информацию о версии (по аналогии с updateWintunStatus).
+// Сначала синхронно получает установленную версию, чтобы она отображалась сразу; затем в фоне — кеш для кнопки Update/Download.
 func (tab *CoreDashboardTab) updateVersionInfo() error {
-	// Запускаем асинхронное обновление
-	tab.updateVersionInfoAsync()
+	installedVersion, err := tab.controller.GetInstalledCoreVersion()
+	if err != nil {
+		tab.singboxStatusLabel.Importance = widget.MediumImportance
+		tab.downloadButton.Importance = widget.HighImportance
+		tab.setSingboxState("❌ not found", "Download", -1)
+	} else {
+		tab.singboxStatusLabel.Importance = widget.MediumImportance
+		tab.setSingboxState(installedVersion, "", -1)
+	}
+	go tab.updateVersionInfoAsync(installedVersion, err != nil)
 	return nil
 }
 
-// updateVersionInfoAsync - asynchronous version of version information update
-func (tab *CoreDashboardTab) updateVersionInfoAsync() {
-	// Запускаем в горутине
-	go func() {
-		// Получаем установленную версию (локальная операция, быстрая)
-		installedVersion, err := tab.controller.GetInstalledCoreVersion()
-
-		// Обновляем UI для установленной версии
-		fyne.Do(func() {
-			if err != nil {
-				// Показываем ошибку в статусе
-				tab.singboxStatusLabel.Importance = widget.MediumImportance
-				tab.downloadButton.Importance = widget.HighImportance
-				tab.setSingboxState("❌ sing-box.exe not found", "Download", -1)
-			} else {
-				// Показываем версию
-				tab.singboxStatusLabel.Importance = widget.MediumImportance
-				tab.setSingboxState(installedVersion, "", -1)
-			}
-		})
-
-		// Если бинарник не найден, пытаемся получить последнюю версию для кнопки
-		if err != nil {
-			// Проверяем кеш или запускаем проверку в фоне
-			cached := tab.controller.GetCachedVersion()
-			if cached != "" {
-				fyne.Do(func() {
-					tab.setSingboxState("", fmt.Sprintf("Download v%s", cached), -1)
-				})
-			} else {
-				// Запускаем проверку в фоне (внутри функции есть проверки на дубликаты)
-				tab.controller.CheckVersionInBackground()
-				fyne.Do(func() {
-					tab.setSingboxState("", "Download", -1)
-				})
-			}
-			return
-		}
-
-		// Используем кешированную версию для отображения
-		latest := tab.controller.GetCachedVersion()
-
-		// Проверяем, нужно ли обновить кеш (только если кеша нет или он устарел)
-		if tab.controller.ShouldCheckVersion() {
-			// Запускаем проверку в фоне только если нужно
+// updateVersionInfoAsync обновляет кнопку Download/Update по закешированной последней версии (не блокирует UI).
+func (tab *CoreDashboardTab) updateVersionInfoAsync(installedVersion string, binaryNotFound bool) {
+	if binaryNotFound {
+		cached := tab.controller.GetCachedVersion()
+		if cached != "" {
+			fyne.Do(func() {
+				tab.setSingboxState("", fmt.Sprintf("Download v%s", cached), -1)
+			})
+		} else {
 			tab.controller.CheckVersionInBackground()
+			fyne.Do(func() {
+				tab.setSingboxState("", "Download", -1)
+			})
 		}
-
-		// Обновляем UI с результатом
-		fyne.Do(func() {
-			// Сравниваем версии, если есть кеш
-			if latest != "" && core.CompareVersions(installedVersion, latest) < 0 {
-				// Есть обновление
-				tab.downloadButton.Importance = widget.HighImportance
-				tab.setSingboxState("", fmt.Sprintf("Update v%s", latest), -1)
-			} else {
-				// Версия актуальна или кеша нет
-				tab.setSingboxState("", "", -1)
-			}
-		})
-	}()
+		return
+	}
+	latest := tab.controller.GetCachedVersion()
+	if tab.controller.ShouldCheckVersion() {
+		tab.controller.CheckVersionInBackground()
+	}
+	fyne.Do(func() {
+		if latest != "" && core.CompareVersions(installedVersion, latest) < 0 {
+			tab.downloadButton.Importance = widget.HighImportance
+			tab.setSingboxState("", fmt.Sprintf("Update v%s", latest), -1)
+		} else {
+			tab.setSingboxState("", "", -1)
+		}
+	})
 }
 
 func (tab *CoreDashboardTab) downloadConfigTemplate() {
@@ -891,6 +911,33 @@ func (tab *CoreDashboardTab) createWintunBlock() fyne.CanvasObject {
 	title := widget.NewLabel("Wintun")
 	title.Importance = widget.MediumImportance
 
+	wintunHelpBtn := widget.NewButton("?", func() {
+		archDir := "amd64"
+		if runtime.GOARCH == "arm64" {
+			archDir = "arm64"
+		}
+		msg := "wintun.dll is required for TUN mode on Windows.\n\n" +
+			fmt.Sprintf("In the download archive, take wintun.dll \n\n Your system is %s.\n\n ", archDir) +
+			fmt.Sprintf("Place it in the bin folder: bin\n\n") +
+			"You can download with the button above, or manually from:"
+		binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
+		urlLink := widget.NewHyperlink(constants.WintunHomeURL, nil)
+		_ = urlLink.SetURLFromString(constants.WintunHomeURL)
+		urlLink.OnTapped = func() {
+			if err := platform.OpenURL(constants.WintunHomeURL); err != nil {
+				ShowError(tab.controller.GetMainWindow(), err)
+			}
+		}
+		openBinBtn := widget.NewButtonWithIcon("Open bin folder", theme.FolderOpenIcon(), func() {
+			if err := platform.OpenFolder(binDir); err != nil {
+				ShowError(tab.controller.GetMainWindow(), err)
+			}
+		})
+		content := container.NewVBox(widget.NewLabel(msg), urlLink, openBinBtn)
+		dialogs.ShowCustom(tab.controller.GetMainWindow(), "Wintun", "Close", content)
+	})
+	tab.wintunHelpBtn = wintunHelpBtn
+
 	tab.wintunStatusLabel = widget.NewLabel("Checking...")
 	tab.wintunStatusLabel.Wrapping = fyne.TextWrapOff
 
@@ -922,6 +969,7 @@ func (tab *CoreDashboardTab) createWintunBlock() fyne.CanvasObject {
 		layout.NewSpacer(),
 		tab.wintunStatusLabel,
 		tab.wintunDownloadContainer,
+		tab.wintunHelpBtn,
 	)
 }
 
@@ -944,7 +992,7 @@ func (tab *CoreDashboardTab) updateWintunStatus() {
 	} else {
 		tab.wintunStatusLabel.Importance = widget.MediumImportance
 		tab.wintunDownloadButton.Importance = widget.HighImportance
-		tab.setWintunState("❌ wintun.dll not found", "Download wintun.dll", -1)
+		tab.setWintunState("❌ not found", "Download", -1)
 	}
 
 	// Обновляем статус кнопок Start/Stop, так как они зависят от наличия wintun.dll
@@ -981,7 +1029,7 @@ func (tab *CoreDashboardTab) handleWintunDownload() {
 					ShowInfo(tab.controller.GetMainWindow(), "Download Complete", progress.Message)
 				} else if progress.Status == "error" {
 					tab.wintunDownloadInProgress = false
-					tab.setWintunState("", "Download wintun.dll", -1)
+					tab.setWintunState("", "Download", -1)
 					binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
 					debuglog.DebugLog("core_dashboard: showing download failed manual (wintun)")
 					ShowDownloadFailedManual(tab.controller.GetMainWindow(), "wintun.dll download failed", constants.WintunHomeURL, binDir)

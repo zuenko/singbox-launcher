@@ -231,39 +231,47 @@ func (ac *AppController) buildSourceForgeAssets(version string) []Asset {
 	return assets
 }
 
-// findPlatformAsset finds the correct asset for current platform
-func (ac *AppController) findPlatformAsset(assets []Asset) (*Asset, error) {
-	var platformPattern string
-
+// SingboxAssetSuffix returns the asset filename suffix for current platform (e.g. "windows-amd64.zip").
+// Used for UI hints when user downloads manually.
+func SingboxAssetSuffix() string {
 	switch runtime.GOOS {
 	case "windows":
 		if runtime.GOARCH == "amd64" {
-			platformPattern = "windows-amd64.zip"
-		} else if runtime.GOARCH == "arm64" {
-			platformPattern = "windows-arm64.zip"
-		} else {
-			return nil, fmt.Errorf("findPlatformAsset: unsupported architecture: %s", runtime.GOARCH)
+			return "windows-amd64.zip"
 		}
+		if runtime.GOARCH == "arm64" {
+			return "windows-arm64.zip"
+		}
+		return ""
 	case "linux":
 		if runtime.GOARCH == "amd64" {
-			platformPattern = "linux-amd64.tar.gz"
-		} else if runtime.GOARCH == "arm64" {
-			platformPattern = "linux-arm64.tar.gz"
-		} else if runtime.GOARCH == "arm" {
-			platformPattern = "linux-armv7.tar.gz"
-		} else {
-			return nil, fmt.Errorf("findPlatformAsset: unsupported architecture: %s", runtime.GOARCH)
+			return "linux-amd64.tar.gz"
 		}
+		if runtime.GOARCH == "arm64" {
+			return "linux-arm64.tar.gz"
+		}
+		if runtime.GOARCH == "arm" {
+			return "linux-armv7.tar.gz"
+		}
+		return ""
 	case "darwin":
 		if runtime.GOARCH == "amd64" {
-			platformPattern = "darwin-amd64.tar.gz"
-		} else if runtime.GOARCH == "arm64" {
-			platformPattern = "darwin-arm64.tar.gz"
-		} else {
-			return nil, fmt.Errorf("findPlatformAsset: unsupported architecture: %s", runtime.GOARCH)
+			return "darwin-amd64.tar.gz"
 		}
+		if runtime.GOARCH == "arm64" {
+			return "darwin-arm64.tar.gz"
+		}
+		return ""
 	default:
-		return nil, fmt.Errorf("findPlatformAsset: unsupported platform: %s", runtime.GOOS)
+		return ""
+	}
+}
+
+// findPlatformAsset finds the correct asset for current platform
+func (ac *AppController) findPlatformAsset(assets []Asset) (*Asset, error) {
+	platformPattern := SingboxAssetSuffix()
+	if platformPattern == "" {
+		return nil, fmt.Errorf("findPlatformAsset: unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 
 	for i := range assets {
