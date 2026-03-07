@@ -2,6 +2,42 @@
 
 ## Последний релиз / Latest release
 
+**v0.8.3** — полное описание (full details): [docs/release_notes/0-8-3.md](docs/release_notes/0-8-3.md)
+
+<details>
+<summary><b>🇷🇺 Кратко (v0.8.3)</b></summary>
+
+- Парсер wireguard://; секция endpoints в конфиге (sing-box 1.11+)
+- Шаблон визарда почищен, TUN на macOS возвращён
+- Исправлено падение Clash API на названиях с `#` и `//` (jsonc.ToJSON)
+- Визард: кеш превью, View по источнику из кеша, Get free VPN — подтверждение, диалог Outbound (Raw→Settings), конфигуратор синхронно, смена Scope при редактировании
+- Визард: модель как источник истины (Model(), единый префикс 1:/2:/3:, унифицированная сборка прокси)
+- Диагностика: настройки STUN (свой сервер, на Mac — SOCKS5/напрямую), ссылка на список STUN-серверов
+- Diagnostics: две кнопки (окно логов, папка логов) с иконками; повторное нажатие — фокус на открытое окно; в Help убрана кнопка «Open Logs Folder»
+- Исправлено исчезновение источников после reopen визарда, смены префиксов и сохранения
+- Логи: Internal до Trace при открытом окне; wintun — загрузка с GitHub, затем wintun.net, таймаут 1 мин без данных
+- Core: подсказки «?» у Sing-box и Wintun (Open bin folder, ссылка), краткий статус «❌ not found», Fallback 1.13.1
+- Автообновление конфига: 2 попытки, сброс счётчика при Start
+
+</details>
+
+<details>
+<summary><b>🇬🇧 Summary (v0.8.3)</b></summary>
+
+- Parser wireguard://; config endpoints section (sing-box 1.11+)
+- Wizard template cleaned up; TUN on macOS restored
+- Fixed Clash API failing on names with `#` and `//` (jsonc.ToJSON)
+- Wizard: preview cache, View uses cache, Get free VPN confirmation, Outbound dialog (Raw→Settings), configurator sync, Scope when editing
+- Wizard: model as source of truth (Model(), unified prefix 1:/2:/3:, proxy list building)
+- Diagnostics: STUN settings (custom server, on Mac SOCKS5/direct), link to STUN server list
+- Diagnostics: two buttons (log window, logs folder) with icons; reopening focuses existing window; Help «Open Logs Folder» removed
+- Fixed sources disappearing after reopen, changing prefixes, and save
+- Logs: Internal up to Trace when window open; wintun download from GitHub then wintun.net, 1 min idle timeout
+- Core: help «?» for Sing-box and Wintun (Open bin folder, link), short status «❌ not found», Fallback 1.13.1
+- Auto-update: 2 attempts, counter reset on Start
+
+</details>
+
 **v0.8.2** — полное описание (full details): [docs/release_notes/0-8-2.md](docs/release_notes/0-8-2.md)
 
 <details>

@@ -39,7 +39,8 @@ func (p *WizardPresenter) TriggerParseForPreview() {
 		return
 	}
 	p.SyncGUIToModel()
-	if strings.TrimSpace(p.model.SourceURLs) == "" || strings.TrimSpace(p.model.ParserConfigJSON) == "" {
+	// Only ParserConfig is required; SourceURLs is not used (sources come from ParserConfig.Proxies).
+	if strings.TrimSpace(p.model.ParserConfigJSON) == "" {
 		return
 	}
 
@@ -60,7 +61,7 @@ func (p *WizardPresenter) TriggerParseForPreview() {
 		configService := &wizardbusiness.ConfigServiceAdapter{
 			CoreConfigService: ac.ConfigService,
 		}
-		if err := wizardbusiness.ParseAndPreview(p.model, p, configService); err != nil {
+		if err := wizardbusiness.ParseAndPreview(p, configService); err != nil {
 			debuglog.ErrorLog("TriggerParseForPreview: ParseAndPreview failed: %v", err)
 			return
 		}

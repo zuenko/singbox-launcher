@@ -9,15 +9,23 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
+	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 )
 
 // WinTunVersion is the version of wintun.dll to download
 const WinTunVersion = "0.14.1"
 
-// WinTunDownloadURL is the URL for downloading wintun.dll
+// WinTunDownloadURL is the primary URL for downloading wintun.dll (wintun.net).
 const WinTunDownloadURL = "https://www.wintun.net/builds/wintun-%s.zip"
+
+// winTunGitHubFallbackURL returns the fallback URL for wintun zip from the repo assets (branch from GetMyBranch).
+func winTunGitHubFallbackURL() string {
+	return fmt.Sprintf("https://raw.githubusercontent.com/Leadaxe/singbox-launcher/%s/assets/wintun-%s.zip",
+		constants.GetMyBranch(), WinTunVersion)
+}
 
 // CheckWintunDLL checks for the presence of wintun.dll
 func (ac *AppController) CheckWintunDLL() (bool, error) {
@@ -62,12 +70,20 @@ func (ac *AppController) DownloadWintunDLL(ctx context.Context, progressChan cha
 		}
 	}()
 
-	// 2. Download ZIP archive
-	zipURL := fmt.Sprintf(WinTunDownloadURL, WinTunVersion)
+	// 2. Download ZIP archive (primary: GitHub assets, 30s timeout; fallback: wintun.net)
 	zipPath := filepath.Join(tempDir, fmt.Sprintf("wintun-%s.zip", WinTunVersion))
 
 	progressChan <- DownloadProgress{Progress: 10, Message: "Downloading wintun.dll...", Status: "downloading"}
-	if err := ac.downloadFileFromURL(ctx, zipURL, zipPath, progressChan); err != nil {
+	ctxFirst, cancelFirst := context.WithTimeout(ctx, 30*time.Second)
+	defer cancelFirst()
+	err := ac.downloadFileFromURL(ctxFirst, winTunGitHubFallbackURL(), zipPath, progressChan)
+	if err != nil {
+		debuglog.InfoLog("DownloadWintunDLL: GitHub URL failed, trying wintun.net fallback: %v", err)
+		progressChan <- DownloadProgress{Progress: 10, Message: "Downloading wintun.dll (fallback)...", Status: "downloading"}
+		zipURL := fmt.Sprintf(WinTunDownloadURL, WinTunVersion)
+		err = ac.downloadFileFromURL(ctx, zipURL, zipPath, progressChan)
+	}
+	if err != nil {
 		progressChan <- DownloadProgress{
 			Progress: 0,
 			Message:  fmt.Sprintf("Download failed: %v", err),

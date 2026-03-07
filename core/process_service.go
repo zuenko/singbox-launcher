@@ -138,6 +138,7 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 	}
 	ac.RunningState.Set(true)
 	ac.StoppedByUser = false
+	ac.StateService.ResetAutoUpdateFailedAttempts() // Reset so auto-update can retry after successful Start
 	// Add log with PID
 	debuglog.DebugLog("startSingBox: Sing-Box started. PID=%d", ac.SingboxCmd.Process.Pid)
 
@@ -207,6 +208,7 @@ wait
 		ac.SingboxPrivilegedPIDFile = pidFilePath
 		ac.RunningState.Set(true)
 		ac.StoppedByUser = false
+		ac.StateService.ResetAutoUpdateFailedAttempts() // Reset so auto-update can retry after successful Start
 		ac.CmdMutex.Unlock()
 		_ = os.WriteFile(pidFilePath, []byte(fmt.Sprintf("%d\n%d", scriptPID, singboxPID)), 0644)
 		debuglog.DebugLog("startSingBox: Sing-Box started with privileges (script PID=%d, sing-box PID=%d).", scriptPID, singboxPID)

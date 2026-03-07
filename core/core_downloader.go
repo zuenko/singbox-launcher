@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"singbox-launcher/internal/debuglog"
@@ -230,39 +231,47 @@ func (ac *AppController) buildSourceForgeAssets(version string) []Asset {
 	return assets
 }
 
-// findPlatformAsset finds the correct asset for current platform
-func (ac *AppController) findPlatformAsset(assets []Asset) (*Asset, error) {
-	var platformPattern string
-
+// SingboxAssetSuffix returns the asset filename suffix for current platform (e.g. "windows-amd64.zip").
+// Used for UI hints when user downloads manually.
+func SingboxAssetSuffix() string {
 	switch runtime.GOOS {
 	case "windows":
 		if runtime.GOARCH == "amd64" {
-			platformPattern = "windows-amd64.zip"
-		} else if runtime.GOARCH == "arm64" {
-			platformPattern = "windows-arm64.zip"
-		} else {
-			return nil, fmt.Errorf("findPlatformAsset: unsupported architecture: %s", runtime.GOARCH)
+			return "windows-amd64.zip"
 		}
+		if runtime.GOARCH == "arm64" {
+			return "windows-arm64.zip"
+		}
+		return ""
 	case "linux":
 		if runtime.GOARCH == "amd64" {
-			platformPattern = "linux-amd64.tar.gz"
-		} else if runtime.GOARCH == "arm64" {
-			platformPattern = "linux-arm64.tar.gz"
-		} else if runtime.GOARCH == "arm" {
-			platformPattern = "linux-armv7.tar.gz"
-		} else {
-			return nil, fmt.Errorf("findPlatformAsset: unsupported architecture: %s", runtime.GOARCH)
+			return "linux-amd64.tar.gz"
 		}
+		if runtime.GOARCH == "arm64" {
+			return "linux-arm64.tar.gz"
+		}
+		if runtime.GOARCH == "arm" {
+			return "linux-armv7.tar.gz"
+		}
+		return ""
 	case "darwin":
 		if runtime.GOARCH == "amd64" {
-			platformPattern = "darwin-amd64.tar.gz"
-		} else if runtime.GOARCH == "arm64" {
-			platformPattern = "darwin-arm64.tar.gz"
-		} else {
-			return nil, fmt.Errorf("findPlatformAsset: unsupported architecture: %s", runtime.GOARCH)
+			return "darwin-amd64.tar.gz"
 		}
+		if runtime.GOARCH == "arm64" {
+			return "darwin-arm64.tar.gz"
+		}
+		return ""
 	default:
-		return nil, fmt.Errorf("findPlatformAsset: unsupported platform: %s", runtime.GOOS)
+		return ""
+	}
+}
+
+// findPlatformAsset finds the correct asset for current platform
+func (ac *AppController) findPlatformAsset(assets []Asset) (*Asset, error) {
+	platformPattern := SingboxAssetSuffix()
+	if platformPattern == "" {
+		return nil, fmt.Errorf("findPlatformAsset: unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 
 	for i := range assets {
@@ -363,6 +372,36 @@ func (ac *AppController) downloadFileFromURL(ctx context.Context, url, destPath 
 	totalSize := resp.ContentLength
 	var downloaded int64
 
+	// Idle timeout: if no data received for 1 minute, abort (avoids hanging on stalled connections).
+	const idleTimeout = 1 * time.Minute
+	lastRead := time.Now()
+	var lastReadMu sync.Mutex
+	var stallAbort bool
+	var stallMu sync.Mutex
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				lastReadMu.Lock()
+				t := lastRead
+				lastReadMu.Unlock()
+				if time.Since(t) > idleTimeout {
+					stallMu.Lock()
+					stallAbort = true
+					stallMu.Unlock()
+					_ = resp.Body.Close()
+					return
+				}
+			}
+		}
+	}()
+
 	// Download with progress tracking
 	buf := make([]byte, 32*1024) // 32KB buffer
 	for {
@@ -375,6 +414,9 @@ func (ac *AppController) downloadFileFromURL(ctx context.Context, url, destPath 
 
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
+			lastReadMu.Lock()
+			lastRead = time.Now()
+			lastReadMu.Unlock()
 			written, writeErr := file.Write(buf[:n])
 			if writeErr != nil {
 				return fmt.Errorf("downloadFileFromURL: write failed: %w", writeErr)
@@ -395,6 +437,12 @@ func (ac *AppController) downloadFileFromURL(ctx context.Context, url, destPath 
 			break
 		}
 		if err != nil {
+			stallMu.Lock()
+			aborted := stallAbort
+			stallMu.Unlock()
+			if aborted {
+				return fmt.Errorf("downloadFileFromURL: no data received for 1 minute (connection stalled)")
+			}
 			return fmt.Errorf("downloadFileFromURL: read failed: %w", err)
 		}
 	}

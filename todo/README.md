@@ -22,6 +22,7 @@
 
 ## Текущие фичи
 
+- **WIREGUARD_URI/** — поддержка формата `wireguard://` в Source, Connections и подписке (парсинг в ParsedNode и генерация sing-box endpoint)
 - **OUTBOUNDS_CONFIGURATOR/** — встроенный конфигуратор на вкладке Outbounds визарда: список outbounds (глобальные + по источникам), отдельные окна View (серверы источника) и Edit/Add outbound; единый overlay дочерних окон и один экземпляр View и Edit
 - **DOWNLOAD_FAILED_MANUAL/** — единая подсистема: при ошибке загрузки (sing-box, wintun, wizard_template, SRS) показ диалога с ссылкой и кнопкой «Open folder»
 - **RULE_TYPE_SRS_URL/** — тип пользовательского правила «SRS (URL)»: вставка своей ссылки на SRS в диалоге Add Rule

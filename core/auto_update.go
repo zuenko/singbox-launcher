@@ -13,14 +13,14 @@ import (
 // Constants for auto-update configuration
 const (
 	autoUpdateMinInterval   = 10 * time.Minute // Minimum check interval
-	autoUpdateRetryInterval = 10 * time.Second // Interval between retry attempts
-	autoUpdateMaxRetries    = 10               // Maximum consecutive failed attempts
+	autoUpdateRetryInterval = 20 * time.Second // Interval between retry attempts
+	autoUpdateMaxRetries    = 2                // Maximum consecutive failed attempts
 	autoUpdateDefaultReload = "4h"             // Default reload interval if not specified
 )
 
 // startAutoUpdateLoop runs a background goroutine that periodically checks and updates configuration
 // Uses dynamic interval: max(10 minutes, parser.reload from config)
-// Handles errors with retries (10 attempts, 10 seconds between retries)
+// Handles errors with retries (2 attempts, 20 seconds between retries)
 // Resumes after successful manual update
 func (ac *AppController) startAutoUpdateLoop() {
 	debuglog.InfoLog("Auto-update: Starting auto-update loop")
@@ -84,7 +84,7 @@ func (ac *AppController) startAutoUpdateLoop() {
 						debuglog.WarnLog("Auto-update: Stopped after %d consecutive failed attempts", failedAttempts)
 						fyne.Do(func() {
 							if ac.hasUIWithApp() {
-								dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Auto-update", "Automatic configuration update stopped after 10 failed attempts. Use manual update.")
+								dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Auto-update", "Automatic configuration update stopped after 2 failed attempts. Use manual update.")
 							}
 						})
 					}

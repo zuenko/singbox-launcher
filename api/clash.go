@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -21,26 +20,12 @@ import (
 
 // LoadClashAPIConfig reads the Clash API URL and token from the sing-box config.json
 func LoadClashAPIConfig(configPath string) (baseURL, token string, err error) {
-	// Internal function to strip comments.
-	stripComments := func(data []byte) []byte {
-		commentRegex := regexp.MustCompile(`(?m)\s+//.*$|/\*[\s\S]*?\*/`)
-		var clean = commentRegex.ReplaceAll(data, nil)
-		emptyLineRegex := regexp.MustCompile(`(?m)^\s*\n`)
-		return emptyLineRegex.ReplaceAll(clean, nil)
-	}
-	removeTrailingCommas := func(data []byte) []byte {
-		re := regexp.MustCompile(`,(\s*[\]\}])`)
-		return re.ReplaceAll(data, []byte("$1"))
-	}
-
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		debuglog.ErrorLog("LoadClashAPIConfig: Failed to read config.json: %v", err)
 		return "", "", fmt.Errorf("failed to read config.json: %w", err)
 	}
-	// Convert JSONC (with comments/trailing commas) into clean JSON.
 	cleanData := jsonc.ToJSON(data)
-	cleanData = removeTrailingCommas(stripComments(cleanData))
 
 	var jsonData map[string]interface{}
 	if err := json.Unmarshal(cleanData, &jsonData); err != nil {

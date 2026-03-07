@@ -30,8 +30,10 @@ import (
 )
 
 // ParseAndPreview parses ParserConfig and generates outbounds preview.
-// It updates the model and UI through UIUpdater.
-func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configService ConfigService) error {
+// It reads model from ctx and updates UI through ctx (UIUpdater).
+func ParseAndPreview(ctx UIUpdater, configService ConfigService) error {
+	model := ctx.Model()
+	updater := ctx
 	timing := debuglog.StartTiming("parseAndPreview")
 	defer func() {
 		timing.End()
@@ -75,37 +77,9 @@ func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configS
 	debuglog.DebugLog("parseAndPreview: Parsed ParserConfig (sources: %d, outbounds: %d)",
 		len(parserConfig.ParserConfig.Proxies), len(parserConfig.ParserConfig.Outbounds))
 
-	// Check for URL or direct links
-	url := strings.TrimSpace(model.SourceURLs)
-	debuglog.DebugLog("parseAndPreview: URL text length: %d bytes", len(url))
-	if url == "" {
-		debuglog.DebugLog("parseAndPreview: URL is empty, returning early")
-		updater.UpdateSaveButtonText("Save")
-		return fmt.Errorf("VLESS URL or direct links are empty")
-	}
-
-	// Update config through ApplyURLToParserConfig, which correctly separates subscriptions and connections
-	applyStartTime := time.Now()
-	debuglog.DebugLog("parseAndPreview: Applying URL to ParserConfig")
-	if err := ApplyURLToParserConfig(model, updater, url); err != nil {
-		debuglog.DebugLog("parseAndPreview: Failed to apply URL to ParserConfig: %v", err)
-	}
-	timing.LogTiming("apply URL to ParserConfig", time.Since(applyStartTime))
-
-	// Reload parserConfig after update
-	reloadStartTime := time.Now()
-	parserConfigJSON = strings.TrimSpace(model.ParserConfigJSON)
-	if parserConfigJSON != "" {
-		if err := json.Unmarshal([]byte(parserConfigJSON), &parserConfig); err != nil {
-			timing.LogTiming("reload ParserConfig JSON", time.Since(reloadStartTime))
-			debuglog.DebugLog("parseAndPreview: Failed to parse updated ParserConfig JSON: %v", err)
-			updater.UpdateSaveButtonText("Save")
-			return fmt.Errorf("failed to parse updated ParserConfig JSON: %w", err)
-		}
-		timing.LogTiming("reload ParserConfig", time.Since(reloadStartTime))
-		debuglog.DebugLog("parseAndPreview: Reloaded ParserConfig (sources: %d)",
-			len(parserConfig.ParserConfig.Proxies))
-	}
+	// Generate outbounds from current ParserConfig only. Do not apply SourceURLs here:
+	// applying would replace all proxies with the URL field content and drop other sources
+	// (e.g. after reopening wizard and editing prefixes, switching to Preview would overwrite).
 
 	// Generate all outbounds using unified function
 	// This eliminates code duplication and adds support for local outbounds
@@ -138,9 +112,11 @@ func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configS
 	subscription.LogDuplicateTagStatistics(tagCounts, "ConfigWizard")
 
 	model.OutboundStats.NodesCount = result.NodesCount
+	model.OutboundStats.EndpointsCount = result.EndpointsCount
 	model.OutboundStats.LocalSelectorsCount = result.LocalSelectorsCount
 	model.OutboundStats.GlobalSelectorsCount = result.GlobalSelectorsCount
 	model.GeneratedOutbounds = result.OutboundsJSON
+	model.GeneratedEndpoints = result.EndpointsJSON
 
 	timing.LogTiming("total outbound generation", time.Since(generateStartTime))
 
@@ -148,7 +124,7 @@ func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configS
 	model.ParserConfig = &parserConfig
 	model.PreviewNeedsParse = false
 	// RefreshOutboundOptions will be called by presenter
-	if model.TemplateData != nil && len(model.GeneratedOutbounds) > 0 {
+	if model.TemplateData != nil && (len(model.GeneratedOutbounds) > 0 || len(model.GeneratedEndpoints) > 0) {
 		model.TemplatePreviewNeedsUpdate = true
 		// go UpdateTemplatePreviewAsync(model, updater) // This will be called by presenter
 	}
@@ -157,7 +133,10 @@ func ParseAndPreview(model *wizardmodels.WizardModel, updater UIUpdater, configS
 
 // ApplyURLToParserConfig applies URL input to ParserConfig, correctly separating subscriptions and connections.
 // It preserves existing local outbounds, tag_prefix, and tag_postfix for each source.
-func ApplyURLToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater, input string) error {
+// Reads model from ctx (UIUpdater).
+func ApplyURLToParserConfig(ctx UIUpdater, input string) error {
+	model := ctx.Model()
+	updater := ctx
 	timing := debuglog.StartTiming("applyURLToParserConfig")
 	defer timing.EndWithDefer()
 	debuglog.DebugLog("applyURLToParserConfig: input length: %d bytes", len(input))
@@ -179,24 +158,23 @@ func ApplyURLToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater, 
 	// Preserve existing properties from current ParserConfig
 	existingProps := preserveExistingProperties(parserConfig)
 
-	// Create new ProxySource array
-	newProxies := createSubscriptionProxies(subscriptions, existingProps)
+	// Build proxies from unified list (subscriptions + connection block); indices 1, 2, 3, ...
+	items := toProxyInputs(subscriptions, connections)
+	newProxies := buildProxiesFromInputs(items, existingProps, nil, 1)
 
-	// Match or create connection proxy
-	newProxies = matchOrCreateConnectionProxy(connections, existingProps, newProxies)
-
-	// Ensure at least one empty proxy if no subscriptions or connections
 	if len(newProxies) == 0 {
 		newProxies = []config.ProxySource{{}}
 	}
 
-	// Update and serialize
 	return updateAndSerializeParserConfig(parserConfig, newProxies, subscriptions, connections, model, updater, timing)
 }
 
 // AppendURLsToParserConfig appends URL(s) from input to existing ParserConfig proxies.
 // Existing sources are kept; only Del button removes them.
-func AppendURLsToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater, input string) error {
+// Reads model from ctx (UIUpdater).
+func AppendURLsToParserConfig(ctx UIUpdater, input string) error {
+	model := ctx.Model()
+	updater := ctx
 	timing := debuglog.StartTiming("appendURLsToParserConfig")
 	defer timing.EndWithDefer()
 	debuglog.DebugLog("appendURLsToParserConfig: input length: %d bytes", len(input))
@@ -233,14 +211,9 @@ func AppendURLsToParserConfig(model *wizardmodels.WizardModel, updater UIUpdater
 		}
 	}
 
-	additionalProxies := createSubscriptionProxies(uniqueSubs, existingProps)
-	connProxies := matchOrCreateConnectionProxy(connections, existingProps, []config.ProxySource{})
-	// Append connection proxy only if not already present (same connections)
-	for _, cp := range connProxies {
-		if !proxyListHasConnections(existingProxies, cp.Connections) {
-			additionalProxies = append(additionalProxies, cp)
-		}
-	}
+	// Common index: new proxies get indices after existing (e.g. existing 1,2,3 -> new get 4, 5, ...)
+	items := toProxyInputs(uniqueSubs, connections)
+	additionalProxies := buildProxiesFromInputs(items, existingProps, existingProxies, len(existingProxies)+1)
 
 	if len(additionalProxies) == 0 {
 		debuglog.DebugLog("appendURLsToParserConfig: all URLs already present, nothing to add")
@@ -263,7 +236,7 @@ func validateApplyURLInput(input, parserConfigJSON string) error {
 		return fmt.Errorf("parserConfigJSON is empty")
 	}
 	return nil
-	}
+}
 
 // parseParserConfigForApply парсит ParserConfig из JSON строки.
 func parseParserConfigForApply(parserConfigJSON string, timing interface{ LogTiming(string, time.Duration) }) (*config.ParserConfig, error) {
@@ -334,44 +307,96 @@ func preserveExistingProperties(parserConfig *config.ParserConfig) *existingProp
 			if existingProxy.TagPostfix != "" {
 				props.TagPostfixMap[existingProxy.Source] = existingProxy.TagPostfix
 			}
-		} else if len(existingProxy.Connections) > 0 {
-			// Preserve all ProxySource entries with connections but no source
+		} else if isConnectionOnlyProxy(existingProxy) {
 			props.ConnectionsProxies = append(props.ConnectionsProxies, existingProxy)
 		}
 	}
 
 	return props
+}
+
+// proxyInput is one entry for the proxies section: either a subscription (URL) or a connection-only block.
+type proxyInput struct {
+	Subscription string   // non-empty = subscription source
+	Connections  []string // non-empty = connection-only block
+}
+
+// toProxyInputs builds a single list of proxy inputs from classified subscriptions and connections.
+func toProxyInputs(subscriptions, connections []string) []proxyInput {
+	items := make([]proxyInput, 0, len(subscriptions)+1)
+	for _, sub := range subscriptions {
+		items = append(items, proxyInput{Subscription: sub})
 	}
-
-// createSubscriptionProxies создает ProxySource для каждой подписки.
-func createSubscriptionProxies(subscriptions []string, existingProps *existingProperties) []config.ProxySource {
-	newProxies := make([]config.ProxySource, 0, len(subscriptions))
-
-	// By default assign tag_prefix (1:, 2:, 3:, ...) for each added subscription when not restored from existing
-	for idx, sub := range subscriptions {
-		proxySource := config.ProxySource{
-			Source: sub,
-		}
-
-		// Restore local outbounds if they existed for this source
-		if existingOutbounds, ok := existingProps.OutboundsMap[sub]; ok {
-			proxySource.Outbounds = existingOutbounds
-			debuglog.DebugLog("applyURLToParserConfig: Restored %d local outbounds for subscription: %s", len(existingOutbounds), sub)
-		}
-
-		// Restore tag_prefix and tag_postfix from existing props
-		restoreTagPrefixAndPostfix(&proxySource, sub, existingProps, fmt.Sprintf("subscription: %s", sub))
-
-		// Default tag_prefix if not restored (e.g. new subscription)
-		if proxySource.TagPrefix == "" {
-			proxySource.TagPrefix = GenerateTagPrefix(idx + 1)
-			debuglog.DebugLog("applyURLToParserConfig: Added default tag_prefix '%s' for subscription: %s", proxySource.TagPrefix, sub)
-		}
-
-		newProxies = append(newProxies, proxySource)
+	if len(connections) > 0 {
+		items = append(items, proxyInput{Connections: connections})
 	}
+	return items
+}
 
-	return newProxies
+// buildProxiesFromInputs builds []config.ProxySource from a unified list of inputs (subscriptions and connection block).
+// For each input: match existing from existingProps or create new with common index.
+// startIndex: 1-based index for the first proxy added (so Append continues numbering after existingProxies; use 1 for Apply).
+// skipConnectionsIfIn: when non-nil (Append mode), do not add a connection proxy if its connections are already in this list.
+func buildProxiesFromInputs(
+	items []proxyInput,
+	existingProps *existingProperties,
+	skipConnectionsIfIn []config.ProxySource,
+	startIndex int,
+) []config.ProxySource {
+	result := make([]config.ProxySource, 0, len(items))
+	for _, item := range items {
+		nextIndex := startIndex + len(result)
+		if item.Subscription != "" {
+			proxySource := config.ProxySource{Source: item.Subscription}
+			if existingOutbounds, ok := existingProps.OutboundsMap[item.Subscription]; ok {
+				proxySource.Outbounds = existingOutbounds
+				debuglog.DebugLog("applyURLToParserConfig: Restored %d local outbounds for subscription: %s", len(existingOutbounds), item.Subscription)
+			}
+			restoreTagPrefixAndPostfix(&proxySource, item.Subscription, existingProps, fmt.Sprintf("subscription: %s", item.Subscription))
+			if proxySource.TagPrefix == "" {
+				proxySource.TagPrefix = GenerateTagPrefix(nextIndex)
+				debuglog.DebugLog("applyURLToParserConfig: Added default tag_prefix '%s' for subscription: %s", proxySource.TagPrefix, item.Subscription)
+			}
+			result = append(result, proxySource)
+			continue
+		}
+		if len(item.Connections) > 0 {
+			if skipConnectionsIfIn != nil && proxyListHasConnections(skipConnectionsIfIn, item.Connections) {
+				continue
+			}
+			matched := false
+			for _, existingConnectionsProxy := range existingProps.ConnectionsProxies {
+				if connectionsMatch(existingConnectionsProxy.Connections, item.Connections) {
+					matchedProxy := config.ProxySource{
+						Connections: item.Connections,
+						Outbounds:   existingConnectionsProxy.Outbounds,
+						TagPrefix:   existingConnectionsProxy.TagPrefix,
+						TagPostfix:  existingConnectionsProxy.TagPostfix,
+						TagMask:     existingConnectionsProxy.TagMask,
+						Skip:        existingConnectionsProxy.Skip,
+					}
+					result = append(result, matchedProxy)
+					debuglog.DebugLog("applyURLToParserConfig: Matched existing connections proxy, preserved tag_prefix '%s', tag_postfix '%s', tag_mask '%s'",
+						matchedProxy.TagPrefix, matchedProxy.TagPostfix, matchedProxy.TagMask)
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				proxySource := config.ProxySource{
+					Connections: item.Connections,
+					TagPrefix:   GenerateTagPrefix(nextIndex),
+				}
+				debuglog.DebugLog("applyURLToParserConfig: Adding new ProxySource with %d connections, tag_prefix '%s'", len(item.Connections), proxySource.TagPrefix)
+				result = append(result, proxySource)
+				// Only in Apply (replace) mode: other connection proxies from old config are not in the new list
+				if skipConnectionsIfIn == nil && len(existingProps.ConnectionsProxies) > 0 {
+					debuglog.DebugLog("applyURLToParserConfig: Not preserving %d other connection ProxySources (user removed them)", len(existingProps.ConnectionsProxies)-1)
+				}
+			}
+		}
+	}
+	return result
 }
 
 // restoreTagPrefixAndPostfix восстанавливает tag_prefix и tag_postfix из сохраненных свойств.
@@ -421,46 +446,9 @@ func connectionsMatch(conn1, conn2 []string) bool {
 		return true
 	}
 
-// matchOrCreateConnectionProxy сопоставляет connections с существующим ProxySource или создает новый.
-func matchOrCreateConnectionProxy(connections []string, existingProps *existingProperties, newProxies []config.ProxySource) []config.ProxySource {
-	if len(connections) == 0 {
-		// If user removed all connections, don't add any connection ProxySources
-		// This allows user to clear connections by deleting them from GUI
-		return newProxies
-	}
-
-		// Try to match with existing connections proxy by comparing connections
-	for _, existingConnectionsProxy := range existingProps.ConnectionsProxies {
-			if connectionsMatch(existingConnectionsProxy.Connections, connections) {
-				// Matched existing proxy - update connections but preserve all other properties
-				matchedProxy := config.ProxySource{
-					Connections: connections, // Update with potentially reordered connections
-					Outbounds:   existingConnectionsProxy.Outbounds,
-					TagPrefix:   existingConnectionsProxy.TagPrefix,
-					TagPostfix:  existingConnectionsProxy.TagPostfix,
-					TagMask:     existingConnectionsProxy.TagMask,
-					Skip:        existingConnectionsProxy.Skip,
-				}
-				newProxies = append(newProxies, matchedProxy)
-				debuglog.DebugLog("applyURLToParserConfig: Matched existing connections proxy, preserved tag_prefix '%s', tag_postfix '%s', tag_mask '%s'",
-					matchedProxy.TagPrefix, matchedProxy.TagPostfix, matchedProxy.TagMask)
-			return newProxies
-			}
-		}
-
-			// New connections - add as new ProxySource
-			proxySource := config.ProxySource{
-				Connections: connections,
-			}
-			debuglog.DebugLog("applyURLToParserConfig: Adding new ProxySource with %d connections", len(connections))
-			newProxies = append(newProxies, proxySource)
-
-		// Don't preserve other existing ProxySource entries with connections - user removed them
-	if len(existingProps.ConnectionsProxies) > 0 {
-		debuglog.DebugLog("applyURLToParserConfig: Not preserving %d other connection ProxySources (user removed them)", len(existingProps.ConnectionsProxies)-1)
-	}
-
-	return newProxies
+// isConnectionOnlyProxy returns true for proxies that have only Connections (no Source).
+func isConnectionOnlyProxy(p config.ProxySource) bool {
+	return p.Source == "" && len(p.Connections) > 0
 }
 
 // updateAndSerializeParserConfig обновляет ParserConfig и сериализует его.
@@ -490,10 +478,12 @@ func updateAndSerializeParserConfig(
 	debuglog.DebugLog("applyURLToParserConfig: Serialized ParserConfig (result length: %d bytes, outbounds before: %d)",
 		len(serialized), len(parserConfig.ParserConfig.Outbounds))
 
-	// Update model and UI
-	updater.UpdateParserConfig(serialized)
+	// Update model and UI (both so Save and state use correct data; entry is updated so Add handler's UpdateParserConfig(model.ParserConfigJSON) does not overwrite with stale JSON)
+	model.ParserConfigJSON = serialized
 	model.ParserConfig = parserConfig
+	updater.UpdateParserConfig(serialized)
 	model.PreviewNeedsParse = true
+	InvalidatePreviewCache(model)
 	return nil
 }
 
@@ -517,10 +507,8 @@ func SerializeParserConfig(parserConfig *config.ParserConfig) (string, error) {
 	return string(data), nil
 }
 
-// GenerateTagPrefix generates a tag prefix for a subscription based on its index.
-// Format: "1:", "2:", "3:", etc.
-// This function can be easily modified to change the prefix format.
+// GenerateTagPrefix returns tag prefix by common 1-based index: 1:, 2:, 3:, ...
+// Index is shared across all sources (subscriptions then connection-only blocks).
 func GenerateTagPrefix(index int) string {
 	return fmt.Sprintf("%d:", index)
 }
-
