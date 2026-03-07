@@ -3,8 +3,8 @@
 // Файл wizard_model.go определяет WizardModel — чистую модель данных визарда без GUI зависимостей.
 //
 // WizardModel содержит только бизнес-данные (без Fyne виджетов):
-//   - ParserConfig данные (ParserConfigJSON, ParserConfig)
-//   - Источники (SourceURLs)
+//   - ParserConfig данные (ParserConfigJSON, ParserConfig) — источник истины для списка источников (Proxies)
+//   - SourceURLs — поле ввода для добавления новых URL (кнопка Add); не источник истины для существующих источников
 //   - Сгенерированные outbounds (GeneratedOutbounds, OutboundStats)
 //   - Template данные (TemplateData)
 //   - Правила (SelectableRuleStates, CustomRules, SelectedFinalOutbound)
@@ -32,24 +32,26 @@ const (
 	RejectActionMethod = "drop"
 )
 
-// OutboundStats содержит статистику по outbounds для preview.
+// OutboundStats содержит статистику по outbounds и endpoints для preview.
 type OutboundStats struct {
 	NodesCount           int
+	EndpointsCount       int // WireGuard endpoint nodes
 	LocalSelectorsCount  int
 	GlobalSelectorsCount int
 }
 
 // WizardModel — модель данных визарда конфигурации.
 type WizardModel struct {
-	// ParserConfig данные
+	// ParserConfig данные (источник истины для списка источников Proxies)
 	ParserConfigJSON string
 	ParserConfig     *config.ParserConfig
 
-	// Источники
+	// SourceURLs — текст в поле "Subscription URL or Direct Links" (ввод для кнопки Add); не используется для замены Proxies
 	SourceURLs string
 
-	// Сгенерированные outbounds
+	// Сгенерированные outbounds и endpoints (WireGuard)
 	GeneratedOutbounds []string
+	GeneratedEndpoints []string
 	OutboundStats      OutboundStats
 
 	// Template данные
@@ -70,6 +72,10 @@ type WizardModel struct {
 	// Template preview текст (кэш для оптимизации)
 	TemplatePreviewText string
 
+	// Preview кеш для распарсенных нод (используется всеми Preview/View, включая вкладку Preview в Edit Outbound)
+	PreviewNodes         []*config.ParsedNode
+	PreviewNodesBySource map[int][]*config.ParsedNode
+
 	// ExecDir — директория исполняемого файла (для путей к SRS и т.д.)
 	ExecDir string
 }
@@ -82,5 +88,6 @@ func NewWizardModel() *WizardModel {
 		SelectableRuleStates: make([]*RuleState, 0),
 		CustomRules:          make([]*RuleState, 0),
 		GeneratedOutbounds:   make([]string, 0),
+		GeneratedEndpoints:    make([]string, 0),
 	}
 }

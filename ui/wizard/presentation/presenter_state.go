@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"singbox-launcher/core"
-	"singbox-launcher/core/config"
 	"singbox-launcher/core/services"
 	"singbox-launcher/internal/debuglog"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
@@ -186,8 +185,8 @@ func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) err
 		return err
 	}
 
-	// Step 3: Keep source URL entry empty on load so the field is for adding new URLs only.
-	// Existing sources are already in ParserConfig and shown in the Sources list.
+	// Step 3: SourceURLs is only the input field for "Add"; source of truth for existing sources is ParserConfig.Proxies.
+	// Keep it empty on load so the field is for adding new URLs only; existing sources are shown from Proxies.
 	p.model.SourceURLs = ""
 
 	// Восстановление config_params (шаг 4)
@@ -222,6 +221,7 @@ func (p *WizardPresenter) restoreParserConfig(stateFile *wizardmodels.WizardStat
 	}
 
 	p.model.ParserConfig = &stateFile.ParserConfig
+	wizardbusiness.InvalidatePreviewCache(p.model)
 
 	// Сериализуем parser_config в JSON строку
 	parserConfigJSON, err := wizardbusiness.SerializeParserConfig(&stateFile.ParserConfig)
@@ -282,15 +282,15 @@ func (p *WizardPresenter) restoreCustomRules(persistedRules []wizardmodels.Persi
 	}
 }
 
-// extractSourceURLsFromParserConfig извлекает SourceURLs из ParserConfig.
-// Объединяет Source и Connections из всех ProxySource в одну строку, разделенную переносами строк.
-func (p *WizardPresenter) extractSourceURLsFromParserConfig(parserConfig *config.ParserConfig) string {
-	if parserConfig == nil || len(parserConfig.ParserConfig.Proxies) == 0 {
+// extractSourceURLsFromParserConfig derives a single string from model (p.model.ParserConfig.Proxies).
+// Combines Source and Connections from all ProxySource; for display/export only, not used to overwrite config.
+func (p *WizardPresenter) extractSourceURLsFromParserConfig() string {
+	if p.model.ParserConfig == nil || len(p.model.ParserConfig.ParserConfig.Proxies) == 0 {
 		return ""
 	}
 
 	lines := make([]string, 0)
-	for _, proxySource := range parserConfig.ParserConfig.Proxies {
+	for _, proxySource := range p.model.ParserConfig.ParserConfig.Proxies {
 		if proxySource.Source != "" {
 			lines = append(lines, proxySource.Source)
 		}

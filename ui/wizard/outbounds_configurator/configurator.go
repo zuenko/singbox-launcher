@@ -3,8 +3,10 @@
 package outbounds_configurator
 
 import (
+	"encoding/json"
 	"image/color"
 	"strconv"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -14,6 +16,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/core/config"
+	wizardmodels "singbox-launcher/ui/wizard/models"
 )
 
 // OutboundEditPresenter is used to register the Edit/Add window with the wizard overlay (single instance, focus redirect).
@@ -22,6 +25,7 @@ type OutboundEditPresenter interface {
 	SetOutboundEditWindow(fyne.Window)
 	ClearOutboundEditWindow()
 	UpdateChildOverlay()
+	Model() *wizardmodels.WizardModel
 }
 
 // outboundRow identifies one outbound in the list (global or per-source).
@@ -87,6 +91,26 @@ func tagsAbove(rows []outboundRow, rowIndex int) []string {
 	return tags
 }
 
+// getParserConfig returns the model's ParserConfig, ensuring it is set from ParserConfigJSON when nil.
+func getParserConfig(model *wizardmodels.WizardModel) *config.ParserConfig {
+	if model == nil {
+		return nil
+	}
+	if model.ParserConfig != nil {
+		return model.ParserConfig
+	}
+	raw := strings.TrimSpace(model.ParserConfigJSON)
+	if raw == "" {
+		return nil
+	}
+	var pc config.ParserConfig
+	if err := json.Unmarshal([]byte(raw), &pc); err != nil {
+		return nil
+	}
+	model.ParserConfig = &pc
+	return model.ParserConfig
+}
+
 // sameScope returns true if both rows are in the same scope (same source or both global).
 func sameScope(a, b outboundRow) bool {
 	if a.IsGlobal && b.IsGlobal {
@@ -130,13 +154,18 @@ func moveOutboundDown(parserConfig *config.ParserConfig, r outboundRow) {
 }
 
 // NewConfiguratorContent builds a reusable outbounds configurator content for embedding into tabs.
-// parserConfig is modified in place. onApply is called after each mutation (Edit/Add/Delete/Up/Down) so the caller can serialize and sync.
-// editPresenter is optional; when set, the Edit/Add window is registered for overlay and only one instance is allowed.
-func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfig, onApply func(), editPresenter OutboundEditPresenter) fyne.CanvasObject {
+// ParserConfig is taken from the model (editPresenter.Model()) so the configurator always edits the current config.
+// onApply is called after each mutation (Edit/Add/Delete/Up/Down) so the caller can serialize and sync.
+// editPresenter is required (Model() is used to get ParserConfig); when set, the Edit/Add window is registered for overlay.
+func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresenter, onApply func()) fyne.CanvasObject {
 	listContent := container.NewVBox()
 
 	var refreshList func()
 	refreshList = func() {
+		parserConfig := getParserConfig(editPresenter.Model())
+		if parserConfig == nil {
+			return
+		}
 		rows := collectRows(parserConfig)
 		items := make([]fyne.CanvasObject, 0, len(rows))
 		for rowIdx, r := range rows {
@@ -151,14 +180,15 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 			canDown := rowIdx < len(rows)-1 && sameScope(rows[rowIdx], rows[rowIdx+1])
 
 			upBtn := widget.NewButton("↑", func() {
-				rowsNow := collectRows(parserConfig)
-				idx := -1
-				for i := range rowsNow {
-					if rowsNow[i].Outbound == r.Outbound {
-						idx = i
-						break
-					}
+				parserConfig := getParserConfig(editPresenter.Model())
+				if parserConfig == nil {
+					return
 				}
+				rowsNow := collectRows(parserConfig)
+				if rowIdx >= len(rowsNow) {
+					return
+				}
+				idx := rowIdx
 				if idx <= 0 || !sameScope(rowsNow[idx], rowsNow[idx-1]) {
 					return
 				}
@@ -173,14 +203,15 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 			}
 
 			downBtn := widget.NewButton("↓", func() {
-				rowsNow := collectRows(parserConfig)
-				idx := -1
-				for i := range rowsNow {
-					if rowsNow[i].Outbound == r.Outbound {
-						idx = i
-						break
-					}
+				parserConfig := getParserConfig(editPresenter.Model())
+				if parserConfig == nil {
+					return
 				}
+				rowsNow := collectRows(parserConfig)
+				if rowIdx >= len(rowsNow) {
+					return
+				}
+				idx := rowIdx
 				if idx < 0 || idx >= len(rowsNow)-1 || !sameScope(rowsNow[idx], rowsNow[idx+1]) {
 					return
 				}
@@ -195,17 +226,41 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 			}
 
 			editBtn := widget.NewButtonWithIcon("Edit", theme.DocumentCreateIcon(), func() {
-				rowsNow := collectRows(parserConfig)
-				idx := -1
-				for i := range rowsNow {
-					if rowsNow[i].Outbound == r.Outbound {
-						idx = i
-						break
-					}
+				parserConfig := getParserConfig(editPresenter.Model())
+				if parserConfig == nil {
+					return
 				}
-				tagsForAdd := tagsAbove(rowsNow, idx)
-				ShowEditDialog(parent, editPresenter, parserConfig, r.Outbound, r.IsGlobal, r.SourceIndex, tagsForAdd, func(updated *config.OutboundConfig, scopeKind string, sourceIndex int) {
-					*r.Outbound = *updated
+				rowsNow := collectRows(parserConfig)
+				if rowIdx >= len(rowsNow) {
+					return
+				}
+				r2 := rowsNow[rowIdx]
+				tagsForAdd := tagsAbove(rowsNow, rowIdx)
+				wasGlobal := r2.IsGlobal
+				wasSourceIndex := r2.SourceIndex
+				ShowEditDialog(parent, editPresenter, r2.Outbound, r2.IsGlobal, r2.SourceIndex, tagsForAdd, func(updated *config.OutboundConfig, scopeKind string, sourceIndex int) {
+					newGlobal := scopeKind == "global" || sourceIndex < 0
+					scopeChanged := wasGlobal != newGlobal || (!newGlobal && wasSourceIndex != sourceIndex)
+					if scopeChanged {
+						// Remove from old scope
+						if wasGlobal {
+							parserConfig.ParserConfig.Outbounds = append(parserConfig.ParserConfig.Outbounds[:r2.IndexInSlice], parserConfig.ParserConfig.Outbounds[r2.IndexInSlice+1:]...)
+						} else {
+							prox := &parserConfig.ParserConfig.Proxies[wasSourceIndex]
+							prox.Outbounds = append(prox.Outbounds[:r2.IndexInSlice], prox.Outbounds[r2.IndexInSlice+1:]...)
+						}
+						// Add to new scope
+						if newGlobal {
+							parserConfig.ParserConfig.Outbounds = append(parserConfig.ParserConfig.Outbounds, *updated)
+						} else {
+							for sourceIndex >= len(parserConfig.ParserConfig.Proxies) {
+								parserConfig.ParserConfig.Proxies = append(parserConfig.ParserConfig.Proxies, config.ProxySource{})
+							}
+							parserConfig.ParserConfig.Proxies[sourceIndex].Outbounds = append(parserConfig.ParserConfig.Proxies[sourceIndex].Outbounds, *updated)
+						}
+					} else {
+						*r2.Outbound = *updated
+					}
 					refreshList()
 					if onApply != nil {
 						onApply()
@@ -214,18 +269,15 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 			})
 
 			delBtn := widget.NewButtonWithIcon("Del", theme.DeleteIcon(), func() {
-				rowsNow := collectRows(parserConfig)
-				idx := -1
-				for i := range rowsNow {
-					if rowsNow[i].Outbound == r.Outbound {
-						idx = i
-						break
-					}
-				}
-				if idx < 0 {
+				parserConfig := getParserConfig(editPresenter.Model())
+				if parserConfig == nil {
 					return
 				}
-				r2 := rowsNow[idx]
+				rowsNow := collectRows(parserConfig)
+				if rowIdx >= len(rowsNow) {
+					return
+				}
+				r2 := rowsNow[rowIdx]
 				if r2.IsGlobal {
 					pc := parserConfig
 					pc.ParserConfig.Outbounds = append(pc.ParserConfig.Outbounds[:r2.IndexInSlice], pc.ParserConfig.Outbounds[r2.IndexInSlice+1:]...)
@@ -254,8 +306,12 @@ func NewConfiguratorContent(parent fyne.Window, parserConfig *config.ParserConfi
 	refreshList()
 
 	addBtn := widget.NewButton("Add", func() {
+		parserConfig := getParserConfig(editPresenter.Model())
+		if parserConfig == nil {
+			return
+		}
 		existingTags := collectAllTags(parserConfig)
-		ShowEditDialog(parent, editPresenter, parserConfig, nil, true, -1, existingTags, func(updated *config.OutboundConfig, scopeKind string, sourceIndex int) {
+		ShowEditDialog(parent, editPresenter, nil, true, -1, existingTags, func(updated *config.OutboundConfig, scopeKind string, sourceIndex int) {
 			if scopeKind == "global" || sourceIndex < 0 {
 				parserConfig.ParserConfig.Outbounds = append(parserConfig.ParserConfig.Outbounds, *updated)
 			} else {

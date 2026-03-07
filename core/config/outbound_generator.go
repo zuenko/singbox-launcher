@@ -40,9 +40,12 @@ import (
 
 // OutboundGenerationResult is the return value of GenerateOutboundsFromParserConfig: slice of JSON strings
 // (nodes, then local selectors, then global selectors) and counts for each category.
+// WireGuard nodes go to EndpointsJSON (sing-box endpoints), not OutboundsJSON.
 type OutboundGenerationResult struct {
 	OutboundsJSON        []string // Generated JSON lines for outbounds array (nodes, then local, then global selectors)
-	NodesCount           int      // Number of node outbounds
+	EndpointsJSON       []string // Generated JSON lines for endpoints array (WireGuard nodes only)
+	NodesCount           int      // Number of node outbounds (non-WireGuard)
+	EndpointsCount       int      // Number of WireGuard endpoint nodes
 	LocalSelectorsCount  int      // Number of local (per-source) selectors
 	GlobalSelectorsCount int      // Number of global selectors
 }
@@ -401,6 +404,34 @@ func GenerateSelectorWithFilteredAddOutbounds(
 	return result, nil
 }
 
+// GenerateEndpointJSON returns a single JSON object string for one WireGuard endpoint (sing-box endpoints array).
+// node.Outbound must contain the full endpoint map built by the wireguard URI parser.
+// Uses node.Tag (with tag_prefix applied by source) for the endpoint "tag" so selectors can reference it.
+// Returned string is pretty-printed (multi-line); trailing comma is added by the caller when inserting into the array.
+func GenerateEndpointJSON(node *ParsedNode) (string, error) {
+	if node.Scheme != "wireguard" || node.Outbound == nil {
+		return "", fmt.Errorf("GenerateEndpointJSON requires wireguard node with Outbound set")
+	}
+	// Use node.Tag (includes tag_prefix, e.g. "4:wg-parnas") so endpoint tag matches outbound references
+	endpoint := make(map[string]interface{})
+	for k, v := range node.Outbound {
+		endpoint[k] = v
+	}
+	if node.Tag != "" {
+		endpoint["tag"] = node.Tag
+	}
+	jsonBytes, err := json.MarshalIndent(endpoint, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal wireguard endpoint: %w", err)
+	}
+	result := ""
+	if node.Comment != "" {
+		result = "// " + node.Comment + "\n"
+	}
+	result += string(jsonBytes)
+	return result, nil
+}
+
 // buildOutboundsInfo implements pass 1: builds the outboundsInfo map for every selector (local and global).
 // For each selector we store config, filtered nodes (from Filters), and outboundCount = len(filteredNodes).
 // isValid is left false; it is set in pass 2. Duplicate tags are logged via logDuplicateTagIfExists.
@@ -657,16 +688,28 @@ func GenerateOutboundsFromParserConfig(
 	}
 
 	selectorsJSON := make([]string, 0)
+	endpointsJSON := make([]string, 0)
 	nodesCount := 0
+	endpointsCount := 0
 
 	for _, node := range allNodes {
-		nodeJSON, err := GenerateNodeJSON(node)
-		if err != nil {
-			log.Printf("GenerateOutboundsFromParserConfig: Warning: Failed to generate JSON for node %s: %v", node.Tag, err)
-			continue
+		if node.Scheme == "wireguard" {
+			epJSON, err := GenerateEndpointJSON(node)
+			if err != nil {
+				log.Printf("GenerateOutboundsFromParserConfig: Warning: Failed to generate JSON for endpoint %s: %v", node.Tag, err)
+				continue
+			}
+			endpointsJSON = append(endpointsJSON, epJSON)
+			endpointsCount++
+		} else {
+			nodeJSON, err := GenerateNodeJSON(node)
+			if err != nil {
+				log.Printf("GenerateOutboundsFromParserConfig: Warning: Failed to generate JSON for node %s: %v", node.Tag, err)
+				continue
+			}
+			selectorsJSON = append(selectorsJSON, nodeJSON)
+			nodesCount++
 		}
-		selectorsJSON = append(selectorsJSON, nodeJSON)
-		nodesCount++
 	}
 
 	outboundsInfo := buildOutboundsInfo(parserConfig, nodesBySource, allNodes, progressCallback)
@@ -676,7 +719,9 @@ func GenerateOutboundsFromParserConfig(
 
 	return &OutboundGenerationResult{
 		OutboundsJSON:        selectorsJSON,
+		EndpointsJSON:        endpointsJSON,
 		NodesCount:           nodesCount,
+		EndpointsCount:       endpointsCount,
 		LocalSelectorsCount:  localSelectorsCount,
 		GlobalSelectorsCount: globalSelectorsCount,
 	}, nil
@@ -805,3 +850,27 @@ func matchesPattern(value, pattern string) bool {
 	// Literal match
 	return value == pattern
 }
+
+// PreviewSelectorNodes returns nodes that match outboundConfig.Filters and the default tag
+// based on outboundConfig.PreferredDefault. It is used by UI layers to build a selector
+// preview that is consistent with the real selector generation logic.
+//
+// allNodes must be the same set of nodes that will be used for selector generation
+// (i.e. result of the same LoadNodesFromSource pipeline that GenerateOutboundsFromParserConfig uses).
+func PreviewSelectorNodes(allNodes []*ParsedNode, outboundConfig OutboundConfig) ([]*ParsedNode, string) {
+	filtered := filterNodesForSelector(allNodes, outboundConfig.Filters)
+
+	defaultTag := ""
+	if len(outboundConfig.PreferredDefault) > 0 {
+		preferredFilter := convertFilterToStringMap(outboundConfig.PreferredDefault)
+		for _, node := range filtered {
+			if matchesFilter(node, preferredFilter) {
+				defaultTag = node.Tag
+				break
+			}
+		}
+	}
+
+	return filtered, defaultTag
+}
+

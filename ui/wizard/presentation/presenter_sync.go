@@ -28,6 +28,7 @@ import (
 )
 
 // SyncModelToGUI синхронизирует данные из модели в GUI.
+// SourceURLEntry shows SourceURLs (input for Add only); source list is from ParserConfig.Proxies in refreshSourcesList.
 func (p *WizardPresenter) SyncModelToGUI() {
 	p.UpdateUI(func() {
 		if p.guiState.SourceURLEntry != nil {
@@ -105,6 +106,7 @@ func (p *WizardPresenter) ValidateAndApplyParserConfigFromEntry() {
 	if text == "" {
 		p.model.ParserConfigJSON = ""
 		p.model.ParserConfig = nil
+		wizardbusiness.InvalidatePreviewCache(p.model)
 		p.guiState.LastValidParserConfigJSON = ""
 		return
 	}
@@ -139,4 +141,5 @@ func (p *WizardPresenter) ValidateAndApplyParserConfigFromEntry() {
 		p.guiState.RefreshSourcesList()
 	}
 	p.model.PreviewNeedsParse = true
+	wizardbusiness.InvalidatePreviewCache(p.model)
 }

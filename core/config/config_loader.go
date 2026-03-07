@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"regexp"
 
 	"github.com/muhammadmuzzammil1998/jsonc"
 )
@@ -85,23 +84,13 @@ func GetSelectorGroupsFromConfig(configPath string) ([]string, string, error) {
 	return selectorGroups, defaultSelector, nil
 }
 
-var reTrailingCommas = regexp.MustCompile(`,(\s*[\]\}])`)
-
-func removeTrailingCommas(data []byte) []byte {
-	return reTrailingCommas.ReplaceAll(data, []byte("$1"))
-}
-
-// getConfigJSON reads config and returns JSON safe to parse (JSONC + trailing commas removed).
-// Trailing commas are removed before and after jsonc so jsonc never sees invalid input and we still fix cases like , // comment \n ].
+// getConfigJSON reads config and returns JSON safe to parse (JSONC).
 func getConfigJSON(configPath string) ([]byte, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config: %w", err)
 	}
-	data = removeTrailingCommas(data) // before jsonc so it doesn't fail on simple ,]
-	cleanData := jsonc.ToJSON(data)
-	cleanData = removeTrailingCommas(cleanData) // after jsonc for cases like , // comment \n ]
-	return cleanData, nil
+	return jsonc.ToJSON(data), nil
 }
 
 // GetTunInterfaceName extracts TUN interface name from config.json

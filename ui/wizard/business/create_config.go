@@ -118,6 +118,8 @@ func buildConfigSections(model *wizardmodels.WizardModel, forPreview bool, timin
 		switch key {
 		case "outbounds":
 			formatted, err = buildOutboundsSection(model, raw, forPreview, timing)
+		case "endpoints":
+			formatted, err = buildEndpointsSection(model, raw, forPreview, timing)
 		case "route":
 			formatted, err = buildRouteSection(model, raw, timing)
 		default:
@@ -176,6 +178,54 @@ func buildOutboundsSection(model *wizardmodels.WizardModel, templateOutbounds js
 	// 2. Статические outbounds: запятую перед первым не пишем — она уже после последнего динамического
 	if len(staticOutbounds) > 0 {
 		for i, item := range staticOutbounds {
+			if i > 0 {
+				builder.WriteString(",\n")
+			} else {
+				builder.WriteString("\n")
+			}
+			formatted, err := formatCompactJSON(item, indent)
+			if err != nil {
+				formatted = string(item)
+			}
+			builder.WriteString(indent + formatted)
+		}
+	}
+
+	builder.WriteString("\n  ]")
+	return builder.String(), nil
+}
+
+// buildEndpointsSection строит секцию endpoints (WireGuard): динамические между @ParserSTART_E/@ParserEND_E и статические из шаблона.
+func buildEndpointsSection(model *wizardmodels.WizardModel, templateEndpoints json.RawMessage, forPreview bool, timing *debuglog.TimingContext) (string, error) {
+	start := time.Now()
+	defer func() { timing.LogTiming("build endpoints", time.Since(start)) }()
+
+	var staticEndpoints []json.RawMessage
+	_ = json.Unmarshal(templateEndpoints, &staticEndpoints)
+
+	indent := Indent(2)
+	var builder strings.Builder
+	builder.WriteString("[\n")
+
+	builder.WriteString(indent + "/** @ParserSTART_E */\n")
+	if forPreview && model.OutboundStats.EndpointsCount > wizardutils.MaxNodesForFullPreview {
+		builder.WriteString(fmt.Sprintf("%s// Generated: %d endpoints (WireGuard)\n", indent, model.OutboundStats.EndpointsCount))
+	} else {
+		for idx, entry := range model.GeneratedEndpoints {
+			cleaned := strings.TrimRight(entry, ",\n\r\t ")
+			builder.WriteString(IndentMultiline(cleaned, indent))
+			if idx < len(model.GeneratedEndpoints)-1 {
+				builder.WriteString(",")
+			} else if len(staticEndpoints) > 0 {
+				builder.WriteString(",")
+			}
+			builder.WriteString("\n")
+		}
+	}
+	builder.WriteString(indent + "/** @ParserEND_E */")
+
+	if len(staticEndpoints) > 0 {
+		for i, item := range staticEndpoints {
 			if i > 0 {
 				builder.WriteString(",\n")
 			} else {
