@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"net"
 	"runtime"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/pion/stun"
 	"github.com/txthinking/socks5"
@@ -20,29 +23,33 @@ import (
 	"singbox-launcher/internal/platform"
 )
 
+// STUN settings (process-wide, overridable from Diagnostics tab).
+var (
+	stunServerAddr = constants.DefaultSTUNServer
+	// stunUseSOCKS5OnMac: on darwin, when true use system SOCKS5 if available; when false always use direct connection.
+	stunUseSOCKS5OnMac = true
+)
+
 // checkSTUN performs a STUN request to determine the external IP address.
+// useProxy: on darwin, when true use system SOCKS5 if available; when false use direct connection. Ignored on other platforms.
 // Returns IP address, whether proxy was used, and error.
-func checkSTUN(serverAddr string) (ip string, usedProxy bool, err error) {
+func checkSTUN(serverAddr string, useProxy bool) (ip string, usedProxy bool, err error) {
 	var conn net.Conn
 
-	// On macOS, try to use system SOCKS5 proxy if enabled
-	if runtime.GOOS == "darwin" {
+	if runtime.GOOS == "darwin" && useProxy {
 		proxyHost, proxyPort, proxyEnabled, proxyErr := platform.GetSystemSOCKSProxy()
 		if proxyErr == nil && proxyEnabled && proxyHost != "" && proxyPort > 0 {
 			debuglog.DebugLog("diagnosticsTab: Using system SOCKS5 proxy %s:%d for STUN test", proxyHost, proxyPort)
-			// Create SOCKS5 client
 			socksClient, err := socks5.NewClient(fmt.Sprintf("%s:%d", proxyHost, proxyPort), "", "", 0, 60)
 			if err != nil {
 				return "", false, fmt.Errorf("failed to create SOCKS5 client: %w", err)
 			}
-			// Dial UDP connection through SOCKS5 proxy
 			conn, err = socksClient.Dial("udp", serverAddr)
 			if err != nil {
 				return "", false, fmt.Errorf("failed to dial STUN server via SOCKS5 proxy: %w", err)
 			}
 			usedProxy = true
 		} else {
-			// Proxy not enabled or error getting settings, use direct connection
 			if proxyErr != nil {
 				debuglog.DebugLog("diagnosticsTab: Failed to get system proxy settings: %v, using direct connection", proxyErr)
 			}
@@ -52,7 +59,9 @@ func checkSTUN(serverAddr string) (ip string, usedProxy bool, err error) {
 			}
 		}
 	} else {
-		// On other platforms, use direct connection
+		if runtime.GOOS == "darwin" && !useProxy {
+			debuglog.DebugLog("diagnosticsTab: STUN test via direct connection (user setting)")
+		}
 		conn, err = net.Dial("udp", serverAddr)
 		if err != nil {
 			return "", false, fmt.Errorf("failed to dial STUN server: %w", err)
@@ -111,19 +120,26 @@ func checkSTUN(serverAddr string) (ip string, usedProxy bool, err error) {
 	}
 }
 
+func effectiveSTUNServer() string {
+	s := strings.TrimSpace(stunServerAddr)
+	if s == "" {
+		return constants.DefaultSTUNServer
+	}
+	return s
+}
+
 // CreateDiagnosticsTab creates and returns the content for the "Diagnostics" tab.
 func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
-	// Кнопка для проверки STUN (Google STUN [UDP])
-	stunButton := widget.NewButton("Google STUN [UDP]", func() {
-		// Показываем диалог ожидания
+	stunButton := widget.NewButton("STUN [UDP]", func() {
 		waitDialog := dialogs.NewCustom("STUN Check", widget.NewLabel("Checking, please wait..."), nil, "", ac.UIService.MainWindow)
 		waitDialog.Show()
 
-		go func() {
-			stunServer := constants.DefaultSTUNServer
-			ip, usedProxy, err := checkSTUN(stunServer)
+		server := effectiveSTUNServer()
+		useProxy := stunUseSOCKS5OnMac
 
-			// Закрываем диалог ожидания и показываем результат
+		go func() {
+			ip, usedProxy, err := checkSTUN(server, useProxy)
+
 			fyne.Do(func() {
 				waitDialog.Hide()
 				if err != nil {
@@ -133,23 +149,71 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 					var connectionInfo string
 					if usedProxy {
 						debuglog.InfoLog("diagnosticsTab: STUN check successful via SOCKS5 proxy, IP: %s", ip)
-						connectionInfo = fmt.Sprintf("(determined via [UDP]%s)\nvia system proxy SOCKS5", stunServer)
+						connectionInfo = fmt.Sprintf("(determined via [UDP]%s)\nvia system proxy SOCKS5", server)
 					} else {
 						debuglog.InfoLog("diagnosticsTab: STUN check successful, IP: %s", ip)
-						connectionInfo = fmt.Sprintf("(determined via [UDP]%s, direct connection)", stunServer)
+						connectionInfo = fmt.Sprintf("(determined via [UDP]%s, direct connection)", server)
 					}
-					// Создаем кастомный диалог с кнопкой "Copy"
 					resultLabel := widget.NewLabel(fmt.Sprintf("Your External IP: %s\n%s", ip, connectionInfo))
 					copyButton := widget.NewButton("Copy IP", func() {
 						ac.UIService.MainWindow.Clipboard().SetContent(ip)
 						ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Copied", "IP address copied to clipboard.")
 					})
-
 					ShowCustom(ac.UIService.MainWindow, "STUN Check Result", "Close", container.NewVBox(resultLabel, copyButton))
 				}
 			})
 		}()
 	})
+
+	const alwaysOnlineSTUNURL = "https://github.com/pradt2/always-online-stun?tab=readme-ov-file#always-online-stun-servers"
+
+	stunSettingsButton := widget.NewButton("⚙", func() {
+		serverEntry := widget.NewEntry()
+		serverEntry.SetPlaceHolder(constants.DefaultSTUNServer)
+		serverEntry.SetText(stunServerAddr)
+
+		stunHelpButton := widget.NewButton("?", func() {
+			if err := platform.OpenURL(alwaysOnlineSTUNURL); err != nil {
+				debuglog.ErrorLog("diagnosticsTab: Failed to open STUN list URL: %v", err)
+				ShowError(ac.UIService.MainWindow, err)
+			}
+		})
+
+		content := container.NewVBox(
+			widget.NewLabel("STUN server (host:port):"),
+			container.NewBorder(nil, nil, nil, stunHelpButton, serverEntry),
+		)
+		if runtime.GOOS == "darwin" {
+			socksCheck := widget.NewCheck("Use system SOCKS5 proxy", func(bool) {})
+			socksCheck.SetChecked(stunUseSOCKS5OnMac)
+			content.Add(socksCheck)
+			content.Add(widget.NewLabel(" "))
+			dialog.ShowCustomConfirm("STUN settings", "Save", "Cancel", content, func(ok bool) {
+				if !ok {
+					return
+				}
+				stunServerAddr = strings.TrimSpace(serverEntry.Text)
+				if stunServerAddr == "" {
+					stunServerAddr = constants.DefaultSTUNServer
+				}
+				stunUseSOCKS5OnMac = socksCheck.Checked
+			}, ac.UIService.MainWindow)
+		} else {
+			content.Add(widget.NewLabel(" "))
+			dialog.ShowCustomConfirm("STUN settings", "Save", "Cancel", content, func(ok bool) {
+				if !ok {
+					return
+				}
+				stunServerAddr = strings.TrimSpace(serverEntry.Text)
+				if stunServerAddr == "" {
+					stunServerAddr = constants.DefaultSTUNServer
+				}
+			}, ac.UIService.MainWindow)
+		}
+	})
+
+	// STUN button fills width, gear on the right
+	stunRow := container.NewBorder(nil, nil, nil, stunSettingsButton, stunButton)
 
 	// Helper function to create "Open in Browser" buttons
 	openBrowserButton := func(label, url string) fyne.CanvasObject {
@@ -161,16 +225,22 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 		})
 	}
 
-	openLogsButton := widget.NewButton("Open logs", func() {
+	openLogWindowButton := widget.NewButtonWithIcon("Open log window", theme.ViewRestoreIcon(), func() {
 		OpenLogViewerWindow(ac)
+	})
+	openLogsFolderButton := widget.NewButtonWithIcon("Open logs folder", theme.FolderOpenIcon(), func() {
+		logsDir := platform.GetLogsDir(ac.FileService.ExecDir)
+		if err := platform.OpenFolder(logsDir); err != nil {
+			debuglog.ErrorLog("diagnosticsTab: Failed to open logs folder: %v", err)
+			ShowError(ac.UIService.MainWindow, err)
+		}
 	})
 
 	return container.NewVBox(
 		widget.NewLabel(" "),
-		openLogsButton,
-		//widget.NewLabel(" "),
+		container.NewHBox(openLogWindowButton, openLogsFolderButton),
 		widget.NewLabel("IP Check Services:"),
-		stunButton, // Google STUN [UDP] перенесен в секцию IP Check Services
+		stunRow,
 		openBrowserButton("2ip.ru", "https://2ip.ru"),
 		openBrowserButton("2ip.io", "https://2ip.io"),
 		openBrowserButton("2ip.me", "https://2ip.me"),
