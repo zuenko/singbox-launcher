@@ -490,7 +490,7 @@ singbox-launcher/
 - **События для подписки:** **sleep** (система уходит в сон) и **resume** (система вышла из сна/гибернации). Подписчики регистрируют колбэки; при sleep — прерывают текущие запросы и не начинают новые; при resume — могут возобновить работу (напр. сброс HTTP-транспорта).
 - **Статус sleep:** IsSleeping() — true между sleep и resume. Пакет **api** использует внутри requestContext() и normalizeRequestError() (PowerContext, ErrPlatformInterrupt); публичный API api без контекста. Таймеры (меню трея и т.д.) и цикл AutoLoadProxies проверяют IsSleeping() перед срабатыванием. main.go вызывает RegisterPowerResumeCallback и StopPowerResumeListener безусловно.
 
-Подписчики: api, таймер меню трея, AutoLoadProxies, UI (clash_api_tab). См. todo/issues/001-launcher-freeze-after-sleep (SPEC, PLAN, IMPLEMENTATION_REPORT).
+Подписчики: api, таймер меню трея, AutoLoadProxies, UI (clash_api_tab). См. SPECS/011-B-C-launcher-freeze-after-sleep (SPEC, PLAN, IMPLEMENTATION_REPORT).
 
 ## Детальное описание компонентов
 
