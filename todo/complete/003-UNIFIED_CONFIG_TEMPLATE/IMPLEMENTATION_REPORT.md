@@ -74,7 +74,7 @@
 
 | Файл | Изменение |
 |------|-----------|
-| `todo/complete/WIZARD_STATE/WIZARD_STATE_JSON_SCHEMA.md` | Обновлена схема `state.json` (версия 2, упрощённая структура, миграция) |
+| `todo/complete/002-WIZARD_STATE/WIZARD_STATE_JSON_SCHEMA.md` | Обновлена схема `state.json` (версия 2, упрощённая структура, миграция) |
 | `docs/ARCHITECTURE.md` | Обновлена архитектурная документация (новые файлы, структура загрузчика, удалены старые директивы) |
 | `docs/CREATE_WIZARD_TEMPLATE.md` | Полностью переписан под новую JSON-структуру (удалены директивы, добавлены примеры `params`, разделы про DNS/TUN/Local Traffic) |
 | `docs/CREATE_WIZARD_TEMPLATE_RU.md` | Полностью переписан (русская версия) |
@@ -220,7 +220,7 @@ func MigrateCustomRules(raw json.RawMessage) → []PersistedCustomRule
 
 | Документ | Приоритет | Статус | Изменения |
 |----------|-----------|--------|-----------|
-| `todo/complete/WIZARD_STATE/WIZARD_STATE_JSON_SCHEMA.md` | Высокий | ✅ Обновлён | Версия изменена с 1 на 2. Упрощена структура `selectable_rule_states` (только `label`, `enabled`, `selected_outbound`). Обновлена информация о миграции. Удалены упоминания старых директив. |
+| `todo/complete/002-WIZARD_STATE/WIZARD_STATE_JSON_SCHEMA.md` | Высокий | ✅ Обновлён | Версия изменена с 1 на 2. Упрощена структура `selectable_rule_states` (только `label`, `enabled`, `selected_outbound`). Обновлена информация о миграции. Удалены упоминания старых директив. |
 | `docs/ARCHITECTURE.md` | Высокий | ✅ Обновлён | Добавлены новые файлы (`tray_menu.go`, `auto_update.go`). Обновлены описания `FileService` (бэкап файлов). Обновлена секция `template/loader.go` (новая структура загрузки). Удалены упоминания старых директив и структур. Обновлены комментарии (русский язык). |
 | `docs/CREATE_WIZARD_TEMPLATE.md` | Высокий | ✅ Переписан | Полностью переписан под новую структуру. Удалены все упоминания директив в комментариях. Описана структура единого JSON-шаблона (4 секции). Добавлены примеры использования `params` для платформо-зависимых настроек. Обновлены примеры правил с `rule_set` внутри правил. Добавлены разделы про DNS, TUN vs System Proxy, Local Traffic Rules. |
 | `docs/CREATE_WIZARD_TEMPLATE_RU.md` | Высокий | ✅ Переписан | Полностью переписан под новую структуру (русская версия). Те же изменения, что и в английской версии. |

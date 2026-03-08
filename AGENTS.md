@@ -37,7 +37,7 @@
 
 ## 2. Формат задач (Spec Kit)
 
-Крупные фичи описаны в `todo/` — папки `NNN-{FEATURE_NAME}/` (например `001-LOCALIZATION/`) или без индекса. Баги и мелочи — в `todo/issues/NNN-short-name/` с тем же набором SPEC, PLAN, TASKS, IMPLEMENTATION_REPORT (см. todo/issues/README.md).
+Крупные фичи описаны в `todo/` — папки `NNN-{FEATURE_NAME}/` (например `011-LOCALIZATION/`) или без индекса. Баги и мелочи — в `todo/issues/NNN-short-name/` с тем же набором SPEC, PLAN, TASKS, IMPLEMENTATION_REPORT (см. todo/issues/README.md).
 
 | Файл | Содержит |
 |------|----------|

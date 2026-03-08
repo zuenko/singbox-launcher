@@ -121,4 +121,4 @@
 - sing-box rule-set: https://sing-box.sagernet.org/configuration/rule-set/
 - Каталог SRS (runetfreedom): [release/sing-box](https://github.com/runetfreedom/russia-v2ray-rules-dat/tree/release/sing-box), [README проекта](https://github.com/runetfreedom/russia-v2ray-rules-dat).
 - Текущая реализация правил: `ui/wizard/dialogs/add_rule_dialog.go`, `ui/wizard/business/create_config.go` (MergeRouteSection), `ui/wizard/models/wizard_state_file.go` (PersistedCustomRule, DetermineRuleType).
-- Локальное скачивание SRS (шаблонные правила): `todo/complete/SRS_LOCAL_DOWNLOAD/`.
+- Локальное скачивание SRS (шаблонные правила): `todo/complete/004-SRS_LOCAL_DOWNLOAD/`.
