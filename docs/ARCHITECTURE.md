@@ -297,8 +297,7 @@ singbox-launcher/
 │       │   │   │   - finalizeSaveOperation()           # Завершение операции
 │       │   │   │   - waitForParsingIfNeeded()          # Ожидание парсинга при необходимости
 │       │   │   │   - buildConfigForSave()              # Построение конфигурации
-│       │   │   │   - saveConfigFile()                  # Сохранение файла с бэкапом
-│       │   │   │   - validateConfigFile()              # Валидация конфига через sing-box
+│       │   │   │   - saveConfigFile()                  # Валидация по временному файлу (config-check.json) и запись config.json с бэкапом
 │       │   │   │   - saveStateAndShowSuccessDialog()   # Сохранение state и показ диалога
 │       │   │   │   - showSaveSuccessDialog()           # Диалог успешного сохранения
 │       │   │   │   - completeSaveOperation()           # Завершение операции с задержкой
@@ -728,11 +727,11 @@ singbox-launcher/
 - `presenter_save.go`:
   - `SaveConfig()` - сохранение конфигурации с прогресс-баром и проверками (основная функция)
   - `validateSaveInput()`, `checkSaveOperationState()` - проверки перед сохранением
-  - `executeSaveOperation()` - выполнение сохранения в горутине: сборка конфига из текущей модели (без ожидания парсинга outbounds), запись файла, валидация, state.json, диалог; по завершении в фоне вызывается `core.RunParserProcess()` (обновление конфига из подписок)
+  - `executeSaveOperation()` - выполнение сохранения в горутине: сборка конфига, валидация по временному файлу (config-check.json) и запись config.json, state.json, диалог; перезапуск sing-box не выполняется; по завершении в фоне вызывается `core.RunParserProcess()` (обновление конфига из подписок)
   - `finalizeSaveOperation()` - завершение операции и восстановление UI
   - `buildConfigForSave()` - построение конфигурации из шаблона и модели
-  - `saveConfigFile()`, `validateConfigFile()` - запись в файл и валидация sing-box
-  - `saveStateAndShowSuccessDialog()`, `showSaveSuccessDialog()` - сохранение state и диалог успеха
+  - `saveConfigFile()` - валидация sing-box check по временному файлу (config-check.json) и при успехе запись в config.json с бэкапом (вызов SaveConfigWithBackup)
+  - `saveStateAndShowSuccessDialog()`, `showSaveSuccessDialog()` - сохранение state и диалог успеха (без перезапуска sing-box)
   - `completeSaveOperation()` - финализация и запуск RunParserProcess в фоне
 - `presenter_state.go`:
   - `CreateStateFromModel()` - создание WizardStateFile из текущей модели
@@ -821,7 +820,8 @@ singbox-launcher/
   - `EnsureRequiredOutbounds()` - обеспечение наличия требуемых outbounds из template
   - `CloneOutbound()` - создание глубокой копии OutboundConfig
 - `saver.go`:
-  - `SaveConfigWithBackup()` - сохранение конфигурации с бэкапом (через services.BackupFile) и генерацией secret для Clash API
+  - `SaveConfigWithBackup()` - при непустом fileService.SingboxPath(): запись во временный файл `config-check.json`, валидация `sing-box check`, при успехе — бэкап и запись в config; генерация secret для Clash API (prepareConfigText)
+  - `ValidateConfigWithSingBox()` - валидация конфига через sing-box check
   - `FileServiceAdapter` - адаптер для services.FileService
 - `state_store.go`:
   - `NewStateStore()` - создание хранилища состояний
@@ -1172,9 +1172,7 @@ UI (core_dashboard_tab.go)
       │   │   ├─> buildConfigForSave()
       │   │   │   └─> wizard/business/create_config.go: BuildTemplateConfig()
       │   │   ├─> saveConfigFile()
-      │   │   │   └─> wizard/business/saver.go: SaveConfigWithBackup()
-      │   │   ├─> validateConfigFile()
-      │   │   │   └─> wizard/business/saver.go: ValidateConfigWithSingBox()
+      │   │   │   └─> wizard/business/saver.go: SaveConfigWithBackup() (внутри: запись в config-check.json, ValidateConfigWithSingBox, при успехе — запись в config)
       │   │   └─> saveStateAndShowSuccessDialog()
       │   │       ├─> wizard/presentation/presenter_state.go: SaveCurrentState()
       │   │       │   └─> wizard/business/state_store.go: SaveCurrentState()

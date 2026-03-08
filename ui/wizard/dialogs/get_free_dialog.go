@@ -237,7 +237,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 				debuglog.ErrorLog("Panic in ShowGetFreeVPNDialog goroutine: %v", r)
 				fyne.Do(func() {
 					loadingDialog.Hide()
-					dialog.ShowError(fmt.Errorf("Произошла ошибка: %v", r), guiState.Window)
+					dialog.ShowError(fmt.Errorf("An error occurred: %v", r), guiState.Window)
 				})
 			}
 		}()
@@ -247,7 +247,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 			debuglog.ErrorLog("Failed to download get_free.json: %v", err)
 			fyne.Do(func() {
 				loadingDialog.Hide()
-				dialog.ShowError(fmt.Errorf("Не удалось скачать get_free.json:\n\n%w\n\nПроверьте подключение к интернету и попробуйте снова.", err), guiState.Window)
+				dialog.ShowError(fmt.Errorf("Failed to download get_free.json:\n\n%w\n\nCheck your internet connection and try again.", err), guiState.Window)
 			})
 			return
 		}
@@ -258,7 +258,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 			debuglog.ErrorLog("Failed to load get_free.json: %v", err)
 			fyne.Do(func() {
 				loadingDialog.Hide()
-				dialog.ShowError(fmt.Errorf("Не удалось загрузить get_free.json:\n\n%w\n\nПроверьте файл или попробуйте скачать заново.", err), guiState.Window)
+				dialog.ShowError(fmt.Errorf("Failed to load get_free.json:\n\n%w\n\nCheck the file or try downloading again.", err), guiState.Window)
 			})
 			return
 		}
@@ -268,7 +268,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 			debuglog.ErrorLog("getFreeData is nil after loading")
 			fyne.Do(func() {
 				loadingDialog.Hide()
-				dialog.ShowError(fmt.Errorf("Ошибка: данные не загружены"), guiState.Window)
+				dialog.ShowError(fmt.Errorf("Error: data was not loaded"), guiState.Window)
 			})
 			return
 		}
@@ -283,7 +283,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 			debuglog.ErrorLog("Failed to convert get_free.json to state: %v", err)
 			fyne.Do(func() {
 				loadingDialog.Hide()
-				dialog.ShowError(fmt.Errorf("Не удалось обработать get_free.json:\n\n%w", err), guiState.Window)
+				dialog.ShowError(fmt.Errorf("Failed to process get_free.json:\n\n%w", err), guiState.Window)
 			})
 			return
 		}

@@ -6,8 +6,8 @@
 // SaveConfig выполняет следующие шаги:
 //  1. Проверяет, что ParserConfig заполнен (хотя бы один proxy с Source или Connections)
 //  2. Генерирует конфигурацию из текущей модели (BuildTemplateConfig; без ожидания парсинга outbounds)
-//  3. Сохраняет конфигурацию в файл с созданием бэкапа (SaveConfigWithBackup)
-//  4. Показывает диалог успешного сохранения; после сохранения в фоне запускается RunParserProcess (update from subscriptions)
+//  3. Валидирует конфиг через sing-box по временному файлу, при успехе пишет config.json с бэкапом (SaveConfigWithBackup)
+//  4. Сохраняет state.json и показывает диалог успеха; в фоне запускается RunParserProcess (update from subscriptions)
 //
 // Все операции выполняются асинхронно в отдельной горутине с обновлением прогресс-бара.
 //
@@ -26,11 +26,13 @@ package presentation
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
@@ -113,19 +115,16 @@ func (p *WizardPresenter) executeSaveOperation() {
 		return
 	}
 
-	// Step 2: Save file (0.4-0.5)
+	// Step 2: Validate (по временному файлу) и запись config.json (0.4-0.6)
 	configPath, err := p.saveConfigFile(configText)
 	if err != nil {
 		return
 	}
 
-	// Step 3: Validate config with sing-box (0.5-0.6)
-	validationErr := p.validateConfigFile(configPath)
+	// Step 3: Save state.json and show success dialog (0.6-0.9)
+	p.saveStateAndShowSuccessDialog(configPath)
 
-	// Step 4: Save state.json and show success dialog (0.6-0.9)
-	p.saveStateAndShowSuccessDialog(configPath, validationErr)
-
-	// Step 5: Completion (0.9-1.0)
+	// Step 4: Completion (0.9-1.0)
 	p.completeSaveOperation()
 }
 
@@ -164,63 +163,93 @@ func (p *WizardPresenter) buildConfigForSave() (string, error) {
 	}
 
 	debuglog.InfoLog("SaveConfig: template config built successfully, length: %d", len(text))
-	p.UpdateSaveStatusText("Saving file...")
+	p.UpdateSaveStatusText("Preparing...")
 	p.UpdateSaveProgress(0.4)
 	return text, nil
 }
 
-// saveConfigFile сохраняет конфигурацию в файл с созданием бэкапа.
-// Возвращает путь к сохраненному файлу или ошибку.
+// saveConfigFile валидирует конфиг через sing-box (по временному файлу) и при успехе пишет config.json с бэкапом.
+// Возвращает путь к сохранённому файлу или ошибку (в т.ч. ошибку валидации).
 func (p *WizardPresenter) saveConfigFile(configText string) (string, error) {
-	// Check if save operation was cancelled
 	if !p.guiState.SaveInProgress {
 		debuglog.DebugLog("presenter_save: Save operation cancelled before saving file")
 		return "", fmt.Errorf("save operation cancelled")
 	}
 
+	p.UpdateSaveStatusText("Validating...")
+	p.UpdateSaveProgress(0.45)
+
 	ac := core.GetController()
-	fileService := &wizardbusiness.FileServiceAdapter{
-		FileService: ac.FileService,
+	if ac == nil || ac.FileService == nil {
+		debuglog.WarnLog("SaveConfig: controller or FileService not available")
+		p.UpdateUI(func() {
+			dialog.ShowError(fmt.Errorf("controller not available"), p.guiState.Window)
+		})
+		return "", fmt.Errorf("controller not available")
 	}
-	debuglog.InfoLog("SaveConfig: saving config file")
+
+	fileService := &wizardbusiness.FileServiceAdapter{FileService: ac.FileService}
+	debuglog.InfoLog("SaveConfig: validating then saving config file")
 	path, err := wizardbusiness.SaveConfigWithBackup(fileService, configText)
 	if err != nil {
 		debuglog.ErrorLog("SaveConfig: SaveConfigWithBackup failed: %v", err)
 		p.UpdateUI(func() {
-			dialog.ShowError(err, p.guiState.Window)
+			p.showSaveErrorDialog(err)
 		})
 		return "", err
 	}
 
 	debuglog.InfoLog("SaveConfig: config saved to %s", path)
-	p.UpdateSaveStatusText("Validating...")
-	p.UpdateSaveProgress(0.5)
+	p.UpdateSaveStatusText("Saving state...")
+	p.UpdateSaveProgress(0.6)
 	return path, nil
 }
 
-// validateConfigFile валидирует сохраненный конфиг с помощью sing-box.
-// Возвращает ошибку валидации, если она есть.
-func (p *WizardPresenter) validateConfigFile(configPath string) error {
-	// Check if save operation was cancelled
-	if !p.guiState.SaveInProgress {
-		debuglog.DebugLog("presenter_save: Save operation cancelled before validation")
-		return fmt.Errorf("save operation cancelled")
+// showSaveErrorDialog показывает ошибку сохранения; при ValidationError — диалог с кнопкой «Копировать конфиг».
+func (p *WizardPresenter) showSaveErrorDialog(err error) {
+	var valErr *wizardbusiness.ValidationError
+	if errors.As(err, &valErr) && valErr.ConfigText != "" {
+		p.showValidationErrorDialog(valErr)
+		return
 	}
+	dialog.ShowError(err, p.guiState.Window)
+}
 
-	ac := core.GetController()
-	singBoxPath := ""
-	if ac != nil && ac.FileService != nil {
-		singBoxPath = ac.FileService.SingboxPath
+// showValidationErrorDialog показывает ошибку валидации и кнопку «Копировать конфиг» в буфер обмена.
+func (p *WizardPresenter) showValidationErrorDialog(valErr *wizardbusiness.ValidationError) {
+	if p.guiState.Window == nil {
+		return
 	}
+	msg := valErr.Error()
+	messageLabel := widget.NewLabel(msg)
+	messageLabel.Wrapping = fyne.TextWrapWord
 
-	validationErr := wizardbusiness.ValidateConfigWithSingBox(configPath, singBoxPath)
-	p.UpdateSaveStatusText("Saving state...")
-	p.UpdateSaveProgress(0.6)
-	return validationErr
+	var d dialog.Dialog
+	copyBtn := widget.NewButton("Copy config", func() {
+		if app := fyne.CurrentApp(); app != nil && app.Clipboard() != nil {
+			app.Clipboard().SetContent(valErr.ConfigText)
+			if p.guiState.Window != nil {
+				dialogs.ShowAutoHideInfo(app, p.guiState.Window, "Copied", "Config copied to clipboard.")
+			}
+		}
+	})
+	copyBtn.Importance = widget.MediumImportance
+	closeBtn := widget.NewButton("Close", func() {
+		if d != nil {
+			d.Hide()
+		}
+	})
+	closeBtn.Importance = widget.HighImportance
+
+	buttons := container.NewHBox(layout.NewSpacer(), copyBtn, closeBtn)
+	content := container.NewBorder(nil, buttons, nil, nil, messageLabel)
+	d = dialog.NewCustomWithoutButtons("Validation failed", content, p.guiState.Window)
+	d.Show()
 }
 
 // saveStateAndShowSuccessDialog сохраняет state.json и показывает диалог успешного сохранения.
-func (p *WizardPresenter) saveStateAndShowSuccessDialog(configPath string, validationErr error) {
+// Вызывается только после успешной валидации и записи config.json, поэтому диалог всегда с «Validation: Passed».
+func (p *WizardPresenter) saveStateAndShowSuccessDialog(configPath string) {
 	// Check if save operation was cancelled
 	if !p.guiState.SaveInProgress {
 		debuglog.DebugLog("presenter_save: Save operation cancelled before saving state")
@@ -252,58 +281,16 @@ func (p *WizardPresenter) saveStateAndShowSuccessDialog(configPath string, valid
 		// Логируем итоговую информацию о сохранении
 		debuglog.InfoLog("SaveConfig: completed - config.json=%s, state.json=%s", configPath, statePath)
 
-		// Перезапускаем сервер, если он запущен
-		ac := core.GetController()
-		if ac != nil && ac.RunningState != nil && ac.RunningState.IsRunning() {
-			debuglog.InfoLog("SaveConfig: restarting sing-box server after config save")
-			// Останавливаем сервер
-			core.StopSingBoxProcess()
-			// Ждем немного, чтобы процесс корректно остановился
-			go func() {
-				<-time.After(500 * time.Millisecond)
-				// Проверяем, что сервер остановился
-				ticker := time.NewTicker(100 * time.Millisecond)
-				defer ticker.Stop()
-				timeout := time.After(2 * time.Second)
-				for {
-					select {
-					case <-timeout:
-						debuglog.WarnLog("SaveConfig: timeout waiting for sing-box to stop")
-						return
-					case <-ticker.C:
-						if !ac.RunningState.IsRunning() {
-							// Сервер остановлен, запускаем заново
-							debuglog.InfoLog("SaveConfig: sing-box stopped, starting again")
-							core.StartSingBoxProcess(true) // skipRunningCheck = true
-							return
-						}
-					}
-				}
-			}()
-		}
-
-		// Show success dialog
-		p.showSaveSuccessDialog(configPath, validationErr)
+		p.showSaveSuccessDialog(configPath)
 	})
 	p.UpdateSaveStatusText("Done")
 	p.UpdateSaveProgress(0.9)
 }
 
-// showSaveSuccessDialog показывает диалог успешного сохранения.
-func (p *WizardPresenter) showSaveSuccessDialog(configPath string, validationErr error) {
-	// Build message with validation status
-	message := fmt.Sprintf("Config written to %s", configPath)
-	if validationErr != nil {
-		message += fmt.Sprintf("\n\n⚠️ Validation warning:\n%v\n\nPlease check the config manually.", validationErr)
-	} else {
-		message += "\n\n✅ Validation: Passed"
-	}
-
-	// Determine dialog title
+// showSaveSuccessDialog показывает диалог успешного сохранения (вызывается только после успешной валидации).
+func (p *WizardPresenter) showSaveSuccessDialog(configPath string) {
+	message := fmt.Sprintf("Config written to %s\n\n✅ Validation: Passed", configPath)
 	title := "Config Saved"
-	if validationErr != nil {
-		title = "Config Saved (with warnings)"
-	}
 
 	// Create dialog with OK button that closes both dialog and wizard
 	var d dialog.Dialog
