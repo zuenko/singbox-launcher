@@ -19,6 +19,7 @@ import (
 	"singbox-launcher/core/config"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/platform"
 )
 
 // Maximum number of concurrent ping requests for "test" button.
@@ -137,6 +138,9 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			ac.UIService.ListStatusLabel.SetText(fmt.Sprintf("Loading proxies for '%s'...", group))
 		}
 		go func(group string) {
+			if platform.IsSleeping() {
+				return
+			}
 			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
 			proxies, now, err := api.GetProxiesInGroup(baseURL, token, group)
 			fyne.Do(func() {
@@ -231,6 +235,9 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			return
 		}
 		go func() {
+			if platform.IsSleeping() {
+				return
+			}
 			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
 			err := api.TestAPIConnection(baseURL, token)
 			fyne.Do(func() {
@@ -279,6 +286,9 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	// Delay in ProxyInfo: >0 = ms, 0 = not pinged, -1 = error (so updateItem shows correct text after list refresh).
 	pingProxy := func(proxyName string, button interface{ SetText(string) }) {
 		go func() {
+			if platform.IsSleeping() {
+				return
+			}
 			fyne.Do(func() { button.SetText("...") })
 			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
 			delay, err := api.GetDelay(baseURL, token, proxyName)

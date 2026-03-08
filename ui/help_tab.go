@@ -82,6 +82,9 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 		for i := 0; i < 10; i++ {
 			select {
 			case <-ticker.C:
+				if platform.IsSleeping() {
+					continue
+				}
 				fyne.Do(func() {
 					if ac.GetCachedLauncherVersion() == "" {
 						updateLauncherVersionInfo()

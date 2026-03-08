@@ -16,6 +16,7 @@ import (
 	"fyne.io/fyne/v2"
 
 	"singbox-launcher/internal/constants"
+	"singbox-launcher/internal/ctxutil"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/platform"
@@ -275,14 +276,10 @@ func (ac *AppController) CheckVersionInBackground() {
 				interval = verySlowInterval
 			}
 
-			// Ждем перед попыткой (кроме первой)
 			if attemptCount > 0 {
-				select {
-				case <-ac.ctx.Done():
+				if err := ctxutil.SleepWithContext(ac.ctx, interval); err != nil {
 					debuglog.DebugLog("CheckVersionInBackground: Stopped (context cancelled)")
 					return
-				case <-time.After(interval):
-					// Continue
 				}
 			}
 
@@ -290,6 +287,9 @@ func (ac *AppController) CheckVersionInBackground() {
 			if !ac.ShouldCheckVersion() {
 				debuglog.DebugLog("CheckVersionInBackground: Version already cached during wait, stopping")
 				return
+			}
+			if platform.IsSleeping() {
+				continue
 			}
 
 			attemptCount++

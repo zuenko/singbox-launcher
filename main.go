@@ -92,6 +92,9 @@ func main() {
 			// Create new timer with dynamic debounce delay
 			// This prevents rapid successive menu updates that cause systray errors
 			controller.UIService.TrayMenuUpdateTimer = time.AfterFunc(delay, func() {
+				if platform.IsSleeping() {
+					return // Skip tray menu update while system is sleeping
+				}
 				// Check if update is already in progress
 				controller.UIService.TrayMenuUpdateMutex.Lock()
 				if controller.UIService.TrayMenuUpdateInProgress {
@@ -219,6 +222,12 @@ func main() {
 
 	controller.UpdateUI()
 
+	// Reset Clash API HTTP connections after sleep/hibernation (platform no-op where not supported).
+	platform.RegisterPowerResumeCallback(func() {
+		api.ResetClashHTTPTransport()
+		debuglog.InfoLog("Power resume: Clash API HTTP transport reset")
+	})
+
 	// Check if config.json exists and show a warning if it doesn't
 	core.CheckConfigFileExists()
 
@@ -252,6 +261,7 @@ func main() {
 	if runtime.GOOS == "darwin" {
 		platform.CleanupDockReopenHandler()
 	}
+	platform.StopPowerResumeListener()
 
 	controller.GracefulExit()
 

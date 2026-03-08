@@ -167,6 +167,7 @@ func LoadTemplateData(templatePath string) (*TemplateData, error) {
 - Перед написанием новой функции проверь существующие утилиты:
   - `core/network_utils` - для сетевых операций и таймаутов
   - `internal/constants` - для констант
+  - `internal/ctxutil` - для ожидания с отменой по контексту (`SleepWithContext(ctx, d)` вместо ручного `select { case <-ctx.Done(); case <-time.After(d) }`)
   - `internal/debuglog` - для логирования (централизованная система)
   - `internal/platform` - для платформо-специфичных операций
 - Не дублируй функциональность - используй существующие функции

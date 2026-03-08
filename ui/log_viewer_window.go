@@ -17,6 +17,7 @@ import (
 	"singbox-launcher/core"
 	"singbox-launcher/core/services"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/platform"
 )
 
 const (
@@ -310,6 +311,9 @@ func OpenLogViewerWindow(ac *core.AppController) {
 					case <-done:
 						return
 					case <-ticker.C:
+						if platform.IsSleeping() {
+							continue
+						}
 						loadCore()
 					}
 				}
