@@ -31,13 +31,13 @@
 | **docs/ARCHITECTURE.md** | Структура проекта, зоны ответственности, потоки данных, точки входа |
 | **todo/README.md** | Формат задач (Spec Kit) и workflow |
 
-Перед реализацией фичи из `todo/{FEATURE}/` обязательно прочитай **SPEC.md**, **PLAN.md**, **TASKS.md** этой фичи и применяй **IMPLEMENTATION_PROMPT.md**.
+Перед реализацией фичи из `todo/` (папка вида `NNN-FEATURE/` или `FEATURE/`) обязательно прочитай **SPEC.md**, **PLAN.md**, **TASKS.md** этой фичи и применяй **IMPLEMENTATION_PROMPT.md**.
 
 ---
 
 ## 2. Формат задач (Spec Kit)
 
-Крупные фичи описаны в `todo/{FEATURE_NAME}/`. Баги и мелочи — в `todo/issues/NNN-short-name/` с тем же набором SPEC, PLAN, TASKS, IMPLEMENTATION_REPORT (см. todo/issues/README.md).
+Крупные фичи описаны в `todo/` — папки `NNN-{FEATURE_NAME}/` (например `001-LOCALIZATION/`) или без индекса. Баги и мелочи — в `todo/issues/NNN-short-name/` с тем же набором SPEC, PLAN, TASKS, IMPLEMENTATION_REPORT (см. todo/issues/README.md).
 
 | Файл | Содержит |
 |------|----------|
@@ -111,7 +111,7 @@
 - **Релизные заметки (черновик):** `docs/release_notes/upcoming.md`
 - **Архитектура и потоки:** `docs/ARCHITECTURE.md`
 - **Принципы и запреты:** `todo/constitution.md`
-- **Текущие фичи и задачи:** `todo/README.md`, затем `todo/{FEATURE}/` или `todo/issues/NNN-name/` (SPEC.md, PLAN.md, TASKS.md)
+- **Текущие фичи и задачи:** `todo/README.md`, затем `todo/NNN-FEATURE/` или `todo/FEATURE/`, либо `todo/issues/NNN-name/` (SPEC.md, PLAN.md, TASKS.md)
 - **Правила реализации и DoD:** `todo/IMPLEMENTATION_PROMPT.md`
 - **Сборка, тесты:** `docs/BUILD_WINDOWS.md`, `docs/TEST_README.md`; тесты — рядом с кодом (`*_test.go`), GUI-пакеты исключены из `go test` (см. constitution).
 - **Конфиг парсера:** `docs/ParserConfig.md`; шаблон визарда — `bin/wizard_template.json`.
