@@ -62,6 +62,7 @@ type AppController struct {
 	ParserMutex                 sync.Mutex // Mutex for ParserRunning
 	ParserRunning               bool
 	StoppedByUser               bool
+	RestartRequestedByUser      bool   // true when user clicked Restart: watcher must bring process back up
 	ConsecutiveCrashAttempts    int
 
 	// --- VPN Operation State ---
@@ -488,6 +489,15 @@ func StopSingBoxProcess() {
 		ac.ProcessService = NewProcessService(ac)
 	}
 	ac.ProcessService.Stop()
+}
+
+// KillSingBoxForRestart kills the sing-box process so the monitor will restart it (no StoppedByUser).
+func KillSingBoxForRestart() {
+	ac := GetController()
+	if ac == nil || ac.ProcessService == nil {
+		return
+	}
+	ac.ProcessService.KillForRestart()
 }
 
 // RunParserProcess starts the internal configuration update process.

@@ -46,6 +46,7 @@ type CoreDashboardTab struct {
 	downloadPlaceholder       *canvas.Rectangle   // keeps width when button hidden
 	startButton               *widget.Button      // Start button
 	stopButton                *widget.Button      // Stop button
+	restartButton             *widget.Button      // Restart (kill, watcher restarts)
 	wintunStatusLabel         *widget.Label       // wintun.dll status
 	wintunHelpBtn             *widget.Button      // "?" help button, hidden when Download is hidden
 	wintunDownloadButton      *widget.Button      // wintun.dll download button
@@ -202,21 +203,40 @@ func (tab *CoreDashboardTab) createStatusRow() fyne.CanvasObject {
 
 	stopButton := widget.NewButton("Stop", func() {
 		core.StopSingBoxProcess()
-		// Status will be updated automatically via UpdateCoreStatusFunc
 	})
 
-	// Save button references for updating locks
+	restartButton := widget.NewButton("🔄", nil)
+	restartButton.Importance = widget.MediumImportance
 	tab.startButton = startButton
 	tab.stopButton = stopButton
+	tab.restartButton = restartButton
+	restartButton.OnTapped = func() {
+		// Brief "Stopped" look: Start on, Stop off — then Restarting...; watcher will bring process back and UpdateCoreStatusFunc will show "Running"
+		if tab.startButton != nil {
+			tab.startButton.Enable()
+			tab.startButton.Importance = widget.HighImportance
+			tab.startButton.Refresh()
+		}
+		if tab.stopButton != nil {
+			tab.stopButton.Disable()
+			tab.stopButton.Importance = widget.MediumImportance
+			tab.stopButton.Refresh()
+		}
+		if tab.statusLabel != nil {
+			tab.statusLabel.SetText("Core Status 🔄 Restarting...")
+			tab.statusLabel.Refresh()
+		}
+		tab.restartButton.Disable()
+		tab.restartButton.Refresh()
+		core.KillSingBoxForRestart()
+	}
 
-	// Status in one line - everything in one label
 	statusContainer := container.NewHBox(
-		tab.statusLabel, // "Core Status" + icon + status text
+		tab.statusLabel,
 	)
 
-	// Buttons on new line centered
 	buttonsContainer := container.NewCenter(
-		container.NewHBox(startButton, stopButton),
+		container.NewHBox(startButton, restartButton, stopButton),
 	)
 
 	// Return container with status and buttons, with empty lines before and after buttons
@@ -543,12 +563,21 @@ func (tab *CoreDashboardTab) updateRunningStatus() {
 	if tab.stopButton != nil {
 		if buttonState.StopEnabled {
 			tab.stopButton.Enable()
-			tab.stopButton.Importance = widget.HighImportance // Синяя кнопка, когда доступна
+			tab.stopButton.Importance = widget.HighImportance
 			tab.stopButton.Refresh()
 		} else {
 			tab.stopButton.Disable()
-			tab.stopButton.Importance = widget.MediumImportance // Обычная, когда недоступна
+			tab.stopButton.Importance = widget.MediumImportance
 			tab.stopButton.Refresh()
+		}
+	}
+	if tab.restartButton != nil {
+		if buttonState.StopEnabled {
+			tab.restartButton.Enable()
+			tab.restartButton.Refresh()
+		} else {
+			tab.restartButton.Disable()
+			tab.restartButton.Refresh()
 		}
 	}
 }
