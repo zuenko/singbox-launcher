@@ -94,6 +94,10 @@ type TemplateSelectableRule struct {
 
 	// HasOutbound — true если правило имеет outbound/action, который можно выбрать.
 	HasOutbound bool
+
+	// Params — состояние UI по типу правила (только для custom rules). Не сериализуется из шаблона.
+	// Используется для сохранения/восстановления match_by_path, path_mode (processes), domain_regex (urls) и т.д.
+	Params map[string]interface{}
 }
 
 // TemplateParam — платформозависимый параметр из секции params шаблона (name, platforms, value, mode).

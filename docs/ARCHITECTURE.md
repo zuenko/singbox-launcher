@@ -251,7 +251,8 @@ singbox-launcher/
 │       │   ├── wizard_state_file.go # Модель состояния визарда
 │       │   │   │   - WizardStateFile struct                  # Сериализуемое состояние визарда (version 2)
 │       │   │   │   - PersistedSelectableRuleState struct     # Упрощённое состояние правила (label, enabled, selected_outbound)
-│       │   │   │   - PersistedCustomRule struct              # Полное определение пользовательского правила
+│       │   │   │   - PersistedCustomRule struct              # Полное определение пользовательского правила (type, params, rule_set для srs)
+│       │   │   │   - DetermineRuleType()                     # Вывод типа правила из rule при загрузке (ips, urls, processes, srs, raw)
 │       │   │   │   - WizardStateMetadata struct              # Метаданные состояния
 │       │   │   │   - ValidateStateID()                       # Валидация ID состояния
 │       │   │   │   - MigrateSelectableRuleStates()           # Миграция v1 → v2 selectable rules
@@ -741,6 +742,7 @@ singbox-launcher/
   - `HasUnsavedChanges()` - проверка наличия несохранённых изменений
   - `MarkAsChanged()` - установка флага изменений
   - `MarkAsSaved()` - сброс флага изменений
+  - **Хранение и загрузка state:** состояние хранится в `bin/wizard_states/state.json` (текущее) и в `bin/wizard_states/<id>.json` (именованные). При сохранении презентер вызывает `CreateStateFromModel()`, затем state_store записывает файл. При загрузке state_store читает файл, вызывается `LoadState()`: миграции (MigrateCustomRules, MigrateSelectableRuleStates), восстановление custom_rules через `ToRuleState()` (тип при отсутствии/старом формате выводится из rule через DetermineRuleType; params и rule_set восстанавливаются в модель). Формат полей и логика — **docs/WIZARD_STATE.md**.
 - `presenter_rules.go`:
   - `RefreshRulesTab()` - обновление содержимого таба Rules (принимает функцию создания вкладки)
   - `RefreshRulesTabAfterLoadState()` - пересоздание вкладки Rules после LoadState (использует сохранённую функцию через DI)

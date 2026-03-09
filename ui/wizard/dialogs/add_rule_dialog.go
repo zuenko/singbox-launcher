@@ -26,6 +26,8 @@ package dialogs
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -39,6 +41,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
+	"singbox-launcher/internal/platform"
 	"singbox-launcher/internal/process"
 
 	wizardbusiness "singbox-launcher/ui/wizard/business"
@@ -82,6 +85,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		dialogKey = -1
 	}
 	updateChildOverlay()
+	var activeTabIsRaw bool
 
 	// Input field height
 	inputFieldHeight := float32(90)
@@ -140,8 +144,25 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	customSizeRect := canvas.NewRectangle(color.Transparent)
 	customSizeRect.SetMinSize(fyne.NewSize(0, inputFieldHeight))
 	customContainer := container.NewMax(customSizeRect, customScroll)
-	// Label for custom field (use variable so we can show/hide it with the field)
 	customLabel := widget.NewLabel("Custom JSON:")
+
+	// SRS: manual URLs (one per line)
+	srsURLsEntry := widget.NewMultiLineEntry()
+	srsURLsEntry.SetPlaceHolder("SRS URLs (one per line)\ne.g. https://raw.githubusercontent.com/.../file.srs")
+	srsURLsEntry.Wrapping = fyne.TextWrapWord
+	srsURLsScroll := container.NewScroll(srsURLsEntry)
+	srsURLsSizeRect := canvas.NewRectangle(color.Transparent)
+	srsURLsSizeRect.SetMinSize(fyne.NewSize(0, inputFieldHeight))
+	srsURLsContainer := container.NewMax(srsURLsSizeRect, srsURLsScroll)
+	srsURLsLabel := widget.NewLabel("SRS URLs (one per line):")
+	const runetfreedomSRSURL = "https://github.com/runetfreedom/russia-v2ray-rules-dat/tree/release/sing-box"
+	srsHintButton := widget.NewButton("?", nil)
+	srsLabelRow := container.NewHBox(srsURLsLabel, layout.NewSpacer(), srsHintButton)
+
+	// Raw tab: JSON правила (синхронизация с формой при переключении вкладок)
+	rawTabEntry := widget.NewMultiLineEntry()
+	rawTabEntry.SetPlaceHolder(`{"ip_cidr": [], "outbound": "proxy-out"}`)
+	rawTabEntry.Wrapping = fyne.TextWrapWord
 
 	// Helper to normalize process name (strip legacy "PID: name" format)
 	normalizeProcName := func(s string) string {
@@ -195,84 +216,118 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	}
 
 	// Determine initial rule type and load data (для нового правила — первая позиция: IP)
-	domainRegexInitial := ""
-	domainRegexInitialSet := false
 	pathPatternsInitial := ""
 	matchByPathInitial := false
-	ruleType := RuleTypeIP // при создании по умолчанию первая позиция
+	pathModeInitial := "Regex" // по умолчанию Regex, если не в params
+	srsURLsInitial := []string{}
+	domainModeInitial := ""   // "Exact domains"|"Suffix"|"Keyword"|"Regex"
+	domainListInitial := ""   // многострочный список для exact/suffix/keyword
+	domainRegexInitial := ""  // строка для Regex
+	ruleType := RuleTypeIP
 	if isEdit {
 		labelEntry.SetText(editRule.Rule.Label)
 		if editRule.SelectedOutbound != "" && outboundMap[editRule.SelectedOutbound] {
 			outboundSelect.SetSelected(editRule.SelectedOutbound)
 		}
-
-		// Load IP, domain (list/regex), process, or custom JSON
 		ruleData := editRule.Rule.Rule
-		hasIP := false
-		hasDomain := false
-		hasDomainRegex := false
-		hasProc := false
+		ruleType = wizardmodels.DetermineRuleType(ruleData)
+		params := editRule.Rule.Params
+
 		if ruleData != nil {
-			if ipVal, ok := ruleData["ip_cidr"]; ok {
-				hasIP = true
-				ruleType = RuleTypeIP
-				if ips := ExtractStringArray(ipVal); len(ips) > 0 {
+			switch ruleType {
+			case RuleTypeIP:
+				if ips := ExtractStringArray(ruleData["ip_cidr"]); len(ips) > 0 {
 					ipEntry.SetText(strings.Join(ips, "\n"))
 				}
-			} else if drVal, ok := ruleData["domain_regex"]; ok {
-				hasDomainRegex = true
-				ruleType = RuleTypeDomain
-				if s, ok := drVal.(string); ok {
-					domainRegexInitial = s
-					domainRegexInitialSet = true
+			case RuleTypeDomain:
+				if arr := ExtractStringArray(ruleData["domain_suffix"]); len(arr) > 0 {
+					domainModeInitial = "Suffix"
+					domainListInitial = strings.Join(arr, "\n")
+				} else if arr := ExtractStringArray(ruleData["domain_keyword"]); len(arr) > 0 {
+					domainModeInitial = "Keyword"
+					domainListInitial = strings.Join(arr, "\n")
+				} else if re, ok := ruleData["domain_regex"].(string); ok && re != "" {
+					domainModeInitial = "Regex"
+					domainRegexInitial = re
+				} else if domains := ExtractStringArray(ruleData["domain"]); len(domains) > 0 {
+					domainModeInitial = "Exact domains"
+					domainListInitial = strings.Join(domains, "\n")
 				}
-			} else if domainVal, ok := ruleData["domain"]; ok {
-				hasDomain = true
-				ruleType = RuleTypeDomain
-				if domains := ExtractStringArray(domainVal); len(domains) > 0 {
-					urlEntry.SetText(strings.Join(domains, "\n"))
+				if params != nil {
+					if mode, ok := params["domain_mode"].(string); ok {
+						domainModeInitial = mode
+					}
 				}
-			} else if procVal, ok := ruleData[ProcessKey]; ok {
-				hasProc = true
-				ruleType = RuleTypeProcess
-				if procs := ExtractStringArray(procVal); len(procs) > 0 {
+			case RuleTypeProcess:
+				if procs := ExtractStringArray(ruleData[ProcessKey]); len(procs) > 0 {
 					processesSelected = dedupeProcessStrings(procs)
 					sortProcessStrings(processesSelected)
 				}
-			} else if pathVal, ok := ruleData[ProcessPathRegexKey]; ok {
-				matchByPathInitial = true
-				ruleType = RuleTypeProcess
-				if arr := ExtractStringArray(pathVal); len(arr) > 0 {
-					pathPatternsInitial = strings.Join(arr, "\n")
+				if pathVal, ok := ruleData[ProcessPathRegexKey]; ok {
+					matchByPathInitial = true
+					if arr := ExtractStringArray(pathVal); len(arr) > 0 {
+						pathPatternsInitial = strings.Join(arr, "\n")
+					}
+				}
+				if params != nil {
+					if v, ok := params["match_by_path"].(bool); ok {
+						matchByPathInitial = v
+					}
+					if s, ok := params["path_mode"].(string); ok && (s == "Simple" || s == "Regex") {
+						pathModeInitial = s
+					}
+				}
+			case RuleTypeSRS:
+				for _, rs := range editRule.Rule.RuleSets {
+					var m map[string]interface{}
+					if err := json.Unmarshal(rs, &m); err == nil {
+						if u, ok := m["url"].(string); ok && u != "" {
+							srsURLsInitial = append(srsURLsInitial, u)
+						}
+					}
+				}
+			case RuleTypeCustom:
+				fallthrough
+			default:
+				if ruleData != nil {
+					temp := make(map[string]interface{})
+					for k, v := range ruleData {
+						if k == "outbound" {
+							continue
+						}
+						temp[k] = v
+					}
+					if b, err := json.MarshalIndent(temp, "", "  "); err == nil {
+						customEntry.SetText(string(b))
+					}
 				}
 			}
 		}
-
-		if !hasIP && !hasDomain && !hasDomainRegex && !hasProc && !matchByPathInitial {
-			// Custom rule: use Rule data (minus outbound) as JSON content
-			ruleType = RuleTypeCustom
-			if ruleData != nil {
-				temp := make(map[string]interface{})
-				for k, v := range ruleData {
-					if k == "outbound" {
-						continue
-					}
-					temp[k] = v
-				}
-				if b, err := json.MarshalIndent(temp, "", "  "); err == nil {
-					customEntry.SetText(string(b))
-				}
-			}
+		if ruleType == RuleTypeSRS && len(srsURLsInitial) > 0 {
+			srsURLsEntry.SetText(strings.Join(srsURLsInitial, "\n"))
 		}
 	}
+	if isEdit && ruleType != "" {
+		if rd := editRule.Rule.Rule; rd != nil {
+			if b, err := json.MarshalIndent(rd, "", "  "); err == nil {
+				rawTabEntry.SetText(string(b))
+			}
+		}
+	} else {
+		rawTabEntry.SetText(`{
+  "ip_cidr": [],
+  "outbound": "proxy-out"
+}`)
+	}
 
-	// Rule type selection: микро-модель + 4 checkboxes, "Match by path" по центру в строке Processes
+	// Rule type selection: микро-модель + 5 типов (подписи человекочитаемые, значения — константы)
 	ruleSel := NewRuleTypeSelection(ruleType)
-	var syncingRuleType bool // guard: при синхронизации чекбоксов из модели не реагировать на OnChanged
-	typeIPCheck := widget.NewCheck(RuleTypeIP, func(bool) {})
-	typeDomainCheck := widget.NewCheck(RuleTypeDomain, func(bool) {})
-	typeProcessCheck := widget.NewCheck(RuleTypeProcess, func(bool) {})
-	typeCustomCheck := widget.NewCheck(RuleTypeCustom, func(bool) {})
+	var syncingRuleType bool
+	typeIPCheck := widget.NewCheck(RuleTypeIPLabel, func(bool) {})
+	typeDomainCheck := widget.NewCheck(RuleTypeDomainLabel, func(bool) {})
+	typeProcessCheck := widget.NewCheck(RuleTypeProcessLabel, func(bool) {})
+	typeSRSCheck := widget.NewCheck(RuleTypeSRSLabel, func(bool) {})
+	typeCustomCheck := widget.NewCheck(RuleTypeCustomLabel, func(bool) {})
 	typeIPCheck.OnChanged = func(checked bool) {
 		if syncingRuleType {
 			return
@@ -304,6 +359,16 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			typeProcessCheck.SetChecked(true)
 		}
 	}
+	typeSRSCheck.OnChanged = func(checked bool) {
+		if syncingRuleType {
+			return
+		}
+		if checked {
+			ruleSel.SetType(RuleTypeSRS)
+		} else if ruleSel.Type() == RuleTypeSRS {
+			typeSRSCheck.SetChecked(true)
+		}
+	}
 	typeCustomCheck.OnChanged = func(checked bool) {
 		if syncingRuleType {
 			return
@@ -315,29 +380,45 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		}
 	}
 	processTypeRow := container.NewHBox(typeProcessCheck, layout.NewSpacer(), matchByPathCheck, layout.NewSpacer())
-	ruleTypeContainer := container.NewVBox(typeIPCheck, typeDomainCheck, processTypeRow, typeCustomCheck)
+	// Domains/URLs: выпадающий список схемы (exact / suffix / keyword / regex) справа от типа, как у Processes
+	domainModeOptions := []string{"Exact domains", "Suffix", "Keyword", "Regex"}
+	domainModeSelect := widget.NewSelect(domainModeOptions, nil)
+	domainTypeRow := container.NewHBox(typeDomainCheck, layout.NewSpacer(), domainModeSelect, layout.NewSpacer())
+	ruleTypeContainer := container.NewVBox(typeIPCheck, domainTypeRow, processTypeRow, typeSRSCheck, typeCustomCheck)
 
 	// Manage field visibility
 	ipLabel := widget.NewLabel("IP Addresses (one per line, CIDR format):")
-	urlLabel := widget.NewLabel("Domains/URLs (one per line):")
-	// Regex mode switch for domains
-	domainRegexCheck := widget.NewCheck("Regex", func(bool) {})
-	// Entry for domain regex (single-line)
+	urlLabel := widget.NewLabel("Domains (one per line):")
 	domainRegexEntry := widget.NewEntry()
-	domainRegexEntry.SetPlaceHolder("Enter regular expression")
-	// If we loaded a domain_regex from existing rule, restore it
-	if domainRegexInitialSet {
-		domainRegexCheck.SetChecked(true)
-		domainRegexEntry.SetText(domainRegexInitial)
+	domainRegexEntry.SetPlaceHolder("E.g. ^.*\\.google\\.com$ or .*\\.(google|youtube)\\.com$ (full regex, no /wrapping/)")
+	updateDomainLabel := func() {
+		switch domainModeSelect.Selected {
+		case "Suffix":
+			urlLabel.SetText("Domain suffixes (one per line):")
+		case "Keyword":
+			urlLabel.SetText("Domain keywords (one per line):")
+		case "Regex":
+			urlLabel.SetText("Domain regex:")
+		default:
+			urlLabel.SetText("Domains (one per line):")
+		}
+	}
+	domainModeSelect.SetSelected("Exact domains")
+	if domainModeInitial != "" {
+		domainModeSelect.SetSelected(domainModeInitial)
+		if domainModeInitial == "Regex" {
+			domainRegexEntry.SetText(domainRegexInitial)
+		} else {
+			urlEntry.SetText(domainListInitial)
+		}
 	}
 
 	updateVisibility := func(selectedType string) {
-		showIP := func() {
-			ipLabel.Show()
-			ipContainer.Show()
+		hideAllFormTypeSpecific := func() {
+			ipLabel.Hide()
+			ipContainer.Hide()
 			urlLabel.Hide()
 			urlContainer.Hide()
-			domainRegexCheck.Hide()
 			domainRegexEntry.Hide()
 			processesLabel.Hide()
 			processesContainerWrap.Hide()
@@ -346,8 +427,15 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			pathPatternsLabel.Hide()
 			pathPatternsContainer.Hide()
 			pathModeRadio.Hide()
+			srsLabelRow.Hide()
+			srsURLsContainer.Hide()
 			customContainer.Hide()
 			customLabel.Hide()
+		}
+		showIP := func() {
+			hideAllFormTypeSpecific()
+			ipLabel.Show()
+			ipContainer.Show()
 		}
 		updateProcessModeVisibility := func() {
 			if ruleSel.Type() != RuleTypeProcess {
@@ -370,54 +458,29 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			}
 		}
 		showProcess := func() {
-			ipLabel.Hide()
-			ipContainer.Hide()
-			urlLabel.Hide()
-			urlContainer.Hide()
-			domainRegexCheck.Hide()
-			domainRegexEntry.Hide()
+			hideAllFormTypeSpecific()
 			matchByPathCheck.Show()
-			customContainer.Hide()
-			customLabel.Hide()
 			updateProcessModeVisibility()
 		}
 		showDomain := func() {
-			ipLabel.Hide()
-			ipContainer.Hide()
+			hideAllFormTypeSpecific()
 			urlLabel.Show()
-			urlContainer.Show()
-			domainRegexCheck.Show()
-			if domainRegexCheck.Checked {
+			updateDomainLabel()
+			if domainModeSelect.Selected == "Regex" {
 				domainRegexEntry.Show()
 				urlContainer.Hide()
 			} else {
-				domainRegexEntry.Hide()
 				urlContainer.Show()
+				domainRegexEntry.Hide()
 			}
-			processesLabel.Hide()
-			processesContainerWrap.Hide()
-			selectProcessesButton.Hide()
-			matchByPathCheck.Hide()
-			pathPatternsLabel.Hide()
-			pathPatternsContainer.Hide()
-			pathModeRadio.Hide()
-			customContainer.Hide()
-			customLabel.Hide()
+		}
+		showSRS := func() {
+			hideAllFormTypeSpecific()
+			srsLabelRow.Show()
+			srsURLsContainer.Show()
 		}
 		showCustom := func() {
-			ipLabel.Hide()
-			ipContainer.Hide()
-			urlLabel.Hide()
-			urlContainer.Hide()
-			domainRegexCheck.Hide()
-			domainRegexEntry.Hide()
-			processesLabel.Hide()
-			processesContainerWrap.Hide()
-			selectProcessesButton.Hide()
-			matchByPathCheck.Hide()
-			pathPatternsLabel.Hide()
-			pathPatternsContainer.Hide()
-			pathModeRadio.Hide()
+			hideAllFormTypeSpecific()
 			customContainer.Show()
 			customLabel.Show()
 		}
@@ -427,6 +490,8 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			showIP()
 		case RuleTypeProcess:
 			showProcess()
+		case RuleTypeSRS:
+			showSRS()
 		case RuleTypeCustom:
 			showCustom()
 		default:
@@ -455,7 +520,62 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		return obj, nil
 	}
 
-	buildRuleRaw := func(selectedType string, selectedOutbound string) (map[string]interface{}, error) {
+	srsTagFromURL := func(urlStr string) string {
+		u, err := url.Parse(urlStr)
+		if err != nil {
+			return ""
+		}
+		path := u.Path
+		if path == "" {
+			path = urlStr
+		}
+		if i := strings.LastIndex(path, "/"); i >= 0 {
+			path = path[i+1:]
+		}
+		path = strings.TrimSuffix(path, ".srs")
+		if path == "" {
+			return ""
+		}
+		return "custom-" + path
+	}
+	buildSRSRuleSetsAndTags := func() (ruleSets []json.RawMessage, tags []string, err error) {
+		lines := ParseLines(strings.TrimSpace(srsURLsEntry.Text), false)
+		if len(lines) == 0 {
+			return nil, nil, errors.New("enter at least one SRS URL")
+		}
+		seenTags := make(map[string]int)
+		for _, rawURL := range lines {
+			u := strings.TrimSpace(rawURL)
+			if u == "" {
+				continue
+			}
+			tag := srsTagFromURL(u)
+			if tag == "" {
+				tag = "custom-srs"
+			}
+			count := seenTags[tag]
+			seenTags[tag]++
+			if count > 0 {
+				tag = fmt.Sprintf("%s-%d", tag, count+1)
+			}
+			entry := map[string]interface{}{
+				"tag":    tag,
+				"type":   "remote",
+				"format": "binary",
+				"url":    u,
+			}
+			raw, _ := json.Marshal(entry)
+			ruleSets = append(ruleSets, raw)
+			tags = append(tags, tag)
+		}
+		if len(ruleSets) == 0 {
+			return nil, nil, errors.New("enter at least one valid SRS URL")
+		}
+		return ruleSets, tags, nil
+	}
+
+	// buildRuleRaw возвращает (rule, ruleSets для SRS или nil, error).
+	buildRuleRaw := func(selectedType string, selectedOutbound string) (rule map[string]interface{}, ruleSets []json.RawMessage, err error) {
 		switch selectedType {
 		case RuleTypeIP:
 			ipText := strings.TrimSpace(ipEntry.Text)
@@ -463,26 +583,26 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			return map[string]interface{}{
 				"ip_cidr":  items,
 				"outbound": selectedOutbound,
-			}, nil
+			}, nil, nil
 		case RuleTypeProcess:
 			if matchByPathCheck.Checked {
 				lines := ParseLines(pathPatternsEntry.Text, false)
 				if len(lines) == 0 {
-					return nil, errors.New("enter at least one path pattern")
+					return nil, nil, errors.New("enter at least one path pattern")
 				}
 				regexList := make([]string, 0, len(lines))
 				isSimple := pathModeRadio.Selected != "Regex"
 				for _, line := range lines {
 					var re string
 					if isSimple {
-						var err error
-						re, err = SimplePatternToRegex(line)
-						if err != nil {
-							return nil, err
+						var e error
+						re, e = SimplePatternToRegex(line)
+						if e != nil {
+							return nil, nil, e
 						}
 					} else {
-						if _, err := regexp.Compile(line); err != nil {
-							return nil, err
+						if _, e := regexp.Compile(line); e != nil {
+							return nil, nil, e
 						}
 						re = line
 					}
@@ -490,36 +610,60 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 				}
 				return map[string]interface{}{
 					ProcessPathRegexKey: regexList,
-					"outbound":         selectedOutbound,
-				}, nil
+					"outbound":          selectedOutbound,
+				}, nil, nil
 			}
 			items := make([]string, len(processesSelected))
 			copy(items, processesSelected)
 			return map[string]interface{}{
 				ProcessKey: items,
 				"outbound": selectedOutbound,
-			}, nil
+			}, nil, nil
+		case RuleTypeSRS:
+			sets, tags, e := buildSRSRuleSetsAndTags()
+			if e != nil {
+				return nil, nil, e
+			}
+			var ruleSetVal interface{} = tags
+			if len(tags) == 1 {
+				ruleSetVal = tags[0]
+			}
+			return map[string]interface{}{
+				"rule_set": ruleSetVal,
+				"outbound": selectedOutbound,
+			}, sets, nil
 		case RuleTypeCustom:
-			obj, err := parseCustomJSON()
-			if err != nil {
-				return nil, err
+			obj, e := parseCustomJSON()
+			if e != nil {
+				return nil, nil, e
 			}
 			obj["outbound"] = selectedOutbound
-			return obj, nil
+			return obj, nil, nil
 		default:
-			if domainRegexCheck != nil && domainRegexCheck.Checked {
+			items := ParseLines(strings.TrimSpace(urlEntry.Text), false)
+			switch domainModeSelect.Selected {
+			case "Regex":
 				re := strings.TrimSpace(domainRegexEntry.Text)
 				return map[string]interface{}{
 					"domain_regex": re,
 					"outbound":     selectedOutbound,
-				}, nil
+				}, nil, nil
+			case "Suffix":
+				return map[string]interface{}{
+					"domain_suffix": items,
+					"outbound":      selectedOutbound,
+				}, nil, nil
+			case "Keyword":
+				return map[string]interface{}{
+					"domain_keyword": items,
+					"outbound":       selectedOutbound,
+				}, nil, nil
+			default:
+				return map[string]interface{}{
+					"domain":   items,
+					"outbound": selectedOutbound,
+				}, nil, nil
 			}
-			urlText := strings.TrimSpace(urlEntry.Text)
-			items := ParseLines(urlText, false)
-			return map[string]interface{}{
-				"domain":   items,
-				"outbound": selectedOutbound,
-			}, nil
 		}
 	}
 
@@ -551,11 +695,12 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 				return true
 			}
 			return len(processesSelected) > 0
+		case RuleTypeSRS:
+			return len(ParseLines(strings.TrimSpace(srsURLsEntry.Text), false)) > 0
 		case RuleTypeCustom:
 			return strings.TrimSpace(customEntry.Text) != ""
 		default:
-			// Domain mode: either domain list non-empty or regex provided and valid
-			if domainRegexCheck.Checked {
+			if domainModeSelect.Selected == "Regex" {
 				re := strings.TrimSpace(domainRegexEntry.Text)
 				if re == "" {
 					return false
@@ -579,13 +724,13 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		}
 	}
 
-	// Синхронизация чекбоксов и UI при смене типа из модели (одно место, с guard)
 	onRuleTypeChange := func(s string) {
 		syncingRuleType = true
 		defer func() { syncingRuleType = false }()
 		typeIPCheck.SetChecked(s == RuleTypeIP)
 		typeDomainCheck.SetChecked(s == RuleTypeDomain)
 		typeProcessCheck.SetChecked(s == RuleTypeProcess)
+		typeSRSCheck.SetChecked(s == RuleTypeSRS)
 		typeCustomCheck.SetChecked(s == RuleTypeCustom)
 		updateVisibility(s)
 		if updateButtonState != nil {
@@ -616,45 +761,105 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		}
 	}
 
-	// Restore Match by path state when editing rule with process_path_regex
+	pathModeRadio.SetSelected("Simple")
 	if matchByPathInitial {
 		matchByPathCheck.SetChecked(true)
 		pathPatternsEntry.SetText(pathPatternsInitial)
-		pathModeRadio.SetSelected("Regex")
+		pathModeRadio.SetSelected(pathModeInitial)
 		updateVisibility(ruleSel.Type())
 	}
 
 	saveRule = func() {
 		label := strings.TrimSpace(labelEntry.Text)
-		selectedType := ruleSel.Type()
-		selectedOutbound := outboundSelect.Selected
-		// Fallback: if outbound not selected (e.g., when editing old rule with non-existent outbound)
-		if selectedOutbound == "" {
-			selectedOutbound = availableOutbounds[0] // availableOutbounds is always non-empty (see lines 107-109)
-		}
-
-		ruleRaw, err := buildRuleRaw(selectedType, selectedOutbound)
-		if err != nil {
-			dialog.ShowError(err, dialogWindow)
+		if label == "" {
+			dialog.ShowError(errors.New("Rule name is required"), dialogWindow)
 			return
 		}
+		var ruleRaw map[string]interface{}
+		var srsRuleSets []json.RawMessage
+		selectedType := ruleSel.Type()
+		selectedOutbound := outboundSelect.Selected
+		if selectedOutbound == "" {
+			selectedOutbound = availableOutbounds[0]
+		}
 
-		// Save or update rule
+		if activeTabIsRaw {
+			trimmed := strings.TrimSpace(rawTabEntry.Text)
+			if trimmed == "" {
+				dialog.ShowError(errors.New("Raw JSON is empty"), dialogWindow)
+				return
+			}
+			if err := json.Unmarshal([]byte(trimmed), &ruleRaw); err != nil {
+				dialog.ShowError(fmt.Errorf("invalid JSON: %w", err), dialogWindow)
+				return
+			}
+			if ruleRaw == nil {
+				dialog.ShowError(errors.New("rule must be a JSON object"), dialogWindow)
+				return
+			}
+			if _, hasOut := ruleRaw["outbound"]; !hasOut {
+				if _, hasAction := ruleRaw["action"]; !hasAction {
+					dialog.ShowError(errors.New("rule must contain \"outbound\" or \"action\""), dialogWindow)
+					return
+				}
+			}
+			if selectedOutbound == wizardmodels.RejectActionName || selectedOutbound == "drop" {
+				ruleRaw["action"] = selectedOutbound
+				delete(ruleRaw, "outbound")
+			} else {
+				ruleRaw["outbound"] = selectedOutbound
+			}
+			selectedType = RuleTypeCustom
+		} else {
+			var err error
+			ruleRaw, srsRuleSets, err = buildRuleRaw(selectedType, selectedOutbound)
+			if err != nil {
+				dialog.ShowError(err, dialogWindow)
+				return
+			}
+		}
+
+		params := make(map[string]interface{})
+		if selectedType == RuleTypeProcess {
+			params["match_by_path"] = matchByPathCheck.Checked
+			if matchByPathCheck.Checked {
+				if pathModeRadio.Selected == "Simple" {
+					params["path_mode"] = "Simple"
+				} else {
+					params["path_mode"] = "Regex"
+				}
+			}
+		}
+		if selectedType == RuleTypeDomain {
+			params["domain_mode"] = domainModeSelect.Selected
+		}
+
 		if isEdit {
 			editRule.Rule.Label = label
 			editRule.Rule.Rule = ruleRaw
 			editRule.Rule.HasOutbound = true
 			editRule.Rule.DefaultOutbound = selectedOutbound
+			editRule.Rule.Params = params
+			if len(srsRuleSets) > 0 {
+				editRule.Rule.RuleSets = srsRuleSets
+			} else if selectedType != RuleTypeSRS {
+				editRule.Rule.RuleSets = nil
+			}
 			editRule.SelectedOutbound = selectedOutbound
 		} else {
+			tsr := wizardtemplate.TemplateSelectableRule{
+				Label:           label,
+				Rule:            ruleRaw,
+				HasOutbound:     true,
+				DefaultOutbound: selectedOutbound,
+				IsDefault:       true,
+				Params:          params,
+			}
+			if len(srsRuleSets) > 0 {
+				tsr.RuleSets = srsRuleSets
+			}
 			newRule := &wizardmodels.RuleState{
-				Rule: wizardtemplate.TemplateSelectableRule{
-					Label:           label,
-					Rule:            ruleRaw,
-					HasOutbound:     true,
-					DefaultOutbound: selectedOutbound,
-					IsDefault:       true,
-				},
+				Rule:             tsr,
 				Enabled:          true,
 				SelectedOutbound: selectedOutbound,
 			}
@@ -695,8 +900,13 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	ipEntry.OnChanged = func(string) { updateButtonState() }
 	urlEntry.OnChanged = func(string) { updateButtonState() }
 	domainRegexEntry.OnChanged = func(string) { updateButtonState() }
-	domainRegexCheck.OnChanged = func(bool) { updateVisibility(ruleSel.Type()); updateButtonState() }
+	domainModeSelect.OnChanged = func(string) {
+		updateDomainLabel()
+		updateVisibility(ruleSel.Type())
+		updateButtonState()
+	}
 	pathPatternsEntry.OnChanged = func(string) { updateButtonState() }
+	srsURLsEntry.OnChanged = func(string) { updateButtonState() }
 
 	// Helper to refresh selected processes UI (sorted by name)
 	var refreshSelectedProcessesUI func()
@@ -792,16 +1002,16 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	// wire selector button
 	selectProcessesButton.OnTapped = func() { openProcessSelector() }
 
-	// Content container: rule type = 4 rows, "Match by path" on same row as Processes
+	// Rule name над вкладками Form/Raw
+	ruleNameBlock := container.NewVBox(widget.NewLabel("Rule Name:"), labelEntry)
+	// Контент формы: тип правила и поля по типу
 	inputContainer := container.NewVBox(
-		widget.NewLabel("Rule Name:"),
-		labelEntry,
 		widget.NewLabel("Rule Type:"),
 		ruleTypeContainer,
 		widget.NewSeparator(),
 		ipLabel,
 		ipContainer,
-		container.NewHBox(urlLabel, layout.NewSpacer(), domainRegexCheck),
+		urlLabel,
 		urlContainer,
 		domainRegexEntry,
 		processesLabel,
@@ -810,6 +1020,8 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		pathPatternsLabel,
 		pathPatternsContainer,
 		pathModeRadio,
+		srsLabelRow,
+		srsURLsContainer,
 		customLabel,
 		customContainer,
 		widget.NewSeparator(),
@@ -823,12 +1035,110 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		confirmButton,
 	)
 
+	formScroll := container.NewScroll(inputContainer)
+	rawScroll := container.NewScroll(rawTabEntry)
+	formTabItem := container.NewTabItem("Form", formScroll)
+	rawTabItem := container.NewTabItem("Raw", rawScroll)
+	tabs := container.NewAppTabs(formTabItem, rawTabItem)
+	syncFormToRaw := func() {
+		ob := outboundSelect.Selected
+		if ob == "" {
+			ob = availableOutbounds[0]
+		}
+		ruleRaw, _, err := buildRuleRaw(ruleSel.Type(), ob)
+		if err == nil && ruleRaw != nil {
+			if b, e := json.MarshalIndent(ruleRaw, "", "  "); e == nil {
+				rawTabEntry.SetText(string(b))
+			}
+		}
+	}
+	syncRawToForm := func() {
+		trimmed := strings.TrimSpace(rawTabEntry.Text)
+		if trimmed == "" {
+			dialog.ShowError(errors.New("Raw JSON is empty"), dialogWindow)
+			tabs.SelectTab(rawTabItem)
+			ruleSel.SetType(RuleTypeCustom)
+			return
+		}
+		var obj map[string]interface{}
+		if err := json.Unmarshal([]byte(trimmed), &obj); err != nil {
+			dialog.ShowError(fmt.Errorf("invalid JSON: %w", err), dialogWindow)
+			tabs.SelectTab(rawTabItem)
+			ruleSel.SetType(RuleTypeCustom)
+			return
+		}
+		if obj == nil {
+			dialog.ShowError(errors.New("rule must be a JSON object"), dialogWindow)
+			tabs.SelectTab(rawTabItem)
+			ruleSel.SetType(RuleTypeCustom)
+			return
+		}
+		detected := wizardmodels.DetermineRuleType(obj)
+		if detected == RuleTypeCustom {
+			dialog.ShowInformation("Rule not recognized", "Could not recognize rule, form cannot be loaded; staying on Raw.", dialogWindow)
+			tabs.SelectTab(rawTabItem)
+			ruleSel.SetType(RuleTypeCustom)
+			activeTabIsRaw = true
+			return
+		}
+		ruleSel.SetType(detected)
+		switch detected {
+		case RuleTypeIP:
+			if ips := ExtractStringArray(obj["ip_cidr"]); len(ips) > 0 {
+				ipEntry.SetText(strings.Join(ips, "\n"))
+			}
+		case RuleTypeDomain:
+			if arr := ExtractStringArray(obj["domain_suffix"]); len(arr) > 0 {
+				domainModeSelect.SetSelected("Suffix")
+				urlEntry.SetText(strings.Join(arr, "\n"))
+			} else if arr := ExtractStringArray(obj["domain_keyword"]); len(arr) > 0 {
+				domainModeSelect.SetSelected("Keyword")
+				urlEntry.SetText(strings.Join(arr, "\n"))
+			} else if re, ok := obj["domain_regex"].(string); ok && re != "" {
+				domainModeSelect.SetSelected("Regex")
+				domainRegexEntry.SetText(re)
+			} else if domains := ExtractStringArray(obj["domain"]); len(domains) > 0 {
+				domainModeSelect.SetSelected("Exact domains")
+				urlEntry.SetText(strings.Join(domains, "\n"))
+			}
+			updateDomainLabel()
+			updateVisibility(ruleSel.Type())
+		case RuleTypeProcess:
+			if procs := ExtractStringArray(obj[ProcessKey]); len(procs) > 0 {
+				processesSelected = dedupeProcessStrings(procs)
+				sortProcessStrings(processesSelected)
+				refreshSelectedProcessesUI()
+			} else if arr := ExtractStringArray(obj[ProcessPathRegexKey]); len(arr) > 0 {
+				matchByPathCheck.SetChecked(true)
+				pathPatternsEntry.SetText(strings.Join(arr, "\n"))
+			}
+		}
+		// Восстанавливаем outbound в форме из rule
+		if ob, ok := obj["outbound"].(string); ok && ob != "" && outboundMap[ob] {
+			outboundSelect.SetSelected(ob)
+		} else if action, ok := obj["action"].(string); ok && action != "" {
+			if outboundMap[action] {
+				outboundSelect.SetSelected(action)
+			}
+		}
+	}
+	tabs.OnSelected = func(t *container.TabItem) {
+		if t == rawTabItem {
+			activeTabIsRaw = true
+			syncFormToRaw()
+		} else {
+			activeTabIsRaw = false
+			syncRawToForm()
+		}
+	}
+
+	// Border: сверху Rule name, снизу кнопки, центр — вкладки на всю оставшуюся высоту
 	mainContent := container.NewBorder(
-		nil,
+		ruleNameBlock,
 		buttonsContainer,
 		nil,
 		nil,
-		container.NewScroll(inputContainer),
+		tabs,
 	)
 
 	// Create window - get Application from presenter's controller
@@ -837,6 +1147,14 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		return
 	}
 	dialogWindow = controller.UIService.Application.NewWindow(dialogTitle)
+	srsHintButton.OnTapped = func() {
+		msg := widget.NewLabel("We recommend looking for suitable rule-set files in the project:")
+		openBtn := widget.NewButton("Open", func() {
+			_ = platform.OpenURL(runetfreedomSRSURL)
+		})
+		content := container.NewVBox(msg, openBtn)
+		dialog.ShowCustom("SRS rule-sets", "Close", content, dialogWindow)
+	}
 	dialogWindow.Resize(fyne.NewSize(500, 640))
 	dialogWindow.CenterOnScreen()
 	dialogWindow.SetContent(mainContent)

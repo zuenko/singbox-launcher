@@ -19,15 +19,26 @@ import (
 	"strings"
 )
 
+// Константы типов правил — единственные значения в state и в коде (множественное число).
 const (
-	RuleTypeIP      = "IP Addresses (CIDR)"
-	RuleTypeDomain  = "Domains/URLs"
-	RuleTypeProcess = "Processes"
-	RuleTypeCustom  = "Custom JSON"
+	RuleTypeIP      = "ips"
+	RuleTypeDomain  = "urls"
+	RuleTypeProcess = "processes"
+	RuleTypeSRS     = "srs"
+	RuleTypeCustom  = "raw"
 	// ProcessKey is the key used in saved rules and config for process-based rules
 	ProcessKey = "process_name"
 	// ProcessPathRegexKey is the key for process path regex rules (match by path)
 	ProcessPathRegexKey = "process_path_regex"
+)
+
+// Подписи типов правил в UI (человекочитаемые; в state и коде — константы выше).
+const (
+	RuleTypeIPLabel      = "IP Addresses (CIDR)"
+	RuleTypeDomainLabel  = "Domains/URLs"
+	RuleTypeProcessLabel = "Processes"
+	RuleTypeSRSLabel     = "SRS"
+	RuleTypeCustomLabel  = "Custom JSON"
 )
 
 // ExtractStringArray extracts []string from interface{} (supports []interface{} and []string).

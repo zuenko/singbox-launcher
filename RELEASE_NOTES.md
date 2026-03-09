@@ -74,12 +74,14 @@
 Черновик следующего релиза (draft): [upcoming.md](docs/release_notes/upcoming.md)
 
 **🇷🇺 Кратко (черновик):**
+- **Рефакторинг Custom Rule (018):** Типы правил — константы (ips, urls, processes, srs, raw). Диалог Add/Edit Rule: название над вкладками Form/Raw; режимы Domains (Exact/Suffix/Keyword/Regex); тип SRS с подсказкой runetfreedom; при Raw→Form восстанавливаются outbound и поля по типу. Состояние UI в params.
 - **Правило Processes — Match by path:** В диалоге Add/Edit Rule для типа «Processes» можно включить «Match by path» и задавать сопоставление по пути процесса (regex), а не по имени. Режим Simple: подстановка `*` как «любая последовательность» (например `*/steam/*`). Режим Regex: полные регулярные выражения. В конфиг записывается `process_path_regex` (sing-box 1.10+).
 - **Кнопка перезапуска:** На дашборде Core между Start и Stop — кнопка перезапуска (🔄). Завершает процесс sing-box, вотчер поднимает снова; в UI кратко «Restarting...», смена состояния кнопок, затем «Running».
 - **Сохранение в визарде:** Только запись файлов и Update (без перезапуска sing-box). Конфиг валидируется через `sing-box check` по временному `config-check.json` до записи в `config.json`; при ошибке — сообщение пользователю, рабочий конфиг не перезаписывается. Clash API перечитывается из `config.json` только при запуске sing-box.
 - **Диалог Linux capabilities (issue #34):** Команда setcap в выделяемом поле, кнопка «Copy» в буфер обмена.
 
 **🇬🇧 Summary (draft):**
+- **Custom Rule refactor (018):** Rule type constants (ips, urls, processes, srs, raw). Add/Edit Rule: name above Form/Raw tabs; Domains mode (Exact/Suffix/Keyword/Regex); SRS type with runetfreedom hint; Raw→Form restores outbound and fields. UI state in params.
 - **Processes rule — Match by path:** In Add/Edit Rule, for type «Processes» enable «Match by path» to match by process path (regex). Simple: `*` as wildcard (e.g. `*/steam/*`). Regex: full regular expressions. Stored as `process_path_regex` (sing-box 1.10+).
 - **Restart button:** On Core dashboard between Start and Stop; kills sing-box, watcher restarts it; UI shows «Restarting...» then «Running».
 - **Wizard save:** Write files and Update only (no sing-box restart). Config validated with `sing-box check` before overwrite; on failure user sees error. Clash API reloaded from `config.json` only when sing-box starts.
