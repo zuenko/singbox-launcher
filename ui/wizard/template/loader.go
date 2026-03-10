@@ -473,16 +473,10 @@ func extractDefaultFinal(sections map[string]json.RawMessage) string {
 	return ""
 }
 
-// stripUTF8BOM удаляет UTF-8 BOM (EF BB BF) если присутствует.
+// stripUTF8BOM удаляет UTF-8 BOM (EF BB BF) в начале файла, если присутствует.
 func stripUTF8BOM(b []byte) []byte {
 	if len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
-		b = b[3:]
-	}
-	if len(b) >= 3 {
-		n := len(b)
-		if b[n-3] == 0xEF && b[n-2] == 0xBB && b[n-1] == 0xBF {
-			b = b[:n-3]
-		}
+		return b[3:]
 	}
 	return b
 }

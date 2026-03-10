@@ -223,7 +223,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	domainModeInitial := ""   // "Exact domains"|"Suffix"|"Keyword"|"Regex"
 	domainListInitial := ""   // многострочный список для exact/suffix/keyword
 	domainRegexInitial := ""  // строка для Regex
-	ruleType := RuleTypeIP
+	ruleType := wizardmodels.RuleTypeIPS
 	if isEdit {
 		labelEntry.SetText(editRule.Rule.Label)
 		if editRule.SelectedOutbound != "" && outboundMap[editRule.SelectedOutbound] {
@@ -235,11 +235,11 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 
 		if ruleData != nil {
 			switch ruleType {
-			case RuleTypeIP:
+			case wizardmodels.RuleTypeIPS:
 				if ips := ExtractStringArray(ruleData["ip_cidr"]); len(ips) > 0 {
 					ipEntry.SetText(strings.Join(ips, "\n"))
 				}
-			case RuleTypeDomain:
+			case wizardmodels.RuleTypeURLs:
 				if arr := ExtractStringArray(ruleData["domain_suffix"]); len(arr) > 0 {
 					domainModeInitial = "Suffix"
 					domainListInitial = strings.Join(arr, "\n")
@@ -258,7 +258,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 						domainModeInitial = mode
 					}
 				}
-			case RuleTypeProcess:
+			case wizardmodels.RuleTypeProcesses:
 				if procs := ExtractStringArray(ruleData[ProcessKey]); len(procs) > 0 {
 					processesSelected = dedupeProcessStrings(procs)
 					sortProcessStrings(processesSelected)
@@ -277,7 +277,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 						pathModeInitial = s
 					}
 				}
-			case RuleTypeSRS:
+			case wizardmodels.RuleTypeSRS:
 				for _, rs := range editRule.Rule.RuleSets {
 					var m map[string]interface{}
 					if err := json.Unmarshal(rs, &m); err == nil {
@@ -286,7 +286,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 						}
 					}
 				}
-			case RuleTypeCustom:
+			case wizardmodels.RuleTypeRaw:
 				fallthrough
 			default:
 				if ruleData != nil {
@@ -303,7 +303,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 				}
 			}
 		}
-		if ruleType == RuleTypeSRS && len(srsURLsInitial) > 0 {
+		if ruleType == wizardmodels.RuleTypeSRS && len(srsURLsInitial) > 0 {
 			srsURLsEntry.SetText(strings.Join(srsURLsInitial, "\n"))
 		}
 	}
@@ -333,8 +333,8 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			return
 		}
 		if checked {
-			ruleSel.SetType(RuleTypeIP)
-		} else if ruleSel.Type() == RuleTypeIP {
+			ruleSel.SetType(wizardmodels.RuleTypeIPS)
+		} else if ruleSel.Type() == wizardmodels.RuleTypeIPS {
 			typeIPCheck.SetChecked(true) // повторное нажатие на выбранную — оставить как есть
 		}
 		// снять у другого нельзя — выбран только один
@@ -344,8 +344,8 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			return
 		}
 		if checked {
-			ruleSel.SetType(RuleTypeDomain)
-		} else if ruleSel.Type() == RuleTypeDomain {
+			ruleSel.SetType(wizardmodels.RuleTypeURLs)
+		} else if ruleSel.Type() == wizardmodels.RuleTypeURLs {
 			typeDomainCheck.SetChecked(true)
 		}
 	}
@@ -354,8 +354,8 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			return
 		}
 		if checked {
-			ruleSel.SetType(RuleTypeProcess)
-		} else if ruleSel.Type() == RuleTypeProcess {
+			ruleSel.SetType(wizardmodels.RuleTypeProcesses)
+		} else if ruleSel.Type() == wizardmodels.RuleTypeProcesses {
 			typeProcessCheck.SetChecked(true)
 		}
 	}
@@ -364,8 +364,8 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			return
 		}
 		if checked {
-			ruleSel.SetType(RuleTypeSRS)
-		} else if ruleSel.Type() == RuleTypeSRS {
+			ruleSel.SetType(wizardmodels.RuleTypeSRS)
+		} else if ruleSel.Type() == wizardmodels.RuleTypeSRS {
 			typeSRSCheck.SetChecked(true)
 		}
 	}
@@ -374,8 +374,8 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			return
 		}
 		if checked {
-			ruleSel.SetType(RuleTypeCustom)
-		} else if ruleSel.Type() == RuleTypeCustom {
+			ruleSel.SetType(wizardmodels.RuleTypeRaw)
+		} else if ruleSel.Type() == wizardmodels.RuleTypeRaw {
 			typeCustomCheck.SetChecked(true)
 		}
 	}
@@ -420,6 +420,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			urlLabel.Hide()
 			urlContainer.Hide()
 			domainRegexEntry.Hide()
+			domainModeSelect.Hide() // показываем только при выборе Domains/URLs
 			processesLabel.Hide()
 			processesContainerWrap.Hide()
 			selectProcessesButton.Hide()
@@ -438,7 +439,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			ipContainer.Show()
 		}
 		updateProcessModeVisibility := func() {
-			if ruleSel.Type() != RuleTypeProcess {
+			if ruleSel.Type() != wizardmodels.RuleTypeProcesses {
 				return
 			}
 			if matchByPathCheck.Checked {
@@ -464,6 +465,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		}
 		showDomain := func() {
 			hideAllFormTypeSpecific()
+			domainModeSelect.Show()
 			urlLabel.Show()
 			updateDomainLabel()
 			if domainModeSelect.Selected == "Regex" {
@@ -486,13 +488,13 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		}
 
 		switch selectedType {
-		case RuleTypeIP:
+		case wizardmodels.RuleTypeIPS:
 			showIP()
-		case RuleTypeProcess:
+		case wizardmodels.RuleTypeProcesses:
 			showProcess()
-		case RuleTypeSRS:
+		case wizardmodels.RuleTypeSRS:
 			showSRS()
-		case RuleTypeCustom:
+		case wizardmodels.RuleTypeRaw:
 			showCustom()
 		default:
 			showDomain()
@@ -577,14 +579,14 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	// buildRuleRaw возвращает (rule, ruleSets для SRS или nil, error).
 	buildRuleRaw := func(selectedType string, selectedOutbound string) (rule map[string]interface{}, ruleSets []json.RawMessage, err error) {
 		switch selectedType {
-		case RuleTypeIP:
+		case wizardmodels.RuleTypeIPS:
 			ipText := strings.TrimSpace(ipEntry.Text)
 			items := ParseLines(ipText, false)
 			return map[string]interface{}{
 				"ip_cidr":  items,
 				"outbound": selectedOutbound,
 			}, nil, nil
-		case RuleTypeProcess:
+		case wizardmodels.RuleTypeProcesses:
 			if matchByPathCheck.Checked {
 				lines := ParseLines(pathPatternsEntry.Text, false)
 				if len(lines) == 0 {
@@ -619,7 +621,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 				ProcessKey: items,
 				"outbound": selectedOutbound,
 			}, nil, nil
-		case RuleTypeSRS:
+		case wizardmodels.RuleTypeSRS:
 			sets, tags, e := buildSRSRuleSetsAndTags()
 			if e != nil {
 				return nil, nil, e
@@ -632,7 +634,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 				"rule_set": ruleSetVal,
 				"outbound": selectedOutbound,
 			}, sets, nil
-		case RuleTypeCustom:
+		case wizardmodels.RuleTypeRaw:
 			obj, e := parseCustomJSON()
 			if e != nil {
 				return nil, nil, e
@@ -672,9 +674,9 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			return false
 		}
 		switch ruleSel.Type() {
-		case RuleTypeIP:
+		case wizardmodels.RuleTypeIPS:
 			return strings.TrimSpace(ipEntry.Text) != ""
-		case RuleTypeProcess:
+		case wizardmodels.RuleTypeProcesses:
 			if matchByPathCheck.Checked {
 				lines := ParseLines(pathPatternsEntry.Text, false)
 				if len(lines) == 0 {
@@ -695,9 +697,9 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 				return true
 			}
 			return len(processesSelected) > 0
-		case RuleTypeSRS:
+		case wizardmodels.RuleTypeSRS:
 			return len(ParseLines(strings.TrimSpace(srsURLsEntry.Text), false)) > 0
-		case RuleTypeCustom:
+		case wizardmodels.RuleTypeRaw:
 			return strings.TrimSpace(customEntry.Text) != ""
 		default:
 			if domainModeSelect.Selected == "Regex" {
@@ -727,11 +729,11 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	onRuleTypeChange := func(s string) {
 		syncingRuleType = true
 		defer func() { syncingRuleType = false }()
-		typeIPCheck.SetChecked(s == RuleTypeIP)
-		typeDomainCheck.SetChecked(s == RuleTypeDomain)
-		typeProcessCheck.SetChecked(s == RuleTypeProcess)
-		typeSRSCheck.SetChecked(s == RuleTypeSRS)
-		typeCustomCheck.SetChecked(s == RuleTypeCustom)
+		typeIPCheck.SetChecked(s == wizardmodels.RuleTypeIPS)
+		typeDomainCheck.SetChecked(s == wizardmodels.RuleTypeURLs)
+		typeProcessCheck.SetChecked(s == wizardmodels.RuleTypeProcesses)
+		typeSRSCheck.SetChecked(s == wizardmodels.RuleTypeSRS)
+		typeCustomCheck.SetChecked(s == wizardmodels.RuleTypeRaw)
 		updateVisibility(s)
 		if updateButtonState != nil {
 			updateButtonState()
@@ -739,9 +741,6 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 	}
 	ruleSel.SetOnChange(onRuleTypeChange)
 	onRuleTypeChange(ruleSel.Type()) // начальная синхронизация при открытии (SetType не дергает OnChange, т.к. тип уже тот же)
-
-	// Default for path mode: Simple for new rules
-	pathModeRadio.SetSelected("Simple")
 
 	// When Match by path is toggled, refresh Process UI (name vs path) and validation
 	matchByPathCheck.OnChanged = func(bool) {
@@ -809,7 +808,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			} else {
 				ruleRaw["outbound"] = selectedOutbound
 			}
-			selectedType = RuleTypeCustom
+			selectedType = wizardmodels.RuleTypeRaw
 		} else {
 			var err error
 			ruleRaw, srsRuleSets, err = buildRuleRaw(selectedType, selectedOutbound)
@@ -820,7 +819,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		}
 
 		params := make(map[string]interface{})
-		if selectedType == RuleTypeProcess {
+		if selectedType == wizardmodels.RuleTypeProcesses {
 			params["match_by_path"] = matchByPathCheck.Checked
 			if matchByPathCheck.Checked {
 				if pathModeRadio.Selected == "Simple" {
@@ -830,7 +829,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 				}
 			}
 		}
-		if selectedType == RuleTypeDomain {
+		if selectedType == wizardmodels.RuleTypeURLs {
 			params["domain_mode"] = domainModeSelect.Selected
 		}
 
@@ -842,7 +841,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			editRule.Rule.Params = params
 			if len(srsRuleSets) > 0 {
 				editRule.Rule.RuleSets = srsRuleSets
-			} else if selectedType != RuleTypeSRS {
+			} else if selectedType != wizardmodels.RuleTypeSRS {
 				editRule.Rule.RuleSets = nil
 			}
 			editRule.SelectedOutbound = selectedOutbound
@@ -1057,37 +1056,37 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 		if trimmed == "" {
 			dialog.ShowError(errors.New("Raw JSON is empty"), dialogWindow)
 			tabs.SelectTab(rawTabItem)
-			ruleSel.SetType(RuleTypeCustom)
+			ruleSel.SetType(wizardmodels.RuleTypeRaw)
 			return
 		}
 		var obj map[string]interface{}
 		if err := json.Unmarshal([]byte(trimmed), &obj); err != nil {
 			dialog.ShowError(fmt.Errorf("invalid JSON: %w", err), dialogWindow)
 			tabs.SelectTab(rawTabItem)
-			ruleSel.SetType(RuleTypeCustom)
+			ruleSel.SetType(wizardmodels.RuleTypeRaw)
 			return
 		}
 		if obj == nil {
 			dialog.ShowError(errors.New("rule must be a JSON object"), dialogWindow)
 			tabs.SelectTab(rawTabItem)
-			ruleSel.SetType(RuleTypeCustom)
+			ruleSel.SetType(wizardmodels.RuleTypeRaw)
 			return
 		}
 		detected := wizardmodels.DetermineRuleType(obj)
-		if detected == RuleTypeCustom {
+		if detected == wizardmodels.RuleTypeRaw {
 			dialog.ShowInformation("Rule not recognized", "Could not recognize rule, form cannot be loaded; staying on Raw.", dialogWindow)
 			tabs.SelectTab(rawTabItem)
-			ruleSel.SetType(RuleTypeCustom)
+			ruleSel.SetType(wizardmodels.RuleTypeRaw)
 			activeTabIsRaw = true
 			return
 		}
 		ruleSel.SetType(detected)
 		switch detected {
-		case RuleTypeIP:
+		case wizardmodels.RuleTypeIPS:
 			if ips := ExtractStringArray(obj["ip_cidr"]); len(ips) > 0 {
 				ipEntry.SetText(strings.Join(ips, "\n"))
 			}
-		case RuleTypeDomain:
+		case wizardmodels.RuleTypeURLs:
 			if arr := ExtractStringArray(obj["domain_suffix"]); len(arr) > 0 {
 				domainModeSelect.SetSelected("Suffix")
 				urlEntry.SetText(strings.Join(arr, "\n"))
@@ -1103,7 +1102,7 @@ func ShowAddRuleDialog(presenter *wizardpresentation.WizardPresenter, editRule *
 			}
 			updateDomainLabel()
 			updateVisibility(ruleSel.Type())
-		case RuleTypeProcess:
+		case wizardmodels.RuleTypeProcesses:
 			if procs := ExtractStringArray(obj[ProcessKey]); len(procs) > 0 {
 				processesSelected = dedupeProcessStrings(procs)
 				sortProcessStrings(processesSelected)

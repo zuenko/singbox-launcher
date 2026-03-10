@@ -137,7 +137,10 @@ func ToPersistedCustomRule(ruleState *RuleState) PersistedCustomRule {
 		HasOutbound:      ruleState.Rule.HasOutbound,
 	}
 	if len(ruleState.Rule.Params) > 0 {
-		p.Params = ruleState.Rule.Params
+		p.Params = make(map[string]interface{}, len(ruleState.Rule.Params))
+		for k, v := range ruleState.Rule.Params {
+			p.Params[k] = v
+		}
 	}
 	if ruleType == RuleTypeSRS && len(ruleState.Rule.RuleSets) > 0 {
 		p.RuleSet = ruleState.Rule.RuleSets

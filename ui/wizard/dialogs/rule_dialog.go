@@ -3,7 +3,7 @@
 // Файл rule_dialog.go содержит утилиты для работы с правилами в диалогах:
 //   - ExtractStringArray - извлечение массива строк из interface{} (поддержка []interface{} и []string)
 //   - ParseLines - парсинг многострочного текста в массив строк (разделение по переносу строки)
-//   - Константы типов правил (RuleTypeIP, RuleTypeDomain)
+//   - Подписи типов правил для UI (RuleTypeIPLabel и т.д.). Значения типов — в wizardmodels.
 //
 // Эти утилиты используются в add_rule_dialog.go для обработки ввода пользователя
 // (например, ввод доменов или IP-адресов в многострочном текстовом поле).
@@ -19,13 +19,10 @@ import (
 	"strings"
 )
 
-// Константы типов правил — единственные значения в state и в коде (множественное число).
+// Значения типов правил (ips, urls, processes, srs, raw) заданы в wizardmodels — единый источник истины для state и кода.
+// Здесь только ключи правил и подписи для UI.
+
 const (
-	RuleTypeIP      = "ips"
-	RuleTypeDomain  = "urls"
-	RuleTypeProcess = "processes"
-	RuleTypeSRS     = "srs"
-	RuleTypeCustom  = "raw"
 	// ProcessKey is the key used in saved rules and config for process-based rules
 	ProcessKey = "process_name"
 	// ProcessPathRegexKey is the key for process path regex rules (match by path)
