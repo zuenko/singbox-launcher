@@ -414,6 +414,8 @@ jobs:
           (github.event.inputs.target == '' || contains(github.event.inputs.target, 'Win7')))
     needs: meta
     runs-on: windows-latest
+    env:
+      GOFLAGS: -mod=mod
 
     steps:
       - name: Checkout code
@@ -448,6 +450,9 @@ jobs:
 
       - name: Download dependencies
         run: go mod download "-modfile=go.win7.mod"
+
+      - name: Populate Win7 go.sum entries
+        run: go get "-modfile=go.win7.mod" ./...
 
       # MSYS2 нужен ТОЛЬКО для сборки
       - name: Setup MSYS2 (MINGW32)
