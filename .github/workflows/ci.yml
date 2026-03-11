@@ -82,9 +82,6 @@ on:
 permissions:
   contents: read
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   meta:
     name: Meta
@@ -330,7 +327,7 @@ jobs:
           fi
 
       - name: Upload Catalina artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: artifacts-macos-catalina
           path: |
@@ -339,7 +336,7 @@ jobs:
           retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 1 || 30 }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: artifacts-darwin
           path: dist/*
@@ -400,7 +397,7 @@ jobs:
           move /y singbox-launcher.exe dist\singbox-launcher.exe
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: artifacts-windows
           path: dist/*
@@ -515,7 +512,7 @@ jobs:
           ls -lh dist/singbox-launcher-win7-32.exe
 
       - name: Upload artifacts (Win7 x86)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: artifacts-windows-win7-32
           path: dist/singbox-launcher-win7-32.exe
@@ -567,7 +564,7 @@ jobs:
           fi
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           path: release-artifacts
 
