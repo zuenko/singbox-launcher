@@ -12,6 +12,7 @@
 - **Restart button:** A Restart button (🔄) is available on the Core dashboard between Start and Stop. It kills the sing-box process so the watcher restarts it; the UI briefly shows "Restarting..." and button state feedback (Start on, Stop off) before returning to Running.
 - **Wizard save:** Saving in the config wizard only writes files and runs Update (no sing-box restart). Config is validated with `sing-box check` against a temporary file (`config-check.json`) before writing to `config.json`; on validation failure the user sees an error and the existing config is not overwritten. Clash API config is reloaded from `config.json` only when sing-box is started.
 - **Linux capabilities dialog (issue #34):** The "Linux capabilities required" / "Linux Capabilities" dialog now shows the setcap command in a selectable field and adds a "Copy" button to copy it to the clipboard.
+- **Win7 CI:** The Win7 build (job `build-win7`) uses a dedicated `go.win7.mod` with pinned `golang.org/x/sys v0.25.0` (Go 1.20); `go.win7.sum` is generated on the runner. The artifact `singbox-launcher-<version>-win7-32.zip` is reliably included in the release.
 
 ---
 
@@ -25,4 +26,5 @@
 - **Диалог Linux capabilities (issue #34):** В диалоге «Linux capabilities required» / «Linux Capabilities» команда setcap выводится в выделяемом поле и добавлена кнопка «Copy» для копирования в буфер обмена.
 - **Автозапуск из Планировщика заданий:** В README_RU добавлена рекомендация при зависании лаунчера при старте из Планировщика: включить задержку триггера «При входе в систему» (30 с или 1 мин), чтобы сессия и видеодрайвер успели инициализироваться.
 - **Визард: платформа win7:** В шаблоне визарда (params и selectable_rules) при сборке Win7 из CI (GOARCH=386) применяются и секции с `"platforms": ["windows"]`, и с `"platforms": ["win7"]` — по аналогии с darwin/darwin-tun.
+- **Win7 CI:** Сборка Win7 (job `build-win7`) использует отдельный `go.win7.mod` с фиксированным `golang.org/x/sys v0.25.0` (Go 1.20); `go.win7.sum` формируется на раннере. Артефакт `singbox-launcher-<version>-win7-32.zip` стабильно попадает в release.
 
