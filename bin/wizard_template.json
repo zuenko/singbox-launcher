@@ -119,8 +119,8 @@
         { "rule_set": "ru-domains", "server": "yandex_doh" },
         { "rule_set": "ru-domains", "server": "yandex_dns_vpn" },
         { "rule_set": "ru-domains", "server": "yandex_dns_direct" },
-        { "server": "google_doh_vpn" },
-        { "server": "google_doh" }
+        { "server": "google_doh" },
+        { "server": "google_doh_vpn" }
       ],
       "final": "direct_dns_resolver",
       "strategy": "ipv4_only",
@@ -390,6 +390,11 @@
           "stack": "system"
         }
       ]
+    },
+    {
+      "name": "inbounds.stack",
+      "platforms": ["win7"],
+      "value": "gvisor"
     },
     {
       "name": "inbounds",
