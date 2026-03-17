@@ -1,0 +1,17 @@
+{
+  "_display_name": "Deutsch",
+
+  "app.tab.core": "⚙️ Kern",
+  "app.tab.servers": "🖥️ Server",
+  "app.tab.diagnostics": "🔍 Diagnose",
+  "app.tab.help": "❓ Hilfe",
+
+  "help.language_label": "Sprache:",
+  "help.language_changed": "Sprache geändert. Starten Sie die App neu, um alles zu übernehmen.",
+  "help.download_locales": "📥 Übersetzungen herunterladen",
+  "help.download_locales_btn": "⬇",
+  "help.download_locales_success": "Übersetzungen heruntergeladen (%d). Starten Sie neu, um neue Sprachen zu sehen.",
+  "help.download_locales_failed": "Übersetzungen konnten nicht heruntergeladen werden",
+  "help.downloading_locales": "Wird heruntergeladen...",
+  "help.downloading_locales_btn": "🔄"
+}

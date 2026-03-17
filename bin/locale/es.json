@@ -1,0 +1,17 @@
+{
+  "_display_name": "Español",
+
+  "app.tab.core": "⚙️ Núcleo",
+  "app.tab.servers": "🖥️ Servidores",
+  "app.tab.diagnostics": "🔍 Diagnóstico",
+  "app.tab.help": "❓ Ayuda",
+
+  "help.language_label": "Idioma:",
+  "help.language_changed": "Idioma cambiado. Reinicia la aplicación para aplicar todos los cambios.",
+  "help.download_locales": "📥 Descargar traducciones",
+  "help.download_locales_btn": "⬇",
+  "help.download_locales_success": "Traducciones descargadas (%d). Reinicia para ver los nuevos idiomas.",
+  "help.download_locales_failed": "No se pudieron descargar las traducciones",
+  "help.downloading_locales": "Descargando...",
+  "help.downloading_locales_btn": "🔄"
+}

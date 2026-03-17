@@ -1,0 +1,17 @@
+{
+  "_display_name": "Français",
+
+  "app.tab.core": "⚙️ Cœur",
+  "app.tab.servers": "🖥️ Serveurs",
+  "app.tab.diagnostics": "🔍 Diagnostic",
+  "app.tab.help": "❓ Aide",
+
+  "help.language_label": "Langue :",
+  "help.language_changed": "La langue a été modifiée. Redémarrez l’application pour appliquer complètement.",
+  "help.download_locales": "📥 Télécharger les traductions",
+  "help.download_locales_btn": "⬇",
+  "help.download_locales_success": "Traductions téléchargées (%d). Redémarrez pour voir les nouvelles langues.",
+  "help.download_locales_failed": "Échec du téléchargement des traductions",
+  "help.downloading_locales": "Téléchargement…",
+  "help.downloading_locales_btn": "🔄"
+}
