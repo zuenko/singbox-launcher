@@ -17,6 +17,7 @@ import (
 
 	"singbox-launcher/api"
 	"singbox-launcher/core/services"
+	"singbox-launcher/core/uiservice"
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/platform"
@@ -40,7 +41,7 @@ const (
 type AppController struct {
 	// --- Services ---
 	// UIService manages UI-related state, callbacks, and tray menu logic
-	UIService *services.UIService
+	UIService *uiservice.UIService
 	// APIService manages Clash API interactions and proxy list management
 	APIService *services.APIService
 	// StateService manages application state including version caches and auto-update state
@@ -160,7 +161,7 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 	ac.RunningState.Set(false)
 
 	// Initialize UIService
-	uiService, err := services.NewUIService(
+	uiService, err := uiservice.NewUIService(
 		appIconData, greyIconData, greenIconData, redIconData,
 		func() bool { return ac.RunningState.IsRunning() },
 		ac.FileService.SingboxPath,

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"singbox-launcher/core/config"
+	config "singbox-launcher/core/config/configtypes"
 )
 
 // TestIsDirectLink tests the IsDirectLink function

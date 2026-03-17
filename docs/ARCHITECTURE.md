@@ -104,13 +104,14 @@ singbox-launcher/
 │   │   │   - IsNetworkError()                       # Проверка сетевой ошибки
 │   │   │   - GetNetworkErrorMessage()               # Сообщение об ошибке
 │   │   │
-│   ├── services/              # Сервисы приложения
-│   │   ├── ui_service.go      # Управление UI состоянием и callbacks
-│   │   │   │   - NewUIService()                     # Создание сервиса
-│   │   │   │   - UpdateUI()                         # Обновление UI
-│   │   │   │   - StopTrayMenuUpdateTimer()          # Остановка таймера
-│   │   │   │   - QuitApplication()                  # Выход из приложения
-│   │   │   │
+│   ├── uiservice/             # UI-сервис (Fyne-зависимый, отдельный пакет)
+│   │   └── ui_service.go      # Управление UI состоянием и callbacks
+│   │       │   - NewUIService()                     # Создание сервиса
+│   │       │   - UpdateUI()                         # Обновление UI
+│   │       │   - StopTrayMenuUpdateTimer()          # Остановка таймера
+│   │       │   - QuitApplication()                  # Выход из приложения
+│   │
+│   ├── services/              # Сервисы приложения (Fyne-free)
 │   │   ├── api_service.go     # Взаимодействие с Clash API
 │   │   │   │   - NewAPIService()                    # Создание сервиса
 │   │   │   │   - GetClashAPIConfig()                # Получение конфигурации API
@@ -136,13 +137,14 @@ singbox-launcher/
 │   │       │   - BackupFile()                        # Создание бэкапа с ротацией (макс 1 старый)
 │   │       │
 │   └── config/                # Работа с конфигурацией
-│       ├── models.go           # Модели данных конфигурации
-│       │   │   - ParserConfig struct                # Конфигурация парсера
-│       │   │   - ProxySource struct                 # Источник прокси
-│       │   │   - OutboundConfig struct              # Конфигурация outbound
-│       │   │   - WizardConfig struct                # Настройки визарда
-│       │   │   - IsWizardHidden()                   # Проверка скрытия визарда
-│       │   │   - GetWizardRequired()                # Получение обязательных полей
+│       ├── configtypes/        # Общие типы (отдельный пакет для разрыва циклической зависимости)
+│       │   └── types.go        # ParserConfig, ProxySource, OutboundConfig, ParsedNode, NormalizeParserConfig
+│       │
+│       ├── models.go           # Type aliases → configtypes (обратная совместимость: config.ParsedNode и т.д.)
+│       │   │   - ParserConfig = configtypes.ParserConfig
+│       │   │   - ProxySource = configtypes.ProxySource
+│       │   │   - OutboundConfig = configtypes.OutboundConfig
+│       │   │   - ParsedNode = configtypes.ParsedNode
 │       │   │
 │       ├── config_loader.go    # Загрузка и чтение config.json
 │       │   │   - GetSelectorGroupsFromConfig()      # Получение групп селекторов
@@ -156,6 +158,11 @@ singbox-launcher/
 │       │   │   - GenerateOutboundsFromParserConfig()        # Оркестрация: wireguard → EndpointsJSON, остальные → OutboundsJSON
 │       │   │   - OutboundGenerationResult struct             # Результат (OutboundsJSON, EndpointsJSON, счётчики)
 │       │   │   - outboundInfo struct                         # Информация о динамическом селекторе
+│       │   │
+│       ├── outbound_filter.go    # Логика фильтрации нод для селекторов
+│       │   │   - filterNodesForSelector()                   # Фильтрация по tag/host/scheme/label
+│       │   │   - matchesFilter() / matchesPattern()         # Literal / regex / negation matching
+│       │   │   - PreviewSelectorNodes()                     # Фильтрация для UI preview
 │       │   │
 │       ├── updater.go          # Обновление конфигурации
 │       │   │   - UpdateConfigFromSubscriptions()        # Обновление из подписок (outbounds + endpoints)
@@ -181,10 +188,16 @@ singbox-launcher/
 │           │   │   - MakeTagUnique()                         # Уникальность тегов
 │           │   │   - IsSubscriptionURL()                     # Проверка URL подписки
 │           │   │
-│           ├── node_parser.go      # Парсинг узлов прокси
+│           ├── node_parser.go           # Парсинг узлов прокси (диспетчер + общие утилиты)
 │           │   │   - ParseNode()                               # Парсинг URI узла
 │           │   │   - IsDirectLink()                             # Проверка прямого линка
+│           │   │   - buildOutbound()                            # Диспетчер построения outbound по протоколу
 │           │   │
+│           ├── node_parser_vmess.go     # VMess протокол
+│           ├── node_parser_wireguard.go # WireGuard протокол
+│           ├── node_parser_hysteria2.go # Hysteria2 протокол
+│           ├── node_parser_ssh.go       # SSH протокол
+│           │
 │           ├── decoder.go          # Декодирование подписок
 │           │   │   - DecodeSubscriptionContent()              # Декодирование (base64, yaml)
 │           │   │
@@ -1229,9 +1242,12 @@ UI (core_dashboard_tab.go)
 ```
 main.go
   └─> core
-      ├─> core/services
+      ├─> core/services          # Fyne-free: FileService, APIService, StateService
+      ├─> core/uiservice         # Fyne-зависимый UIService (отдельный пакет)
       ├─> core/config
-      │   └─> core/config/subscription
+      │   ├─> core/config/configtypes  # Общие типы (ParsedNode, ParserConfig и пр.)
+      │   ├─> core/config/parser
+      │   └─> core/config/subscription # Импортирует configtypes (не config) → нет цикла
       └─> ui
           └─> ui/wizard
               ├─> ui/wizard/models
@@ -1247,7 +1263,28 @@ main.go
 - `core` не зависит от `ui`
 - `ui/wizard` не зависит от `ui` (кроме точки входа)
 - `core/config` не зависит от `core/services`
+- `core/services` не зависит от Fyne (UIService вынесен в `core/uiservice`)
+- `core/config/subscription` импортирует `core/config/configtypes` (не `core/config`) — цикл разорван
+- `core/config` может импортировать `core/config/subscription`
 - Подпакеты не зависят друг от друга (кроме явной необходимости)
+
+## Известные архитектурные ограничения
+
+### AppController как god object
+
+`AppController` (`core/controller.go`) является центральным координатором, совмещающим:
+- Координацию сервисов
+- Управление жизненным циклом процессов
+- Прямое взаимодействие с UI (диалоги, иконки трея)
+- Управление состоянием VPN
+- Управление обновлениями
+
+**Риск:** по мере роста проекта контроллер станет сложнее для понимания и тестирования.
+**Текущий статус:** оставлено как есть — декомпозиция потребует значительного рефакторинга.
+**Рекомендации при будущем рефакторинге:**
+- Выделить `UpdateCoordinator` для управления обновлениями ядра
+- Выделить `DialogCoordinator` для показа диалогов из core (вместо прямого доступа к `fyne.Window`)
+- Перенести логику трея в отдельный сервис
 
 ## Тестирование
 

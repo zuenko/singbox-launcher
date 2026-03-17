@@ -142,8 +142,10 @@ func buildConfigSections(model *wizardmodels.WizardModel, forPreview bool, timin
 	return sections, nil
 }
 
-// buildOutboundsSection строит секцию outbounds: динамические между @ParserSTART/@ParserEND и статические из шаблона.
-// Между блоками ставится запятая только если есть оба.
+// buildOutboundsSection строит секцию outbounds: маркеры @ParserSTART/@ParserEND и статические из шаблона.
+// При сохранении (forPreview == false) между маркерами ничего не пишется — заполнение
+// динамической секции выполняет updater.WriteToConfig (Parser update) после сохранения.
+// При preview динамические outbounds записываются для отображения пользователю.
 func buildOutboundsSection(model *wizardmodels.WizardModel, templateOutbounds json.RawMessage, forPreview bool, timing *debuglog.TimingContext) (string, error) {
 	start := time.Now()
 	defer func() { timing.LogTiming("build outbounds", time.Since(start)) }()
@@ -155,31 +157,30 @@ func buildOutboundsSection(model *wizardmodels.WizardModel, templateOutbounds js
 	var builder strings.Builder
 	builder.WriteString("[\n")
 
-	// 1. Динамические outbounds между маркерами
+	hasDynamic := false
 	builder.WriteString(indent + "/** @ParserSTART */\n")
-	if forPreview && model.OutboundStats.NodesCount > wizardutils.MaxNodesForFullPreview {
-		builder.WriteString(fmt.Sprintf("%s// Generated: %d nodes, %d local selectors, %d global selectors\n",
-			indent, model.OutboundStats.NodesCount, model.OutboundStats.LocalSelectorsCount, model.OutboundStats.GlobalSelectorsCount))
-		builder.WriteString(fmt.Sprintf("%s// Total outbounds: %d\n", indent, len(model.GeneratedOutbounds)))
-	} else {
-		for idx, entry := range model.GeneratedOutbounds {
-			cleaned := strings.TrimRight(entry, ",\n\r\t ")
-			builder.WriteString(IndentMultiline(cleaned, indent))
-			if idx < len(model.GeneratedOutbounds)-1 {
-				builder.WriteString(",")
-			} else if len(staticOutbounds) > 0 {
-				// Запятая после последнего динамического, чтобы после пропуска комментария парсер видел: value, value
-				builder.WriteString(",")
+	if forPreview {
+		if model.OutboundStats.NodesCount > wizardutils.MaxNodesForFullPreview {
+			builder.WriteString(fmt.Sprintf("%s// Generated: %d nodes, %d local selectors, %d global selectors\n",
+				indent, model.OutboundStats.NodesCount, model.OutboundStats.LocalSelectorsCount, model.OutboundStats.GlobalSelectorsCount))
+			builder.WriteString(fmt.Sprintf("%s// Total outbounds: %d\n", indent, len(model.GeneratedOutbounds)))
+		} else {
+			for idx, entry := range model.GeneratedOutbounds {
+				cleaned := strings.TrimRight(entry, ",\n\r\t ")
+				builder.WriteString(IndentMultiline(cleaned, indent))
+				if idx < len(model.GeneratedOutbounds)-1 || len(staticOutbounds) > 0 {
+					builder.WriteString(",")
+				}
+				builder.WriteString("\n")
+				hasDynamic = true
 			}
-			builder.WriteString("\n")
 		}
 	}
 	builder.WriteString(indent + "/** @ParserEND */")
 
-	// 2. Статические outbounds: запятую перед первым не пишем — она уже после последнего динамического
 	if len(staticOutbounds) > 0 {
 		for i, item := range staticOutbounds {
-			if i > 0 {
+			if i > 0 || hasDynamic {
 				builder.WriteString(",\n")
 			} else {
 				builder.WriteString("\n")
@@ -196,7 +197,10 @@ func buildOutboundsSection(model *wizardmodels.WizardModel, templateOutbounds js
 	return builder.String(), nil
 }
 
-// buildEndpointsSection строит секцию endpoints (WireGuard): динамические между @ParserSTART_E/@ParserEND_E и статические из шаблона.
+// buildEndpointsSection строит секцию endpoints (WireGuard): маркеры @ParserSTART_E/@ParserEND_E и статические из шаблона.
+// При сохранении (forPreview == false) между маркерами ничего не пишется — заполнение
+// динамической секции выполняет updater.WriteToConfig (Parser update) после сохранения.
+// При preview динамические endpoints записываются для отображения пользователю.
 func buildEndpointsSection(model *wizardmodels.WizardModel, templateEndpoints json.RawMessage, forPreview bool, timing *debuglog.TimingContext) (string, error) {
 	start := time.Now()
 	defer func() { timing.LogTiming("build endpoints", time.Since(start)) }()
@@ -208,26 +212,28 @@ func buildEndpointsSection(model *wizardmodels.WizardModel, templateEndpoints js
 	var builder strings.Builder
 	builder.WriteString("[\n")
 
+	hasDynamic := false
 	builder.WriteString(indent + "/** @ParserSTART_E */\n")
-	if forPreview && model.OutboundStats.EndpointsCount > wizardutils.MaxNodesForFullPreview {
-		builder.WriteString(fmt.Sprintf("%s// Generated: %d endpoints (WireGuard)\n", indent, model.OutboundStats.EndpointsCount))
-	} else {
-		for idx, entry := range model.GeneratedEndpoints {
-			cleaned := strings.TrimRight(entry, ",\n\r\t ")
-			builder.WriteString(IndentMultiline(cleaned, indent))
-			if idx < len(model.GeneratedEndpoints)-1 {
-				builder.WriteString(",")
-			} else if len(staticEndpoints) > 0 {
-				builder.WriteString(",")
+	if forPreview {
+		if model.OutboundStats.EndpointsCount > wizardutils.MaxNodesForFullPreview {
+			builder.WriteString(fmt.Sprintf("%s// Generated: %d endpoints (WireGuard)\n", indent, model.OutboundStats.EndpointsCount))
+		} else {
+			for idx, entry := range model.GeneratedEndpoints {
+				cleaned := strings.TrimRight(entry, ",\n\r\t ")
+				builder.WriteString(IndentMultiline(cleaned, indent))
+				if idx < len(model.GeneratedEndpoints)-1 || len(staticEndpoints) > 0 {
+					builder.WriteString(",")
+				}
+				builder.WriteString("\n")
+				hasDynamic = true
 			}
-			builder.WriteString("\n")
 		}
 	}
 	builder.WriteString(indent + "/** @ParserEND_E */")
 
 	if len(staticEndpoints) > 0 {
 		for i, item := range staticEndpoints {
-			if i > 0 {
+			if i > 0 || hasDynamic {
 				builder.WriteString(",\n")
 			} else {
 				builder.WriteString("\n")

@@ -1,4 +1,4 @@
-package services
+package uiservice
 
 import (
 	"os"
@@ -17,6 +17,8 @@ import (
 
 // UIService manages UI-related state, callbacks, and tray menu logic.
 // It encapsulates all Fyne components and UI state to reduce AppController complexity.
+// Placed in a separate package from other core services so that non-UI packages
+// (e.g. ui/wizard/business) can import core/services without pulling in Fyne.
 type UIService struct {
 	// Fyne Components
 	Application fyne.App
@@ -128,19 +130,16 @@ func (ui *UIService) ShowMainWindowOrFocusWizard() {
 		return
 	}
 	fyne.Do(func() {
-		// Always show the main window first so the application becomes visible.
 		if ui.MainWindow != nil {
 			ui.MainWindow.Show()
 			ui.MainWindow.RequestFocus()
 		}
 
-		// If Wizard is open, ensure it is visible and focused on top of the main window.
 		if ui.WizardWindow != nil {
 			ui.WizardWindow.Show()
 			ui.WizardWindow.RequestFocus()
 		}
 
-		// Вызываем callback после открытия окна (для проверки обновлений)
 		if ui.OnWindowShown != nil {
 			ui.OnWindowShown()
 		}
@@ -150,9 +149,7 @@ func (ui *UIService) ShowMainWindowOrFocusWizard() {
 // UpdateUI updates all UI elements based on the current application state.
 func (ui *UIService) UpdateUI() {
 	fyne.Do(func() {
-		// Update tray icon
 		if desk, ok := ui.Application.(desktop.App); ok {
-			// Check that icons are initialized
 			if ui.GreenIconData == nil || ui.GreyIconData == nil || ui.RedIconData == nil {
 				debuglog.WarnLog("UpdateUI: Icons not initialized, skipping icon update")
 				return
@@ -161,15 +158,11 @@ func (ui *UIService) UpdateUI() {
 			var iconToSet fyne.Resource
 
 			if ui.RunningStateIsRunning() {
-				// Green icon - if running
 				iconToSet = ui.GreenIconData
 			} else {
-				// Check for binary to determine error state
 				if _, err := os.Stat(ui.SingboxPath); os.IsNotExist(err) {
-					// Red icon - on error (binary not found)
 					iconToSet = ui.RedIconData
 				} else {
-					// Grey icon - on normal stop
 					iconToSet = ui.GreyIconData
 				}
 			}
@@ -177,24 +170,18 @@ func (ui *UIService) UpdateUI() {
 			desk.SetSystemTrayIcon(iconToSet)
 		}
 
-		// Reset API state if VPN is down
 		if !ui.RunningStateIsRunning() && ui.ResetAPIStateFunc != nil {
 			debuglog.DebugLog("UpdateUI: Triggering API state reset because state is 'Down'.")
 			ui.ResetAPIStateFunc()
 		}
 
-		// Update tray menu when state changes
 		if ui.UpdateTrayMenuFunc != nil {
 			ui.UpdateTrayMenuFunc()
 		}
 
-		// Update Core Dashboard status when state changes
 		if ui.UpdateCoreStatusFunc != nil {
 			ui.UpdateCoreStatusFunc()
 		}
-
-		// Don't call OnStateChange here - it would create infinite loop
-		// OnStateChange is called from RunningState.Set() and other state change points
 	})
 }
 

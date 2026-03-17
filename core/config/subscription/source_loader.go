@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"singbox-launcher/core/config"
+	"singbox-launcher/core/config/configtypes"
 	"singbox-launcher/internal/debuglog"
 )
 
@@ -51,20 +51,20 @@ func LogDuplicateTagStatistics(tagCounts map[string]int, logPrefix string) {
 	}
 }
 
-// LoadNodesFromSource loads and processes nodes from a config.ProxySource
+// LoadNodesFromSource loads and processes nodes from a configtypes.ProxySource
 // Handles subscriptions, legacy direct links, and connections
 // Returns list of parsed nodes with processed tags
 func LoadNodesFromSource(
-	proxySource config.ProxySource,
+	proxySource configtypes.ProxySource,
 	tagCounts map[string]int,
 	progressCallback func(float64, string),
 	subscriptionIndex, totalSubscriptions int,
-) ([]*config.ParsedNode, error) {
+) ([]*configtypes.ParsedNode, error) {
 	startTime := time.Now()
 	debuglog.DebugLog("LoadNodesFromSource: START source %d/%d at %s",
 		subscriptionIndex+1, totalSubscriptions, startTime.Format("15:04:05.000"))
 
-	nodes := make([]*config.ParsedNode, 0)
+	nodes := make([]*configtypes.ParsedNode, 0)
 	nodesFromThisSource := 0
 	skippedDueToLimit := 0
 
@@ -114,11 +114,11 @@ func LoadNodesFromSource(
 					}
 					lineCount++
 
-					if nodesFromThisSource >= config.MaxNodesPerSubscription {
+					if nodesFromThisSource >= configtypes.MaxNodesPerSubscription {
 						skippedDueToLimit++
 						if skippedDueToLimit == 1 {
 						debuglog.DebugLog("LoadNodesFromSource: Reached limit of %d nodes for subscription %d/%d",
-							config.MaxNodesPerSubscription, subscriptionIndex+1, totalSubscriptions)
+							configtypes.MaxNodesPerSubscription, subscriptionIndex+1, totalSubscriptions)
 						}
 						continue
 					}
@@ -156,7 +156,7 @@ func LoadNodesFromSource(
 					fmt.Sprintf("Parsing direct link %d/%d", subscriptionIndex+1, totalSubscriptions))
 			}
 
-			if nodesFromThisSource < config.MaxNodesPerSubscription {
+			if nodesFromThisSource < configtypes.MaxNodesPerSubscription {
 				parseStartTime := time.Now()
 				node, err := ParseNode(proxySource.Source, proxySource.Skip)
 				if err != nil {
@@ -199,7 +199,7 @@ func LoadNodesFromSource(
 				fmt.Sprintf("Parsing direct link %d/%d (connection %d)", subscriptionIndex+1, totalSubscriptions, connIndex+1))
 		}
 
-		if nodesFromThisSource >= config.MaxNodesPerSubscription {
+		if nodesFromThisSource >= configtypes.MaxNodesPerSubscription {
 			skippedDueToLimit++
 			continue
 		}
@@ -230,7 +230,7 @@ func LoadNodesFromSource(
 		debuglog.DebugLog("LoadNodesFromSource: Source %d/%d exceeded limit, skipped %d nodes",
 			subscriptionIndex+1, totalSubscriptions, skippedDueToLimit)
 		debuglog.WarnLog("Parser: Source exceeded limit of %d nodes. Skipped %d additional nodes.",
-			config.MaxNodesPerSubscription, skippedDueToLimit)
+			configtypes.MaxNodesPerSubscription, skippedDueToLimit)
 	}
 
 	totalDuration := time.Since(startTime)
@@ -243,7 +243,7 @@ func LoadNodesFromSource(
 // If tagMask is set, it replaces the entire tag and ignores prefix/postfix.
 // Supports variable substitution in prefix, postfix, and mask.
 // Returns the modified tag.
-func applyTagPrefixPostfix(node *config.ParsedNode, tagPrefix, tagPostfix, tagMask string, nodeNum int) string {
+func applyTagPrefixPostfix(node *configtypes.ParsedNode, tagPrefix, tagPostfix, tagMask string, nodeNum int) string {
 	// If tag_mask is set, use it to replace the entire tag (ignores prefix/postfix)
 	if tagMask != "" {
 		return replaceTagVariables(tagMask, node, nodeNum)
@@ -275,7 +275,7 @@ func applyTagPrefixPostfix(node *config.ParsedNode, tagPrefix, tagPostfix, tagMa
 //   - {$label} - label from URL (fragment after #)
 //   - {$comment} - comment
 //   - {$num} - node sequential number starting from 1
-func replaceTagVariables(template string, node *config.ParsedNode, nodeNum int) string {
+func replaceTagVariables(template string, node *configtypes.ParsedNode, nodeNum int) string {
 	result := template
 
 	// Replace {$tag}

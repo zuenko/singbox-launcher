@@ -6,6 +6,13 @@
 
 ## EN
 
+### Internal / Refactoring
+- **node_parser.go split by protocol:** Protocol-specific parsing logic (VMess, WireGuard, Hysteria2, SSH) extracted into separate files (`node_parser_vmess.go`, `node_parser_wireguard.go`, `node_parser_hysteria2.go`, `node_parser_ssh.go`). No behavior changes.
+- **outbound_filter.go extracted:** Selector node filtering functions (`filterNodesForSelector`, `matchesFilter`, `matchesPattern`, `PreviewSelectorNodes`) moved from `outbound_generator.go` to `outbound_filter.go`. No behavior changes.
+- **Circular dependency fix:** Shared types (`ParsedNode`, `ParserConfig`, etc.) extracted to `core/config/configtypes`. `core/config/subscription` now imports `configtypes` instead of `core/config`, breaking the circular dependency. `core/config/updater.go` now calls `subscription.LogDuplicateTagStatistics` directly instead of maintaining a local duplicate.
+- **UIService separated:** `UIService` moved from `core/services/` to `core/uiservice/`. The `core/services` package no longer depends on Fyne, so non-UI packages importing it (e.g. `ui/wizard/business`) don't pull in GUI dependencies.
+- **Wizard save: unified outbound flow:** Before saving, `ensureOutboundsParsed` guarantees outbounds exist — waits for an in-progress parse or runs `ParseAndPreview` on-demand (no silent failure if user skipped preview). The template is built with empty `@ParserSTART`/`@ParserEND` markers, then `PopulateParserMarkers` fills them in memory from cached outbounds. The populated config is validated via `sing-box check` (`config-check.json`) and written directly to `config.json` — no post-save parser run or extra network requests.
+
 ### Highlights
 - **Custom SRS rules — local download:** Custom rules of type **SRS** now support local SRS downloads in the Wizard Rules tab (same ⬇/🔄/✔️ button as built-in rules). When local files exist (`bin/rule-sets/<tag>.srs`), the generated config uses `type: "local"` with `path` instead of remote `url`.
 - **Custom Rule refactor (types, Raw tab, SRS, params):** Rule types are now constants (`ips`, `urls`, `processes`, `srs`, `raw`) in state and code. Add/Edit Rule dialog: **Rule name** above Form/Raw tabs; tabs use full height. Form and Raw tabs; saving from Raw stores the rule with type `raw`. **Domains/URLs** — dropdown for mode (Exact domains / Suffix / Keyword / Regex) in the type row; form supports domain_suffix and domain_keyword; when switching Raw→Form, outbound is restored from the rule. New rule type **SRS**: manual SRS URLs, hint «?» with link to runetfreedom. UI state for Processes (Match by path, Simple/Regex) and Domains (mode) is saved and restored via `params` in state.
@@ -14,10 +21,25 @@
 - **Wizard save:** Saving in the config wizard only writes files and runs Update (no sing-box restart). Config is validated with `sing-box check` against a temporary file (`config-check.json`) before writing to `config.json`; on validation failure the user sees an error and the existing config is not overwritten. Clash API config is reloaded from `config.json` only when sing-box is started.
 - **Linux capabilities dialog (issue #34):** The "Linux capabilities required" / "Linux Capabilities" dialog now shows the setcap command in a selectable field and adds a "Copy" button to copy it to the clipboard.
 - **Win7 CI:** The Win7 build (job `build-win7`) uses a dedicated `go.win7.mod` with pinned `golang.org/x/sys v0.25.0` (Go 1.20); `go.win7.sum` is generated on the runner. The artifact `singbox-launcher-<version>-win7-32.zip` is reliably included in the release.
+- **Bugfix — launcher freeze after sleep/hibernate:** Improved sleep/resume handling for periodic background tasks using `ctxutil.SleepWithContext`, so the launcher no longer hangs or gets stuck after the system wakes up from sleep or hibernation.
+- **Technical — clipboard and wizard cleanup:** Internal UI code now uses `App.Clipboard()` instead of the deprecated `Window.Clipboard()`, and unused wizard state helpers were removed to satisfy lints and keep the wizard state management code clean.
+
+### Technical / Internal
+
+- **SPECS workflow:** All tasks from the old `todo/` structure were migrated into numbered `SPECS/NNN-T-S-NAME/` folders with `SPEC.md`, `PLAN.md`, `TASKS.md`, and `IMPLEMENTATION_REPORT.md`, and the development process is now governed by `SPECS/CONSTITUTION.md` and `SPECS/IMPLEMENTATION_PROMPT.md`.
+- **Platform layer refactor:** File-system and power-handling helpers are now split by OS (`fs_unix.go`, `fs_windows.go`, `power_windows.go`, stubs), and core downloader / auto-update logic was cleaned up for clearer platform-specific behavior.
+- **CI and toolchain:** GitHub Actions workflows were updated to Node 24 and modern `actions/*@v6`, and the Win7 CI job now uses `go.win7.mod` with `go.win7.sum` generated on the runner to avoid checksum drift and keep the `singbox-launcher-<version>-win7-32.zip` artifact stable.
 
 ---
 
 ## RU
+
+### Внутреннее / Рефакторинг
+- **Разбиение node_parser.go по протоколам:** Логика парсинга протоколов (VMess, WireGuard, Hysteria2, SSH) вынесена в отдельные файлы (`node_parser_vmess.go`, `node_parser_wireguard.go`, `node_parser_hysteria2.go`, `node_parser_ssh.go`). Поведение не изменилось.
+- **Выделение outbound_filter.go:** Функции фильтрации нод для селекторов (`filterNodesForSelector`, `matchesFilter`, `matchesPattern`, `PreviewSelectorNodes`) перенесены из `outbound_generator.go` в `outbound_filter.go`. Поведение не изменилось.
+- **Разрыв циклической зависимости:** Общие типы (`ParsedNode`, `ParserConfig` и др.) вынесены в `core/config/configtypes`. Пакет `subscription` импортирует `configtypes` вместо `config`, разрывая цикл. `updater.go` теперь вызывает `subscription.LogDuplicateTagStatistics` напрямую.
+- **Отделение UIService:** `UIService` перенесён из `core/services/` в `core/uiservice/`. Пакет `core/services` больше не зависит от Fyne — пакеты бизнес-логики не тянут GUI-зависимости.
+- **Визард: единый поток outbounds при сохранении:** Перед сохранением `ensureOutboundsParsed` гарантирует наличие outbounds — ожидает текущий парсинг или запускает `ParseAndPreview` по требованию (нет «тихого» падения, если пользователь не заходил в preview). Шаблон собирается с пустыми маркерами `@ParserSTART`/`@ParserEND`, затем `PopulateParserMarkers` заполняет их в памяти из кешированных outbounds. Заполненный конфиг валидируется через `sing-box check` (`config-check.json`) и пишется напрямую в `config.json` — без повторного парсинга и сетевых запросов.
 
 ### Основное
 - **Пользовательские SRS-правила — локальное скачивание:** Для пользовательских правил типа **SRS** в визарде на вкладке Rules добавлена локальная загрузка SRS (та же кнопка ⬇/🔄/✔️, что и у встроенных правил). При наличии файлов `bin/rule-sets/<tag>.srs` в сгенерированном конфиге используется `type: "local"` с `path` вместо remote `url`.
@@ -29,4 +51,12 @@
 - **Автозапуск из Планировщика заданий:** В README_RU добавлена рекомендация при зависании лаунчера при старте из Планировщика: включить задержку триггера «При входе в систему» (30 с или 1 мин), чтобы сессия и видеодрайвер успели инициализироваться.
 - **Визард: платформа win7:** В шаблоне визарда (params и selectable_rules) при сборке Win7 из CI (GOARCH=386) применяются и секции с `"platforms": ["windows"]`, и с `"platforms": ["win7"]` — по аналогии с darwin/darwin-tun.
 - **Win7 CI:** Сборка Win7 (job `build-win7`) использует отдельный `go.win7.mod` с фиксированным `golang.org/x/sys v0.25.0` (Go 1.20); `go.win7.sum` формируется на раннере. Артефакт `singbox-launcher-<version>-win7-32.zip` стабильно попадает в release.
+- **Исправление — зависание после сна/гибернации:** Улучшена обработка сна и пробуждения для фоновых задач (через `ctxutil.SleepWithContext`), чтобы лаунчер не зависал и не «залипал» после выхода системы из сна или гибернации.
+- **Технически — Clipboard и состояние визарда:** Внутренний UI-код переведён на `App.Clipboard()` вместо устаревшего `Window.Clipboard()`, а неиспользуемые хелперы состояния визарда удалены и приведены к требованиям линтера, чтобы упростить сопровождение кода.
+
+### Техническое / Внутреннее
+
+- **Workflow SPECS:** Задачи из старой структуры `todo/` перенесены в пронумерованные папки `SPECS/NNN-T-S-NAME/` с файлами `SPEC.md`, `PLAN.md`, `TASKS.md` и `IMPLEMENTATION_REPORT.md`; процесс разработки формализован через `SPECS/CONSTITUTION.md` и `SPECS/IMPLEMENTATION_PROMPT.md`.
+- **Рефакторинг платформенного слоя:** Логика работы с файловой системой и питанием разделена по ОС (`fs_unix.go`, `fs_windows.go`, `power_windows.go`, заглушки), а код загрузчика ядра и автообновления упорядочен для более предсказуемого платформенного поведения.
+- **CI и toolchain:** Обновлены GitHub Actions до Node 24 и `actions/*@v6`; Win7-job использует `go.win7.mod`, а `go.win7.sum` формируется на раннере, что устраняет дрейф checksum’ов и стабилизирует артефакт `singbox-launcher-<version>-win7-32.zip`.
 

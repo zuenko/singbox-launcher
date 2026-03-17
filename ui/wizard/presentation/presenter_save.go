@@ -5,9 +5,9 @@
 //
 // SaveConfig выполняет следующие шаги:
 //  1. Проверяет, что ParserConfig заполнен (хотя бы один proxy с Source или Connections)
-//  2. Генерирует конфигурацию из текущей модели (BuildTemplateConfig; без ожидания парсинга outbounds)
-//  3. Валидирует конфиг через sing-box по временному файлу, при успехе пишет config.json с бэкапом (SaveConfigWithBackup)
-//  4. Сохраняет state.json и показывает диалог успеха; в фоне запускается RunParserProcess (update from subscriptions)
+//  2. Гарантирует наличие outbounds (ensureOutboundsParsed: ждёт текущий парсинг или запускает ParseAndPreview)
+//  3. Генерирует конфигурацию из текущей модели (BuildTemplateConfig с пустыми @ParserSTART/@ParserEND маркерами)
+//  4. Заполняет маркеры outbounds из памяти (PopulateParserMarkers), валидирует через sing-box, пишет config.json
 //
 // Все операции выполняются асинхронно в отдельной горутине с обновлением прогресс-бара.
 //
@@ -21,7 +21,7 @@
 // Использует:
 //   - business/create_config.go - BuildTemplateConfig для генерации конфигурации
 //   - business/saver.go - SaveConfigWithBackup для сохранения файла
-//   - core.RunParserProcess - обновление конфига из подписок после сохранения (в фоне)
+//   - core/config.PopulateParserMarkers - заполнение маркеров @ParserSTART/@ParserEND из памяти
 package presentation
 
 import (
@@ -104,10 +104,19 @@ func (p *WizardPresenter) checkSaveOperationState() bool {
 }
 
 // executeSaveOperation выполняет операцию сохранения в отдельной горутине.
-// Save does not wait for outbounds parsing: it writes current model state (existing GeneratedOutbounds or empty).
-// After save, config update from subscriptions is triggered in background (RunParserProcess).
+// Before building config, ensures outbounds are parsed (waits for in-progress parse or runs ParseAndPreview).
+// Then builds config, validates via sing-box check, and writes config.json with populated outbounds.
 func (p *WizardPresenter) executeSaveOperation() {
 	defer p.finalizeSaveOperation()
+
+	// Step 0: Ensure outbounds are parsed (0.0-0.15)
+	if err := p.ensureOutboundsParsed(); err != nil {
+		debuglog.ErrorLog("SaveConfig: ensureOutboundsParsed failed: %v", err)
+		p.UpdateUI(func() {
+			dialog.ShowError(fmt.Errorf("Failed to parse subscriptions: %w", err), p.guiState.Window)
+		})
+		return
+	}
 
 	// Step 1: Build config from current model (0.2-0.4)
 	configText, err := p.buildConfigForSave()
@@ -138,6 +147,57 @@ func (p *WizardPresenter) finalizeSaveOperation() {
 	if p.model.AutoParseInProgress {
 		p.model.AutoParseInProgress = false
 	}
+}
+
+const (
+	parseWaitTimeout      = 60 * time.Second
+	parseWaitPollInterval = 200 * time.Millisecond
+)
+
+// ensureOutboundsParsed guarantees GeneratedOutbounds are populated before save.
+// If parsing is already in progress (user triggered preview), waits for completion.
+// If outbounds are still empty, runs ParseAndPreview synchronously.
+// Called from executeSaveOperation which already runs in a goroutine.
+func (p *WizardPresenter) ensureOutboundsParsed() error {
+	if p.model.AutoParseInProgress {
+		debuglog.InfoLog("SaveConfig: waiting for in-progress parsing to complete")
+		p.UpdateSaveStatusText("Waiting for parsing...")
+		p.UpdateSaveProgress(0.05)
+
+		deadline := time.Now().Add(parseWaitTimeout)
+		for p.model.AutoParseInProgress {
+			if time.Now().After(deadline) {
+				return fmt.Errorf("subscription parsing timed out")
+			}
+			time.Sleep(parseWaitPollInterval)
+		}
+		debuglog.InfoLog("SaveConfig: in-progress parsing completed, outbounds: %d, endpoints: %d",
+			len(p.model.GeneratedOutbounds), len(p.model.GeneratedEndpoints))
+	}
+
+	if len(p.model.GeneratedOutbounds) > 0 || len(p.model.GeneratedEndpoints) > 0 {
+		return nil
+	}
+
+	debuglog.InfoLog("SaveConfig: no outbounds generated yet, running ParseAndPreview before save")
+	p.UpdateSaveStatusText("Parsing subscriptions...")
+	p.UpdateSaveProgress(0.05)
+
+	p.model.AutoParseInProgress = true
+	configService := p.ConfigServiceAdapter()
+	if configService == nil {
+		p.model.AutoParseInProgress = false
+		return fmt.Errorf("config service not available")
+	}
+	if err := wizardbusiness.ParseAndPreview(p, configService); err != nil {
+		return fmt.Errorf("subscription parsing failed: %w", err)
+	}
+	p.RefreshOutboundOptions()
+
+	debuglog.InfoLog("SaveConfig: ParseAndPreview completed, outbounds: %d, endpoints: %d",
+		len(p.model.GeneratedOutbounds), len(p.model.GeneratedEndpoints))
+	p.UpdateSaveProgress(0.15)
+	return nil
 }
 
 // buildConfigForSave строит конфигурацию из шаблона и модели.
@@ -189,8 +249,18 @@ func (p *WizardPresenter) saveConfigFile(configText string) (string, error) {
 	}
 
 	fileService := &wizardbusiness.FileServiceAdapter{FileService: ac.FileService}
+
+	populateCheckText := func(text string) (string, error) {
+		outboundsContent := strings.Join(p.model.GeneratedOutbounds, "\n")
+		endpointsContent := strings.Join(p.model.GeneratedEndpoints, ",\n")
+		if outboundsContent == "" && endpointsContent == "" {
+			return text, nil
+		}
+		return config.PopulateParserMarkers(text, outboundsContent, endpointsContent)
+	}
+
 	debuglog.InfoLog("SaveConfig: validating then saving config file")
-	path, err := wizardbusiness.SaveConfigWithBackup(fileService, configText)
+	path, err := wizardbusiness.SaveConfigWithBackup(fileService, configText, populateCheckText)
 	if err != nil {
 		debuglog.ErrorLog("SaveConfig: SaveConfigWithBackup failed: %v", err)
 		p.UpdateUI(func() {
@@ -318,10 +388,10 @@ func (p *WizardPresenter) showSaveSuccessDialog(configPath string) {
 }
 
 // completeSaveOperation завершает операцию сохранения с небольшой задержкой.
-// Triggers config update from subscriptions in background (same as "Update" on main tab).
+// Config.json already contains outbounds populated via PopulateParserMarkers —
+// no immediate parser run needed. Subscriptions will refresh on the next auto-update cycle.
 func (p *WizardPresenter) completeSaveOperation() {
-	debuglog.InfoLog("SaveConfig: triggering config update from subscriptions (background)")
-	go core.RunParserProcess()
+	debuglog.InfoLog("SaveConfig: save complete, config.json contains populated outbounds")
 	<-time.After(100 * time.Millisecond)
 	p.UpdateSaveProgress(1.0)
 	<-time.After(200 * time.Millisecond)

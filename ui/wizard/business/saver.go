@@ -47,10 +47,23 @@ const tempConfigFileName = "config-check.json"
 // SaveConfigWithBackup сохраняет конфигурацию с созданием бэкапа.
 // Если fileService.SingboxPath() не пустой, сначала валидирует конфиг через sing-box check по временному файлу,
 // и только при успехе пишет в configPath (не перезаписывает рабочий конфиг до успешной валидации).
-func SaveConfigWithBackup(fileService FileServiceInterface, configText string) (string, error) {
+//
+// populateCheckText — опциональный callback, заполняющий маркеры @ParserSTART/@ParserEND
+// динамическими outbounds в памяти. Принимает текст конфига (после prepareConfigText),
+// возвращает текст с outbounds. Результат записывается и в config-check.json (для валидации),
+// и в config.json (конфиг сразу полный, повторный парсинг не нужен).
+func SaveConfigWithBackup(fileService FileServiceInterface, configText string, populateCheckText func(string) (string, error)) (string, error) {
 	finalText, err := prepareConfigText(configText)
 	if err != nil {
 		return "", err
+	}
+
+	if populateCheckText != nil {
+		if populated, err := populateCheckText(finalText); err != nil {
+			debuglog.WarnLog("SaveConfigWithBackup: populateCheckText failed (continuing with empty markers): %v", err)
+		} else {
+			finalText = populated
+		}
 	}
 
 	configPath := fileService.ConfigPath()

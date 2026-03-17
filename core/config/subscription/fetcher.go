@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"singbox-launcher/core/config"
+	"singbox-launcher/core/config/configtypes"
 	"singbox-launcher/internal/debuglog"
 )
 
@@ -43,7 +43,7 @@ func FetchSubscription(url string) ([]byte, error) {
 	}
 
 	// Set user agent to avoid server detecting sing-box and returning JSON config
-	req.Header.Set("User-Agent", config.SubscriptionUserAgent)
+	req.Header.Set("User-Agent", configtypes.SubscriptionUserAgent)
 
 	resp, err := client.Do(req)
 	defer func() {
