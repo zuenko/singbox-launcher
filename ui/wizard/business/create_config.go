@@ -261,7 +261,8 @@ func buildRouteSection(model *wizardmodels.WizardModel, raw json.RawMessage, tim
 }
 
 // MergeRouteSection объединяет selectable rules, custom rules и rule_set в секцию route.
-// execDir — директория исполняемого файла; для remote SRS с raw.githubusercontent.com подставляется type: local, path.
+// execDir — директория исполняемого файла; для SRS rule-set при наличии локального файла
+// подставляется type: local, path (для шаблонных правил и пользовательских SRS).
 func MergeRouteSection(raw json.RawMessage, states []*wizardmodels.RuleState, customRules []*wizardmodels.RuleState, finalOutbound string, execDir string) (json.RawMessage, error) {
 	var route map[string]interface{}
 	if err := json.Unmarshal(raw, &route); err != nil {
@@ -353,17 +354,26 @@ func MergeRouteSection(raw json.RawMessage, states []*wizardmodels.RuleState, cu
 	return json.Marshal(route)
 }
 
-// convertRuleSetToLocalIfNeeded для remote SRS с raw.githubusercontent.com подставляет type: local, path.
+// convertRuleSetToLocalIfNeeded для remote SRS rule-set подставляет type: local + path,
+// если локальный файл bin/rule-sets/{tag}.srs существует. Если файла нет (удалён вручную,
+// ещё не скачан и т.п.), rule-set остаётся remote — sing-box загрузит его по URL при старте.
 func convertRuleSetToLocalIfNeeded(rs json.RawMessage, execDir string) interface{} {
 	var m map[string]interface{}
 	if err := json.Unmarshal(rs, &m); err != nil {
 		return nil
 	}
 	typ, _ := m["type"].(string)
-	url, _ := m["url"].(string)
 	tag, _ := m["tag"].(string)
-	if typ == "remote" && tag != "" && strings.Contains(url, "raw.githubusercontent.com") && execDir != "" {
-		path := services.RuleSRSPath(execDir, tag)
+	if typ != "remote" || tag == "" || execDir == "" {
+		return m
+	}
+
+	path := services.RuleSRSPath(execDir, tag)
+
+	// Для всех SRS (как встроенных, так и пользовательских) генерируем local-вариант
+	// только при наличии локального файла. Если файл был удалён вручную из bin/rule-sets/,
+	// конфиг вернётся к remote-варианту и приложение не упадёт при запуске sing-box.
+	if services.SRSFileExists(execDir, tag) {
 		return map[string]interface{}{
 			"tag":    tag,
 			"type":   "local",
@@ -371,6 +381,7 @@ func convertRuleSetToLocalIfNeeded(rs json.RawMessage, execDir string) interface
 			"path":   path,
 		}
 	}
+
 	return m
 }
 

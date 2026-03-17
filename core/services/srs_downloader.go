@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -117,9 +118,16 @@ type SRSEntry struct {
 	URL string
 }
 
-// AllSRSDownloaded проверяет, что все remote SRS для правила скачаны локально.
+// AllSRSDownloaded проверяет, что все remote SRS для правила (по текущим правилам отбора)
+// скачаны локально. Используется для встроенных правил, основанных на шаблоне.
 func AllSRSDownloaded(execDir string, ruleSets []json.RawMessage) bool {
-	entries := GetRemoteSRSEntries(ruleSets)
+	entries := GetSRSEntries(ruleSets)
+	return AllSRSDownloadedForEntries(execDir, entries)
+}
+
+// AllSRSDownloadedForEntries проверяет, что для всех переданных SRS-энтри существуют локальные файлы.
+// Используется и для встроенных, и для пользовательских SRS-правил.
+func AllSRSDownloadedForEntries(execDir string, entries []SRSEntry) bool {
 	if execDir == "" || len(entries) == 0 {
 		return true
 	}
@@ -131,8 +139,15 @@ func AllSRSDownloaded(execDir string, ruleSets []json.RawMessage) bool {
 	return true
 }
 
-// GetRemoteSRSEntries извлекает из RuleSets записи с type=remote и url содержащим raw.githubusercontent.com
-func GetRemoteSRSEntries(ruleSets []json.RawMessage) []SRSEntry {
+// GetSRSEntries извлекает все remote rule-set'ы (type == "remote") из ruleSets и возвращает
+// их в виде списка (tag, URL) для дальнейшей работы (проверка наличия локальных файлов,
+// скачивание и т.п.).
+//
+// Перед добавлением в результат URL проходят через normalizeSRSURL — там чинятся только
+// GitHub blob-ссылки вида https://github.com/owner/repo/blob/branch/path/file.srs.
+// Все остальные URL (включая локальные пути, нестандартные схемы и уже "сырые" ссылки)
+// не трогаются и не отфильтровываются.
+func GetSRSEntries(ruleSets []json.RawMessage) []SRSEntry {
 	var result []SRSEntry
 	for _, raw := range ruleSets {
 		var item map[string]interface{}
@@ -140,15 +155,67 @@ func GetRemoteSRSEntries(ruleSets []json.RawMessage) []SRSEntry {
 			continue
 		}
 		typ, _ := item["type"].(string)
-		url, _ := item["url"].(string)
+		rawURL, _ := item["url"].(string)
 		tag, _ := item["tag"].(string)
-		if typ != "remote" || tag == "" || url == "" {
+		if typ != "remote" || tag == "" || rawURL == "" {
 			continue
 		}
-		if !strings.Contains(url, "raw.githubusercontent.com") {
-			continue
-		}
-		result = append(result, SRSEntry{Tag: tag, URL: url})
+		normalizedURL := normalizeSRSURL(rawURL)
+		result = append(result, SRSEntry{Tag: tag, URL: normalizedURL})
 	}
 	return result
+}
+
+// normalizeSRSURL приводит URL SRS к удобному для скачивания виду.
+//
+// Единственная "умная" логика, заложенная сюда:
+//   - если URL указывает на GitHub blob-страницу
+//     (https://github.com/{owner}/{repo}/blob/{branch}/{path/to/file.srs}),
+//     он конвертируется в raw-вариант:
+//     https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path/to/file.srs}.
+//
+// Все остальные URL (включая:
+//   - https://github.com/.../raw/...;
+//   - https://raw.githubusercontent.com/...;
+//   - любые другие https/http-хосты;
+//   - локальные пути и нестандартные схемы, если они уже попали в конфиг)
+// возвращаются без изменений. Это позволяет поддерживать как удалённые, так и локальные
+// SRS-источники, не навязывая жёстких ограничений по схеме/хосту.
+func normalizeSRSURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+
+	host := strings.ToLower(parsed.Host)
+	if host != "github.com" {
+		return rawURL
+	}
+
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	// Ожидаемый формат blob-ссылки:
+	//   /{owner}/{repo}/blob/{branch}/{path...}
+	if len(parts) < 5 || parts[2] != "blob" {
+		// Для github.com/.../raw/... и любых других вариантов ничего не меняем.
+		return rawURL
+	}
+
+	owner := parts[0]
+	repo := parts[1]
+	branch := parts[3]
+	filePath := strings.Join(parts[4:], "/")
+
+	return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", owner, repo, branch, filePath)
+}
+
+// DownloadSRSGroup скачивает по очереди все SRS из entries в bin/rule-sets/{tag}.srs.
+// Возвращает первую ошибку; при отмене ctx возвращает ctx.Err().
+func DownloadSRSGroup(ctx context.Context, execDir string, entries []SRSEntry) error {
+	for _, e := range entries {
+		destPath := RuleSRSPath(execDir, e.Tag)
+		if err := DownloadSRS(ctx, e.URL, destPath); err != nil {
+			return err
+		}
+	}
+	return nil
 }
