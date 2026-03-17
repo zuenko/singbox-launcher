@@ -10,38 +10,42 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
+
 	"singbox-launcher/core"
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 )
 
 // CreateHelpTab creates and returns the content for the "Help" tab.
 func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
-	configButton := widget.NewButton("⚙️ Open Config Folder", func() {
+	configButton := widget.NewButton(locale.T("help.open_config_folder"), func() {
 		binDir := platform.GetBinDir(ac.FileService.ExecDir)
 		if err := platform.OpenFolder(binDir); err != nil {
 			debuglog.ErrorLog("toolsTab: Failed to open config folder: %v", err)
 			ShowError(ac.UIService.MainWindow, err)
 		}
 	})
-	killButton := widget.NewButton("🛑 Kill Sing-Box", func() {
+	killButton := widget.NewButton(locale.T("help.kill_singbox"), func() {
 		go func() {
 			processName := platform.GetProcessNameForCheck()
 			_ = platform.KillProcess(processName)
 			fyne.Do(func() {
-				ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Kill", "Sing-Box killed if running.")
+				ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow,
+					locale.T("help.kill_title"), locale.T("help.kill_result"))
 				ac.RunningState.Set(false)
 			})
 		}()
 	})
 
 	// Version and links section
-	versionLabel := widget.NewLabel("📦 Version: " + constants.AppVersion)
+	versionLabel := widget.NewLabel(locale.Tf("help.version_label", constants.AppVersion))
 	versionLabel.Alignment = fyne.TextAlignCenter
 
 	// Launcher update status
-	launcherUpdateLabel := widget.NewLabel("Checking for updates...")
+	launcherUpdateLabel := widget.NewLabel(locale.T("help.checking_updates"))
 	launcherUpdateLabel.Alignment = fyne.TextAlignCenter
 	launcherUpdateLabel.Wrapping = fyne.TextWrapWord
 
@@ -51,31 +55,25 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 		current := constants.AppVersion
 
 		if latest == "" {
-			launcherUpdateLabel.SetText("Unable to check for updates")
+			launcherUpdateLabel.SetText(locale.T("help.unable_to_check_updates"))
 			return
 		}
 
-		// Сравниваем версии (убираем префикс v для сравнения)
 		currentClean := strings.TrimPrefix(current, "v")
 		latestClean := strings.TrimPrefix(latest, "v")
 
 		compareResult := core.CompareVersions(currentClean, latestClean)
 		if compareResult < 0 {
-			// Новая версия доступна
-			launcherUpdateLabel.SetText(fmt.Sprintf("🆕 Update available: %s\nCurrent: %s", latest, current))
+			launcherUpdateLabel.SetText(locale.Tf("help.update_available_format", latest, current))
 		} else if compareResult > 0 {
-			// Текущая версия новее (dev build)
-			launcherUpdateLabel.SetText(fmt.Sprintf("✅ You are using a development build\nCurrent: %s\nLatest release: %s", current, latest))
+			launcherUpdateLabel.SetText(locale.Tf("help.dev_build_format", current, latest))
 		} else {
-			// Версии совпадают
-			launcherUpdateLabel.SetText(fmt.Sprintf("✅ You are using the latest version\nCurrent: %s", current))
+			launcherUpdateLabel.SetText(locale.Tf("help.latest_version_format", current))
 		}
 	}
 
-	// Обновляем информацию при создании вкладки
 	updateLauncherVersionInfo()
 
-	// Периодически обновляем информацию (если версия еще не получена)
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
@@ -97,7 +95,7 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 		}
 	}()
 
-	telegramLink := widget.NewHyperlink("💬 Telegram Channel", nil)
+	telegramLink := widget.NewHyperlink(locale.T("help.telegram_link"), nil)
 	_ = telegramLink.SetURLFromString("https://t.me/singbox_launcher")
 	telegramLink.OnTapped = func() {
 		if err := platform.OpenURL("https://t.me/singbox_launcher"); err != nil {
@@ -106,7 +104,7 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 		}
 	}
 
-	githubLink := widget.NewHyperlink("🐙 GitHub Repository", nil)
+	githubLink := widget.NewHyperlink(locale.T("help.github_link"), nil)
 	_ = githubLink.SetURLFromString("https://github.com/Leadaxe/singbox-launcher")
 	githubLink.OnTapped = func() {
 		if err := platform.OpenURL("https://github.com/Leadaxe/singbox-launcher"); err != nil {
@@ -114,6 +112,63 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 			ShowError(ac.UIService.MainWindow, err)
 		}
 	}
+
+	// Language selector
+	langLabel := widget.NewLabel(locale.T("help.language_label"))
+	langSelect := widget.NewSelect(locale.LangDisplayNames(), func(selected string) {
+		code := locale.LangCodeByDisplayName(selected)
+		if code == "" || code == locale.GetLang() {
+			return
+		}
+		locale.SetLang(code)
+		binDir := platform.GetBinDir(ac.FileService.ExecDir)
+		if err := locale.SaveSettings(binDir, locale.Settings{Lang: code}); err != nil {
+			debuglog.ErrorLog("helpTab: Failed to save language setting: %v", err)
+		}
+		debuglog.InfoLog("helpTab: Language changed to %q", code)
+		ShowInfo(ac.UIService.MainWindow, locale.T("help.language_label"),
+			fmt.Sprintf("%s\n\n%s", locale.LangDisplayName(code), locale.T("help.language_changed")))
+	})
+	langSelect.Selected = locale.LangDisplayName(locale.GetLang())
+
+	// Download translations button (compact icon + tooltip to avoid widening the window)
+	downloadLocalesBtn := ttwidget.NewButton(locale.T("help.download_locales_btn"), nil)
+	downloadLocalesBtn.SetToolTip(locale.T("help.download_locales"))
+	downloadLocalesBtn.OnTapped = func() {
+		downloadLocalesBtn.Disable()
+		downloadLocalesBtn.SetText(locale.T("help.downloading_locales_btn"))
+		go func() {
+			binDir := platform.GetBinDir(ac.FileService.ExecDir)
+			localeDir := locale.GetLocaleDir(binDir)
+			count, err := locale.DownloadAllRemoteLocales(localeDir)
+			fyne.Do(func() {
+				downloadLocalesBtn.Enable()
+				downloadLocalesBtn.SetText(locale.T("help.download_locales_btn"))
+				if err != nil && count == 0 {
+					// Use unified manual-download dialog, same as for core template/SRS/etc.
+					downloadURL := ""
+					if len(locale.RemoteLanguages) > 0 {
+						downloadURL = locale.GetLocaleURL(locale.RemoteLanguages[0])
+					}
+					ShowDownloadFailedManual(
+						ac.UIService.MainWindow,
+						locale.T("help.download_locales_failed"),
+						downloadURL,
+						localeDir,
+					)
+					return
+				}
+				// Refresh language selector with newly loaded languages
+				langSelect.Options = locale.LangDisplayNames()
+				langSelect.Selected = locale.LangDisplayName(locale.GetLang())
+				langSelect.Refresh()
+				ShowInfo(ac.UIService.MainWindow, locale.T("help.language_label"),
+					locale.Tf("help.download_locales_success", count))
+			})
+		}()
+	}
+
+	langRow := container.NewHBox(langLabel, langSelect, downloadLocalesBtn)
 
 	return container.NewVBox(
 		configButton,
@@ -129,5 +184,7 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 			githubLink,
 			layout.NewSpacer(),
 		),
+		widget.NewSeparator(),
+		container.NewHBox(layout.NewSpacer(), langRow, layout.NewSpacer()),
 	)
 }

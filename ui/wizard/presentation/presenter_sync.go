@@ -24,6 +24,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 
 	"singbox-launcher/core/config"
+	"singbox-launcher/internal/locale"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 )
 
@@ -112,7 +113,7 @@ func (p *WizardPresenter) ValidateAndApplyParserConfigFromEntry() {
 	}
 	pc := &config.ParserConfig{}
 	if err := json.Unmarshal([]byte(text), pc); err != nil {
-		dialog.ShowError(fmt.Errorf("Invalid ParserConfig JSON: %w", err), p.guiState.Window)
+		dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.outbounds.error_invalid_json"), err), p.guiState.Window)
 		revert := p.guiState.LastValidParserConfigJSON
 		p.guiState.ParserConfigUpdating = true
 		p.guiState.ParserConfigEntry.SetText(revert)
@@ -120,7 +121,7 @@ func (p *WizardPresenter) ValidateAndApplyParserConfigFromEntry() {
 		return
 	}
 	if err := wizardbusiness.ValidateParserConfig(pc); err != nil {
-		dialog.ShowError(fmt.Errorf("Invalid ParserConfig: %w", err), p.guiState.Window)
+		dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.outbounds.error_invalid_config"), err), p.guiState.Window)
 		revert := p.guiState.LastValidParserConfigJSON
 		p.guiState.ParserConfigUpdating = true
 		p.guiState.ParserConfigEntry.SetText(revert)
@@ -129,7 +130,7 @@ func (p *WizardPresenter) ValidateAndApplyParserConfigFromEntry() {
 	}
 	serialized, err := wizardbusiness.SerializeParserConfig(pc)
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("Failed to serialize ParserConfig: %w", err), p.guiState.Window)
+		dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.outbounds.error_serialize"), err), p.guiState.Window)
 		return
 	}
 	p.model.ParserConfig = pc

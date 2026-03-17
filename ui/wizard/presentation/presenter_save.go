@@ -42,6 +42,7 @@ import (
 	"singbox-launcher/core/config"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 )
@@ -74,13 +75,13 @@ func (p *WizardPresenter) SaveConfig() {
 func (p *WizardPresenter) validateSaveInput() bool {
 	if strings.TrimSpace(p.model.ParserConfigJSON) == "" {
 		debuglog.WarnLog("SaveConfig: ParserConfig is empty")
-		dialog.ShowError(fmt.Errorf("ParserConfig is empty"), p.guiState.Window)
+		dialog.ShowError(fmt.Errorf(locale.T("wizard.save.error_config_empty")), p.guiState.Window)
 		return false
 	}
 	var pc config.ParserConfig
 	if err := json.Unmarshal([]byte(p.model.ParserConfigJSON), &pc); err != nil {
 		debuglog.WarnLog("SaveConfig: ParserConfig JSON invalid: %v", err)
-		dialog.ShowError(fmt.Errorf("ParserConfig is invalid: %w", err), p.guiState.Window)
+		dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.save.error_config_invalid"), err), p.guiState.Window)
 		return false
 	}
 	for _, px := range pc.ParserConfig.Proxies {
@@ -89,7 +90,7 @@ func (p *WizardPresenter) validateSaveInput() bool {
 		}
 	}
 	debuglog.WarnLog("SaveConfig: no proxy with source or connections in ParserConfig")
-	dialog.ShowError(fmt.Errorf("Add at least one source: use the Sources tab (Add) or add proxies in ParserConfig on the Outbounds tab."), p.guiState.Window)
+	dialog.ShowError(fmt.Errorf(locale.T("wizard.save.error_no_sources")), p.guiState.Window)
 	return false
 }
 
@@ -97,7 +98,7 @@ func (p *WizardPresenter) validateSaveInput() bool {
 func (p *WizardPresenter) checkSaveOperationState() bool {
 	if p.guiState.SaveInProgress {
 		debuglog.WarnLog("SaveConfig: Save operation already in progress")
-		dialog.ShowInformation("Saving", "Save operation already in progress... Please wait.", p.guiState.Window)
+		dialog.ShowInformation(locale.T("wizard.save.dialog_saving"), locale.T("wizard.save.dialog_in_progress"), p.guiState.Window)
 		return false
 	}
 	return true
@@ -113,7 +114,7 @@ func (p *WizardPresenter) executeSaveOperation() {
 	if err := p.ensureOutboundsParsed(); err != nil {
 		debuglog.ErrorLog("SaveConfig: ensureOutboundsParsed failed: %v", err)
 		p.UpdateUI(func() {
-			dialog.ShowError(fmt.Errorf("Failed to parse subscriptions: %w", err), p.guiState.Window)
+			dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.save.error_parse_failed"), err), p.guiState.Window)
 		})
 		return
 	}
@@ -161,7 +162,7 @@ const (
 func (p *WizardPresenter) ensureOutboundsParsed() error {
 	if p.model.AutoParseInProgress {
 		debuglog.InfoLog("SaveConfig: waiting for in-progress parsing to complete")
-		p.UpdateSaveStatusText("Waiting for parsing...")
+		p.UpdateSaveStatusText(locale.T("wizard.save.status_waiting"))
 		p.UpdateSaveProgress(0.05)
 
 		deadline := time.Now().Add(parseWaitTimeout)
@@ -180,7 +181,7 @@ func (p *WizardPresenter) ensureOutboundsParsed() error {
 	}
 
 	debuglog.InfoLog("SaveConfig: no outbounds generated yet, running ParseAndPreview before save")
-	p.UpdateSaveStatusText("Parsing subscriptions...")
+	p.UpdateSaveStatusText(locale.T("wizard.save.status_parsing"))
 	p.UpdateSaveProgress(0.05)
 
 	p.model.AutoParseInProgress = true
@@ -203,7 +204,7 @@ func (p *WizardPresenter) ensureOutboundsParsed() error {
 // buildConfigForSave строит конфигурацию из шаблона и модели.
 // Возвращает текст конфигурации или ошибку.
 func (p *WizardPresenter) buildConfigForSave() (string, error) {
-	p.UpdateSaveStatusText("Building config...")
+	p.UpdateSaveStatusText(locale.T("wizard.save.status_building"))
 	p.UpdateSaveProgress(0.2)
 
 	// Check if save operation was cancelled
@@ -223,7 +224,7 @@ func (p *WizardPresenter) buildConfigForSave() (string, error) {
 	}
 
 	debuglog.InfoLog("SaveConfig: template config built successfully, length: %d", len(text))
-	p.UpdateSaveStatusText("Preparing...")
+	p.UpdateSaveStatusText(locale.T("wizard.save.status_preparing"))
 	p.UpdateSaveProgress(0.4)
 	return text, nil
 }
@@ -236,14 +237,14 @@ func (p *WizardPresenter) saveConfigFile(configText string) (string, error) {
 		return "", fmt.Errorf("save operation cancelled")
 	}
 
-	p.UpdateSaveStatusText("Validating...")
+	p.UpdateSaveStatusText(locale.T("wizard.save.status_validating"))
 	p.UpdateSaveProgress(0.45)
 
 	ac := core.GetController()
 	if ac == nil || ac.FileService == nil {
 		debuglog.WarnLog("SaveConfig: controller or FileService not available")
 		p.UpdateUI(func() {
-			dialog.ShowError(fmt.Errorf("controller not available"), p.guiState.Window)
+			dialog.ShowError(fmt.Errorf(locale.T("wizard.save.error_controller")), p.guiState.Window)
 		})
 		return "", fmt.Errorf("controller not available")
 	}
@@ -270,7 +271,7 @@ func (p *WizardPresenter) saveConfigFile(configText string) (string, error) {
 	}
 
 	debuglog.InfoLog("SaveConfig: config saved to %s", path)
-	p.UpdateSaveStatusText("Saving state...")
+	p.UpdateSaveStatusText(locale.T("wizard.save.status_saving_state"))
 	p.UpdateSaveProgress(0.6)
 	return path, nil
 }
@@ -295,16 +296,16 @@ func (p *WizardPresenter) showValidationErrorDialog(valErr *wizardbusiness.Valid
 	messageLabel.Wrapping = fyne.TextWrapWord
 
 	var d dialog.Dialog
-	copyBtn := widget.NewButton("Copy config", func() {
+	copyBtn := widget.NewButton(locale.T("wizard.save.button_copy"), func() {
 		if app := fyne.CurrentApp(); app != nil && app.Clipboard() != nil {
 			app.Clipboard().SetContent(valErr.ConfigText)
 			if p.guiState.Window != nil {
-				dialogs.ShowAutoHideInfo(app, p.guiState.Window, "Copied", "Config copied to clipboard.")
+				dialogs.ShowAutoHideInfo(app, p.guiState.Window, locale.T("wizard.save.dialog_copied_title"), locale.T("wizard.save.dialog_copied_message"))
 			}
 		}
 	})
 	copyBtn.Importance = widget.MediumImportance
-	closeBtn := widget.NewButton("Close", func() {
+	closeBtn := widget.NewButton(locale.T("dialog.close"), func() {
 		if d != nil {
 			d.Hide()
 		}
@@ -313,7 +314,7 @@ func (p *WizardPresenter) showValidationErrorDialog(valErr *wizardbusiness.Valid
 
 	buttons := container.NewHBox(layout.NewSpacer(), copyBtn, closeBtn)
 	content := container.NewBorder(nil, buttons, nil, nil, messageLabel)
-	d = dialog.NewCustomWithoutButtons("Validation failed", content, p.guiState.Window)
+	d = dialog.NewCustomWithoutButtons(locale.T("wizard.save.dialog_validation_failed"), content, p.guiState.Window)
 	d.Show()
 }
 
@@ -325,7 +326,7 @@ func (p *WizardPresenter) saveStateAndShowSuccessDialog(configPath string) {
 		debuglog.DebugLog("presenter_save: Save operation cancelled before saving state")
 		return
 	}
-	p.UpdateSaveStatusText("Saving state...")
+	p.UpdateSaveStatusText(locale.T("wizard.save.status_saving_state"))
 	p.UpdateSaveProgress(0.7)
 
 	ac := core.GetController()
@@ -353,18 +354,18 @@ func (p *WizardPresenter) saveStateAndShowSuccessDialog(configPath string) {
 
 		p.showSaveSuccessDialog(configPath)
 	})
-	p.UpdateSaveStatusText("Done")
+	p.UpdateSaveStatusText(locale.T("wizard.save.status_done"))
 	p.UpdateSaveProgress(0.9)
 }
 
 // showSaveSuccessDialog показывает диалог успешного сохранения (вызывается только после успешной валидации).
 func (p *WizardPresenter) showSaveSuccessDialog(configPath string) {
-	message := fmt.Sprintf("Config written to %s\n\n✅ Validation: Passed", configPath)
-	title := "Config Saved"
+	message := locale.Tf("wizard.save.dialog_success_message", configPath)
+	title := locale.T("wizard.save.dialog_success_title")
 
 	// Create dialog with OK button that closes both dialog and wizard
 	var d dialog.Dialog
-	okButton := widget.NewButton("OK", func() {
+	okButton := widget.NewButton(locale.T("dialog.ok"), func() {
 		// Close dialog first
 		if d != nil {
 			d.Hide()

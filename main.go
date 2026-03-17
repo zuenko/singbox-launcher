@@ -15,6 +15,7 @@ import (
 	"singbox-launcher/core"
 	"singbox-launcher/core/config/parser"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 	"singbox-launcher/ui"
 )
@@ -48,6 +49,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize application: %v", err)
 	}
+
+	// Load locale settings and external translations
+	binDir := platform.GetBinDir(controller.FileService.ExecDir)
+	locale.LoadExternalLocales(locale.GetLocaleDir(binDir))
+	settings := locale.LoadSettings(binDir)
+	locale.SetLang(settings.Lang)
+	debuglog.InfoLog("Locale: language set to %q, available: %v", locale.GetLang(), locale.Languages())
 
 	// Check launcher version on startup (always checks, popup shown on first window display)
 	controller.CheckLauncherVersionOnStartup()

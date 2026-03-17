@@ -20,6 +20,7 @@ import (
 	"singbox-launcher/core/uiservice"
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 	"singbox-launcher/internal/process"
 )
@@ -538,18 +539,10 @@ func CheckConfigFileExists() {
 	if _, err := os.Stat(ac.FileService.ConfigPath); os.IsNotExist(err) {
 		debuglog.WarnLog("CheckConfigFileExists: config.json not found at %s", ac.FileService.ConfigPath)
 
-		message := fmt.Sprintf(
-			"⚠️ Configuration file not found!\n\n"+
-				"The file %s is missing from the bin/ folder.\n\n"+
-				"To get started:\n"+
-				"1. download Wizard\n"+
-				"2. use Wizard to generate a configuration file\n"+
-				"3. press Start\n",
-			constants.ConfigFileName,
-		)
+		message := locale.Tf("core.config_not_found_message", constants.ConfigFileName)
 
 		if ac.hasUI() {
-			dialogs.ShowInfo(ac.UIService.MainWindow, "Configuration Not Found", message)
+			dialogs.ShowInfo(ac.UIService.MainWindow, locale.T("core.config_not_found_title"), message)
 		}
 	}
 }
@@ -579,7 +572,7 @@ func CheckIfLauncherAlreadyRunningUtil() {
 		}
 		if strings.EqualFold(p.Name, execName) {
 			if ac.hasUI() {
-				dialogs.ShowInfo(ac.UIService.MainWindow, "Information", "The application is already running. Use the existing instance or close it before starting a new one.")
+				dialogs.ShowInfo(ac.UIService.MainWindow, locale.T("core.already_running_app_title"), locale.T("core.already_running_app_message"))
 			}
 			return
 		}

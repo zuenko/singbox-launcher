@@ -20,6 +20,7 @@ import (
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 )
 
@@ -130,8 +131,8 @@ func effectiveSTUNServer() string {
 
 // CreateDiagnosticsTab creates and returns the content for the "Diagnostics" tab.
 func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
-	stunButton := widget.NewButton("STUN [UDP]", func() {
-		waitDialog := dialogs.NewCustom("STUN Check", widget.NewLabel("Checking, please wait..."), nil, "", ac.UIService.MainWindow)
+	stunButton := widget.NewButton(locale.T("diag.stun_button"), func() {
+		waitDialog := dialogs.NewCustom(locale.T("diag.stun_check_title"), widget.NewLabel(locale.T("diag.stun_checking")), nil, "", ac.UIService.MainWindow)
 		waitDialog.Show()
 
 		server := effectiveSTUNServer()
@@ -154,12 +155,12 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 						debuglog.InfoLog("diagnosticsTab: STUN check successful, IP: %s", ip)
 						connectionInfo = fmt.Sprintf("(determined via [UDP]%s, direct connection)", server)
 					}
-					resultLabel := widget.NewLabel(fmt.Sprintf("Your External IP: %s\n%s", ip, connectionInfo))
-					copyButton := widget.NewButton("Copy IP", func() {
+					resultLabel := widget.NewLabel(locale.Tf("diag.external_ip_format", ip, connectionInfo))
+					copyButton := widget.NewButton(locale.T("diag.copy_ip"), func() {
 						fyne.CurrentApp().Clipboard().SetContent(ip)
-						ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Copied", "IP address copied to clipboard.")
+						ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, locale.T("diag.copied_title"), locale.T("diag.ip_copied"))
 					})
-					ShowCustom(ac.UIService.MainWindow, "STUN Check Result", "Close", container.NewVBox(resultLabel, copyButton))
+					ShowCustom(ac.UIService.MainWindow, locale.T("diag.stun_result_title"), locale.T("diag.close"), container.NewVBox(resultLabel, copyButton))
 				}
 			})
 		}()
@@ -180,15 +181,15 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 		})
 
 		content := container.NewVBox(
-			widget.NewLabel("STUN server (host:port):"),
+			widget.NewLabel(locale.T("diag.stun_server_label")),
 			container.NewBorder(nil, nil, nil, stunHelpButton, serverEntry),
 		)
 		if runtime.GOOS == "darwin" {
-			socksCheck := widget.NewCheck("Use system SOCKS5 proxy", func(bool) {})
+			socksCheck := widget.NewCheck(locale.T("diag.use_system_socks5"), func(bool) {})
 			socksCheck.SetChecked(stunUseSOCKS5OnMac)
 			content.Add(socksCheck)
 			content.Add(widget.NewLabel(" "))
-			dialog.ShowCustomConfirm("STUN settings", "Save", "Cancel", content, func(ok bool) {
+			dialog.ShowCustomConfirm(locale.T("diag.stun_settings"), locale.T("diag.save"), locale.T("diag.cancel"), content, func(ok bool) {
 				if !ok {
 					return
 				}
@@ -200,7 +201,7 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 			}, ac.UIService.MainWindow)
 		} else {
 			content.Add(widget.NewLabel(" "))
-			dialog.ShowCustomConfirm("STUN settings", "Save", "Cancel", content, func(ok bool) {
+			dialog.ShowCustomConfirm(locale.T("diag.stun_settings"), locale.T("diag.save"), locale.T("diag.cancel"), content, func(ok bool) {
 				if !ok {
 					return
 				}
@@ -225,10 +226,10 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 		})
 	}
 
-	openLogWindowButton := widget.NewButtonWithIcon("Open log window", theme.ViewRestoreIcon(), func() {
+	openLogWindowButton := widget.NewButtonWithIcon(locale.T("diag.open_log_window"), theme.ViewRestoreIcon(), func() {
 		OpenLogViewerWindow(ac)
 	})
-	openLogsFolderButton := widget.NewButtonWithIcon("Open logs folder", theme.FolderOpenIcon(), func() {
+	openLogsFolderButton := widget.NewButtonWithIcon(locale.T("diag.open_logs_folder"), theme.FolderOpenIcon(), func() {
 		logsDir := platform.GetLogsDir(ac.FileService.ExecDir)
 		if err := platform.OpenFolder(logsDir); err != nil {
 			debuglog.ErrorLog("diagnosticsTab: Failed to open logs folder: %v", err)
@@ -239,7 +240,7 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 	return container.NewVBox(
 		widget.NewLabel(" "),
 		container.NewHBox(openLogWindowButton, openLogsFolderButton),
-		widget.NewLabel("IP Check Services:"),
+		widget.NewLabel(locale.T("diag.ip_check_services")),
 		stunRow,
 		openBrowserButton("2ip.ru", "https://2ip.ru"),
 		openBrowserButton("2ip.io", "https://2ip.io"),

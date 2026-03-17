@@ -14,6 +14,7 @@ import (
 	"singbox-launcher/internal/ctxutil"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 	"singbox-launcher/internal/process"
 )
@@ -55,7 +56,7 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 	ac := svc.ac
 	if ac.RunningState.IsRunning() {
 		if ac.UIService != nil && ac.UIService.Application != nil && ac.UIService.MainWindow != nil {
-			dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Info", "Sing-Box already running (according to internal state).")
+			dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, locale.T("core.info_title"), locale.T("core.already_running"))
 		}
 		return
 	}
@@ -76,7 +77,7 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 		debuglog.WarnLog("startSingBox: Capabilities check failed: %s", suggestion)
 		if ac.UIService != nil && ac.UIService.MainWindow != nil {
 			cmd := platform.GetSetCapCommand(ac.FileService.SingboxPath)
-			dialogs.ShowLinuxCapabilitiesRequired(ac.UIService.MainWindow, "Error", "Linux capabilities required\n\n"+suggestion, cmd)
+			dialogs.ShowLinuxCapabilitiesRequired(ac.UIService.MainWindow, locale.T("error.linux_capabilities"), locale.T("error.linux_capabilities")+"\n\n"+suggestion, cmd)
 		}
 		return
 	}
@@ -252,14 +253,14 @@ func (svc *ProcessService) onPrivilegedScriptExited() {
 	if ac.ConsecutiveCrashAttempts > restartAttempts {
 		debuglog.DebugLog("onPrivilegedScriptExited: Max restart attempts reached.")
 		if ac.UIService != nil && ac.UIService.MainWindow != nil {
-			dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Sing-Box failed to restart after %d attempts. Check sing-box.log for details.", restartAttempts))
+			dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("%s", locale.Tf("error.restart_failed", restartAttempts)))
 		}
 		ac.ConsecutiveCrashAttempts = 0
 		return
 	}
 	debuglog.WarnLog("onPrivilegedScriptExited: Sing-Box exited, auto-restart (attempt %d/%d)", ac.ConsecutiveCrashAttempts, restartAttempts)
 	if ac.UIService != nil && ac.UIService.Application != nil && ac.UIService.MainWindow != nil {
-		dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Crash", fmt.Sprintf("Sing-Box crashed, restarting... (attempt %d/%d)", ac.ConsecutiveCrashAttempts, restartAttempts))
+		dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, locale.T("core.crash_title"), locale.Tf("core.crash_restarting", ac.ConsecutiveCrashAttempts, restartAttempts))
 	}
 	ac.CmdMutex.Unlock()
 	<-time.After(2 * time.Second)
@@ -342,7 +343,7 @@ func (svc *ProcessService) Monitor(cmdToMonitor *exec.Cmd) {
 	if ac.ConsecutiveCrashAttempts > restartAttempts {
 		debuglog.DebugLog("monitorSingBox: Maximum restart attempts (%d) reached. Stopping auto-restart.", restartAttempts)
 		if ac.UIService != nil && ac.UIService.MainWindow != nil {
-			dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Sing-Box failed to restart after %d attempts. Check sing-box.log for details.", restartAttempts))
+			dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("%s", locale.Tf("error.restart_failed", restartAttempts)))
 		}
 		ac.ConsecutiveCrashAttempts = 0
 		return
@@ -350,7 +351,7 @@ func (svc *ProcessService) Monitor(cmdToMonitor *exec.Cmd) {
 
 	debuglog.WarnLog("monitorSingBox: Sing-Box crashed: %v, attempting auto-restart (attempt %d/%d)", err, ac.ConsecutiveCrashAttempts, restartAttempts)
 	if ac.UIService != nil && ac.UIService.Application != nil && ac.UIService.MainWindow != nil {
-		dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Crash", fmt.Sprintf("Sing-Box crashed, restarting... (attempt %d/%d)", ac.ConsecutiveCrashAttempts, restartAttempts))
+		dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, locale.T("core.crash_title"), locale.Tf("core.crash_restarting", ac.ConsecutiveCrashAttempts, restartAttempts))
 	}
 
 	ac.CmdMutex.Unlock()

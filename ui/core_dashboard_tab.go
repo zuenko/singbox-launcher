@@ -25,6 +25,7 @@ import (
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 	"singbox-launcher/ui/wizard"
 	wizardtemplate "singbox-launcher/ui/wizard/template"
@@ -100,7 +101,7 @@ func CreateCoreDashboardTab(ac *core.AppController) fyne.CanvasObject {
 	}
 
 	// Горизонтальная линия и кнопка Exit в конце списка
-	exitButton := widget.NewButton("Exit", ac.GracefulExit)
+	exitButton := widget.NewButton(locale.T("core.button_exit"), ac.GracefulExit)
 	// Кнопка Exit в отдельной строке с отступом вниз
 	contentItems = append(contentItems, widget.NewLabel("")) // Отступ
 	contentItems = append(contentItems, container.NewCenter(exitButton))
@@ -191,17 +192,17 @@ func CreateCoreDashboardTab(ac *core.AppController) fyne.CanvasObject {
 // createStatusRow creates a row with status and buttons
 func (tab *CoreDashboardTab) createStatusRow() fyne.CanvasObject {
 	// Объединяем все в один label: "Core Status" + иконка + текст статуса
-	tab.statusLabel = widget.NewLabel("Core Status Checking...")
+	tab.statusLabel = widget.NewLabel(locale.T("core.status_checking"))
 	tab.statusLabel.Wrapping = fyne.TextWrapOff       // Отключаем перенос текста
 	tab.statusLabel.Alignment = fyne.TextAlignLeading // Выравнивание текста
 	tab.statusLabel.Importance = widget.MediumImportance
 
-	startButton := widget.NewButton("Start", func() {
+	startButton := widget.NewButton(locale.T("core.button_start"), func() {
 		core.StartSingBoxProcess()
 		// Status will be updated automatically via UpdateCoreStatusFunc
 	})
 
-	stopButton := widget.NewButton("Stop", func() {
+	stopButton := widget.NewButton(locale.T("core.button_stop"), func() {
 		core.StopSingBoxProcess()
 	})
 
@@ -223,7 +224,7 @@ func (tab *CoreDashboardTab) createStatusRow() fyne.CanvasObject {
 			tab.stopButton.Refresh()
 		}
 		if tab.statusLabel != nil {
-			tab.statusLabel.SetText("Core Status 🔄 Restarting...")
+			tab.statusLabel.SetText(locale.T("core.status_restarting"))
 			tab.statusLabel.Refresh()
 		}
 		tab.restartButton.Disable()
@@ -250,7 +251,7 @@ func (tab *CoreDashboardTab) createStatusRow() fyne.CanvasObject {
 
 func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 	// Используем Button вместо Label для возможности клика
-	title := widget.NewButton("Config", func() {
+	title := widget.NewButton(locale.T("core.label_config"), func() {
 		debuglog.DebugLog("CoreDashboard: Config title clicked, reading config...")
 		tab.readConfigOnDemand()
 	})
@@ -258,7 +259,7 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 	title.Importance = widget.LowImportance
 
 	// Используем Button для configStatusLabel, чтобы сделать его кликабельным
-	tab.configStatusLabel = widget.NewButton("Checking config...", func() {
+	tab.configStatusLabel = widget.NewButton(locale.T("core.status_checking_config"), func() {
 		debuglog.DebugLog("CoreDashboard: Config status label clicked, reading config...")
 		tab.readConfigOnDemand()
 	})
@@ -275,20 +276,20 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 	tab.parserStatusLabel.Alignment = fyne.TextAlignCenter
 
 	// Кнопка Update
-	tab.updateConfigButton = widget.NewButton("🔄 Update", func() {
+	tab.updateConfigButton = widget.NewButton(locale.T("core.button_update"), func() {
 		// Деактивируем кнопку и показываем прогрессбар
 		tab.updateConfigButton.Disable()
 		tab.parserProgressBar.Show()
 		tab.parserProgressBar.SetValue(0)
 		tab.parserStatusLabel.Show()
-		tab.parserStatusLabel.SetText("Starting...")
+		tab.parserStatusLabel.SetText(locale.T("core.status_parser_starting"))
 
 		// Запускаем парсер в отдельной горутине
 		go core.RunParserProcess()
 	})
 	tab.updateConfigButton.Importance = widget.MediumImportance
 
-	tab.wizardButton = widget.NewButton("⚙️ Wizard", func() {
+	tab.wizardButton = widget.NewButton(locale.T("core.button_wizard"), func() {
 		// Get parent window from AppController
 		ac := core.GetController()
 		parentWindow := ac.GetMainWindow()
@@ -296,7 +297,7 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 	})
 	tab.wizardButton.Importance = widget.MediumImportance
 
-	tab.templateDownloadButton = widget.NewButton("Download Config Template", func() {
+	tab.templateDownloadButton = widget.NewButton(locale.T("core.button_download_template"), func() {
 		tab.downloadConfigTemplate()
 	})
 	tab.templateDownloadButton.Importance = widget.MediumImportance
@@ -336,20 +337,20 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 
 // createVersionBlock creates a block with version (similar to wintun)
 func (tab *CoreDashboardTab) createVersionBlock() fyne.CanvasObject {
-	title := widget.NewLabel("Sing-box")
+	title := widget.NewLabel(locale.T("core.label_singbox"))
 	title.Importance = widget.MediumImportance
 
 	singboxHelpBtn := widget.NewButton("?", func() {
-		msg := "sing-box is the core binary.\n\n"
+		msg := locale.T("core.singbox_help_msg")
 		if suffix := core.SingboxAssetSuffix(); suffix != "" {
 			fileName := "sing-box-*-" + suffix
 			if v := tab.controller.GetCachedVersion(); v != "" {
 				fileName = fmt.Sprintf("sing-box-%s-%s", v, suffix)
 			}
-			msg += fmt.Sprintf("Look for: %s\n", fileName)
+			msg += locale.Tf("core.singbox_help_look_for", fileName)
 		}
-		msg += "Extract the binary into the bin folder.\n\n" +
-			"You can download with the button above, or manually from:"
+		msg += locale.T("core.singbox_help_extract") +
+			locale.T("core.singbox_help_manual")
 		binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
 		urlLink := widget.NewHyperlink(constants.SingboxReleasesURL, nil)
 		_ = urlLink.SetURLFromString(constants.SingboxReleasesURL)
@@ -358,20 +359,20 @@ func (tab *CoreDashboardTab) createVersionBlock() fyne.CanvasObject {
 				ShowError(tab.controller.GetMainWindow(), err)
 			}
 		}
-		openBinBtn := widget.NewButtonWithIcon("Open bin folder", theme.FolderOpenIcon(), func() {
+		openBinBtn := widget.NewButtonWithIcon(locale.T("core.button_open_bin"), theme.FolderOpenIcon(), func() {
 			if err := platform.OpenFolder(binDir); err != nil {
 				ShowError(tab.controller.GetMainWindow(), err)
 			}
 		})
 		content := container.NewVBox(widget.NewLabel(msg), urlLink, openBinBtn)
-		dialogs.ShowCustom(tab.controller.GetMainWindow(), "Sing-box", "Close", content)
+		dialogs.ShowCustom(tab.controller.GetMainWindow(), locale.T("core.dialog_singbox_title"), locale.T("core.dialog_singbox_close"), content)
 	})
 	tab.singboxHelpBtn = singboxHelpBtn
 
-	tab.singboxStatusLabel = widget.NewLabel("Checking...")
+	tab.singboxStatusLabel = widget.NewLabel(locale.T("core.singbox_status_checking"))
 	tab.singboxStatusLabel.Wrapping = fyne.TextWrapOff
 
-	tab.downloadButton = widget.NewButton("Download", func() {
+	tab.downloadButton = widget.NewButton(locale.T("core.button_download"), func() {
 		tab.handleDownload()
 	})
 	tab.downloadButton.Importance = widget.MediumImportance
@@ -514,7 +515,7 @@ func (tab *CoreDashboardTab) setSingboxState(statusText string, buttonText strin
 func (tab *CoreDashboardTab) updateBinaryStatus() {
 	// Проверяем, существует ли бинарник
 	if _, err := tab.controller.GetInstalledCoreVersion(); err != nil {
-		tab.statusLabel.SetText("Core Status ❌ Error: sing-box not found")
+		tab.statusLabel.SetText(locale.T("core.status_error_not_found"))
 		tab.statusLabel.Importance = widget.MediumImportance // Текст всегда черный
 		// UpdateUI will be called automatically by RunningState.Set() or other state changes
 		// Don't call UpdateUI() here to avoid infinite loop
@@ -538,13 +539,13 @@ func (tab *CoreDashboardTab) updateRunningStatus() {
 	}
 
 	if !buttonState.BinaryExists {
-		tab.statusLabel.SetText("Core Status ❌ Error: sing-box not found" + restartInfo)
+		tab.statusLabel.SetText(locale.T("core.status_error_not_found") + restartInfo)
 		tab.statusLabel.Importance = widget.MediumImportance // Текст всегда черный
 	} else if buttonState.IsRunning {
-		tab.statusLabel.SetText("Core Status ✅ Running" + restartInfo)
+		tab.statusLabel.SetText(locale.T("core.status_running") + restartInfo)
 		tab.statusLabel.Importance = widget.MediumImportance // Текст всегда черный
 	} else {
-		tab.statusLabel.SetText("Core Status ⏸️ Stopped" + restartInfo)
+		tab.statusLabel.SetText(locale.T("core.status_stopped") + restartInfo)
 		tab.statusLabel.Importance = widget.MediumImportance // Текст всегда черный
 	}
 
@@ -617,13 +618,13 @@ func (tab *CoreDashboardTab) updateConfigInfo() {
 	configExists := false
 	if info, err := os.Stat(configPath); err == nil {
 		modTime := info.ModTime().Format("2006-01-02")
-		tab.configStatusLabel.SetText(fmt.Sprintf("%s ✅ %s", filepath.Base(configPath), modTime))
+		tab.configStatusLabel.SetText(locale.Tf("core.status_config_ok", filepath.Base(configPath), modTime))
 		configExists = true
 	} else if os.IsNotExist(err) {
-		tab.configStatusLabel.SetText(fmt.Sprintf("%s ❌ not found", filepath.Base(configPath)))
+		tab.configStatusLabel.SetText(locale.Tf("core.status_config_not_found", filepath.Base(configPath)))
 		configExists = false
 	} else {
-		tab.configStatusLabel.SetText(fmt.Sprintf("Config error: %v", err))
+		tab.configStatusLabel.SetText(locale.Tf("core.status_config_error", err))
 		configExists = false
 	}
 
@@ -687,7 +688,7 @@ func (tab *CoreDashboardTab) updateVersionInfo() error {
 			if err != nil {
 				tab.singboxStatusLabel.Importance = widget.MediumImportance
 				tab.downloadButton.Importance = widget.HighImportance
-				tab.setSingboxState("❌ not found", "Download", -1)
+				tab.setSingboxState(locale.T("core.singbox_status_not_found"), locale.T("core.button_download"), -1)
 			} else {
 				tab.singboxStatusLabel.Importance = widget.MediumImportance
 				tab.setSingboxState(installedVersion, "", -1)
@@ -704,12 +705,12 @@ func (tab *CoreDashboardTab) updateVersionInfoAsync(installedVersion string, bin
 		cached := tab.controller.GetCachedVersion()
 		if cached != "" {
 			fyne.Do(func() {
-				tab.setSingboxState("", fmt.Sprintf("Download v%s", cached), -1)
+				tab.setSingboxState("", locale.Tf("core.button_download_version", cached), -1)
 			})
 		} else {
 			tab.controller.CheckVersionInBackground()
 			fyne.Do(func() {
-				tab.setSingboxState("", "Download", -1)
+				tab.setSingboxState("", locale.T("core.button_download"), -1)
 			})
 		}
 		return
@@ -721,7 +722,7 @@ func (tab *CoreDashboardTab) updateVersionInfoAsync(installedVersion string, bin
 	fyne.Do(func() {
 		if latest != "" && core.CompareVersions(installedVersion, latest) < 0 {
 			tab.downloadButton.Importance = widget.HighImportance
-			tab.setSingboxState("", fmt.Sprintf("Update v%s", latest), -1)
+			tab.setSingboxState("", locale.Tf("core.button_update_version", latest), -1)
 		} else {
 			tab.setSingboxState("", "", -1)
 		}
@@ -818,7 +819,7 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 			if tab.templateDownloadButton != nil {
 				tab.templateDownloadButton.Hide()
 			}
-			dialog.ShowInformation("Config Template", fmt.Sprintf("Template saved to %s", target), tab.controller.GetMainWindow())
+			dialog.ShowInformation(locale.T("core.dialog_template_title"), locale.Tf("core.dialog_template_saved", target), tab.controller.GetMainWindow())
 			tab.updateConfigInfo()
 		})
 	}()
@@ -840,7 +841,7 @@ func (tab *CoreDashboardTab) handleDownload() {
 				if err != nil {
 					ShowError(tab.controller.GetMainWindow(), fmt.Errorf("failed to get latest version: %w", err))
 					tab.downloadInProgress = false
-					tab.setSingboxState("", "Download", -1)
+					tab.setSingboxState("", locale.T("core.button_download"), -1)
 					return
 				}
 				// Сохраняем в кеш и запускаем скачивание
@@ -889,10 +890,10 @@ func (tab *CoreDashboardTab) startDownloadWithVersion(targetVersion string) {
 					tab.updateBinaryStatus() // Это вызовет updateRunningStatus() и обновит статус
 					// UpdateUI will be called automatically by RunningState.Set() or other state changes
 					// Don't call UpdateUI() here to avoid infinite loop
-					ShowInfo(tab.controller.GetMainWindow(), "Download Complete", progress.Message)
+					ShowInfo(tab.controller.GetMainWindow(), locale.T("core.dialog_download_complete_title"), progress.Message)
 				} else if progress.Status == "error" {
 					tab.downloadInProgress = false
-					tab.setSingboxState("", "Download", -1)
+					tab.setSingboxState("", locale.T("core.button_download"), -1)
 					binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
 					debuglog.DebugLog("core_dashboard: showing download failed manual (sing-box)")
 					ShowDownloadFailedManual(tab.controller.GetMainWindow(), "sing-box download failed", constants.SingboxReleasesURL, binDir)
@@ -945,7 +946,7 @@ func (tab *CoreDashboardTab) startAutoUpdate() {
 
 // createWintunBlock creates a block for displaying wintun.dll status
 func (tab *CoreDashboardTab) createWintunBlock() fyne.CanvasObject {
-	title := widget.NewLabel("Wintun")
+	title := widget.NewLabel(locale.T("core.label_wintun"))
 	title.Importance = widget.MediumImportance
 
 	wintunHelpBtn := widget.NewButton("?", func() {
@@ -953,10 +954,10 @@ func (tab *CoreDashboardTab) createWintunBlock() fyne.CanvasObject {
 		if runtime.GOARCH == "arm64" {
 			archDir = "arm64"
 		}
-		msg := "wintun.dll is required for TUN mode on Windows.\n\n" +
-			fmt.Sprintf("In the download archive, take wintun.dll \n\n Your system is %s.\n\n ", archDir) +
-			fmt.Sprintf("Place it in the bin folder: bin\n\n") +
-			"You can download with the button above, or manually from:"
+		msg := locale.T("core.wintun_help_msg") +
+			locale.Tf("core.wintun_help_in_archive", archDir) +
+			locale.T("core.wintun_help_place") +
+			locale.T("core.wintun_help_manual")
 		binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
 		urlLink := widget.NewHyperlink(constants.WintunHomeURL, nil)
 		_ = urlLink.SetURLFromString(constants.WintunHomeURL)
@@ -965,20 +966,20 @@ func (tab *CoreDashboardTab) createWintunBlock() fyne.CanvasObject {
 				ShowError(tab.controller.GetMainWindow(), err)
 			}
 		}
-		openBinBtn := widget.NewButtonWithIcon("Open bin folder", theme.FolderOpenIcon(), func() {
+		openBinBtn := widget.NewButtonWithIcon(locale.T("core.button_open_bin"), theme.FolderOpenIcon(), func() {
 			if err := platform.OpenFolder(binDir); err != nil {
 				ShowError(tab.controller.GetMainWindow(), err)
 			}
 		})
 		content := container.NewVBox(widget.NewLabel(msg), urlLink, openBinBtn)
-		dialogs.ShowCustom(tab.controller.GetMainWindow(), "Wintun", "Close", content)
+		dialogs.ShowCustom(tab.controller.GetMainWindow(), locale.T("core.dialog_wintun_title"), locale.T("core.dialog_wintun_close"), content)
 	})
 	tab.wintunHelpBtn = wintunHelpBtn
 
-	tab.wintunStatusLabel = widget.NewLabel("Checking...")
+	tab.wintunStatusLabel = widget.NewLabel(locale.T("core.wintun_status_checking"))
 	tab.wintunStatusLabel.Wrapping = fyne.TextWrapOff
 
-	tab.wintunDownloadButton = widget.NewButton("Download", func() {
+	tab.wintunDownloadButton = widget.NewButton(locale.T("core.button_download"), func() {
 		tab.handleWintunDownload()
 	})
 	tab.wintunDownloadButton.Importance = widget.MediumImportance
@@ -1019,17 +1020,17 @@ func (tab *CoreDashboardTab) updateWintunStatus() {
 	exists, err := tab.controller.CheckWintunDLL()
 	if err != nil {
 		tab.wintunStatusLabel.Importance = widget.MediumImportance
-		tab.setWintunState("❌ Error checking wintun.dll", "", -1)
+		tab.setWintunState(locale.T("core.wintun_status_error"), "", -1)
 		return
 	}
 
 	if exists {
 		tab.wintunStatusLabel.Importance = widget.MediumImportance
-		tab.setWintunState("ok", "", -1)
+		tab.setWintunState(locale.T("core.wintun_status_ok"), "", -1)
 	} else {
 		tab.wintunStatusLabel.Importance = widget.MediumImportance
 		tab.wintunDownloadButton.Importance = widget.HighImportance
-		tab.setWintunState("❌ not found", "Download", -1)
+		tab.setWintunState(locale.T("core.wintun_status_not_found"), locale.T("core.button_download"), -1)
 	}
 
 	// Обновляем статус кнопок Start/Stop, так как они зависят от наличия wintun.dll
@@ -1063,10 +1064,10 @@ func (tab *CoreDashboardTab) handleWintunDownload() {
 				if progress.Status == "done" {
 					tab.wintunDownloadInProgress = false
 					tab.updateWintunStatus() // Обновляет статус и управляет кнопкой
-					ShowInfo(tab.controller.GetMainWindow(), "Download Complete", progress.Message)
+					ShowInfo(tab.controller.GetMainWindow(), locale.T("core.dialog_download_complete_title"), progress.Message)
 				} else if progress.Status == "error" {
 					tab.wintunDownloadInProgress = false
-					tab.setWintunState("", "Download", -1)
+					tab.setWintunState("", locale.T("core.button_download"), -1)
 					binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
 					debuglog.DebugLog("core_dashboard: showing download failed manual (wintun)")
 					ShowDownloadFailedManual(tab.controller.GetMainWindow(), "wintun.dll download failed", constants.WintunHomeURL, binDir)
@@ -1091,7 +1092,7 @@ func (tab *CoreDashboardTab) showUpdatePopup(currentVersion, latestVersion strin
 		downloadURL := "https://github.com/Leadaxe/singbox-launcher/releases/latest"
 
 		// Создаем ссылку на скачивание
-		downloadLink := widget.NewHyperlink("Download from GitHub", nil)
+		downloadLink := widget.NewHyperlink(locale.T("core.button_download_from_github"), nil)
 		if err := downloadLink.SetURLFromString(downloadURL); err != nil {
 			debuglog.ErrorLog("showUpdatePopup: Failed to set URL: %v", err)
 		}
@@ -1104,15 +1105,15 @@ func (tab *CoreDashboardTab) showUpdatePopup(currentVersion, latestVersion strin
 
 		// Создаем контейнер с информацией
 		mainContent := container.NewVBox(
-			widget.NewLabel("A new version of the application is available"),
+			widget.NewLabel(locale.T("core.dialog_update_msg")),
 			widget.NewLabel(""),
-			widget.NewLabel(fmt.Sprintf("Current version: %s", currentVersion)),
-			widget.NewLabel(fmt.Sprintf("New version: %s", latestVersion)),
+			widget.NewLabel(locale.Tf("core.dialog_update_current", currentVersion)),
+			widget.NewLabel(locale.Tf("core.dialog_update_new", latestVersion)),
 			widget.NewLabel(""),
 			downloadLink,
 		)
 
-		d := dialogs.NewCustom("Update Available", mainContent, nil, "Close", tab.controller.UIService.MainWindow)
+		d := dialogs.NewCustom(locale.T("core.dialog_update_available_title"), mainContent, nil, locale.T("core.dialog_update_close"), tab.controller.UIService.MainWindow)
 
 		// Показываем диалог
 		d.Show()

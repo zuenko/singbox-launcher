@@ -18,12 +18,12 @@
 package presentation
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
 	"singbox-launcher/core"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/locale"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 )
 
@@ -47,10 +47,10 @@ func (p *WizardPresenter) TriggerParseForPreview() {
 	p.model.AutoParseInProgress = true
 	// Keep Save button visible; if user clicks Save during parse, save flow will wait (waitForParsingIfNeeded)
 	if p.guiState.TemplatePreviewStatusLabel != nil {
-		p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Parsing subscriptions and generating outbounds...")
+		p.guiState.TemplatePreviewStatusLabel.SetText(locale.T("wizard.preview.status_parsing"))
 	}
 	if p.guiState.TemplatePreviewEntry != nil {
-		p.SetTemplatePreviewText("Parsing configuration... Please wait.")
+		p.SetTemplatePreviewText(locale.T("wizard.preview.text_parsing"))
 	}
 
 	go func() {
@@ -85,9 +85,9 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 	}
 
 	p.model.PreviewGenerationInProgress = true
-	p.SetTemplatePreviewText("Building preview...")
+	p.SetTemplatePreviewText(locale.T("wizard.preview.text_building"))
 	if p.guiState.TemplatePreviewStatusLabel != nil {
-		p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Building preview configuration...")
+		p.guiState.TemplatePreviewStatusLabel.SetText(locale.T("wizard.preview.status_building"))
 	}
 
 	go func() {
@@ -104,7 +104,7 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 
 		SafeFyneDo(p.guiState.Window, func() {
 		if p.guiState.TemplatePreviewStatusLabel != nil {
-			p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Parsing ParserConfig...")
+			p.guiState.TemplatePreviewStatusLabel.SetText(locale.T("wizard.preview.status_parsing_config"))
 		}
 		})
 
@@ -115,12 +115,12 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 		if err != nil {
 			goroutineTiming.LogTiming("BuildTemplateConfig", buildDuration)
 			debuglog.ErrorLog("UpdateTemplatePreviewAsync: BuildTemplateConfig failed: %v", err)
-			errorText := fmt.Sprintf("Preview error: %v", err)
+			errorText := locale.Tf("wizard.preview.error", err)
 			p.SetTemplatePreviewText(errorText)
 			p.model.TemplatePreviewNeedsUpdate = false
 			SafeFyneDo(p.guiState.Window, func() {
 			if p.guiState.TemplatePreviewStatusLabel != nil {
-				p.guiState.TemplatePreviewStatusLabel.SetText(fmt.Sprintf("❌ Error: %v", err))
+				p.guiState.TemplatePreviewStatusLabel.SetText(locale.Tf("wizard.preview.status_error", err))
 			}
 			})
 			return
@@ -134,7 +134,7 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 		if !isLargeText {
 			SafeFyneDo(p.guiState.Window, func() {
 			if p.guiState.TemplatePreviewStatusLabel != nil {
-				p.guiState.TemplatePreviewStatusLabel.SetText("✅ Preview ready")
+				p.guiState.TemplatePreviewStatusLabel.SetText(locale.T("wizard.preview.status_ready"))
 			}
 			if p.guiState.ShowPreviewButton != nil {
 				p.guiState.ShowPreviewButton.Enable()

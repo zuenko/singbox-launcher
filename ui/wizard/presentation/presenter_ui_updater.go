@@ -22,6 +22,8 @@
 //   - presenter_async.go - вызывает UpdateTemplatePreview при обновлении preview
 package presentation
 
+import "singbox-launcher/internal/locale"
+
 // UpdateParserConfig обновляет текст ParserConfig.
 func (p *WizardPresenter) UpdateParserConfig(text string) {
 	p.UpdateUI(func() {
@@ -41,9 +43,9 @@ func (p *WizardPresenter) UpdateTemplatePreview(text string) {
 
 	if len(text) > 50000 {
 		p.UpdateUI(func() {
-			p.guiState.TemplatePreviewEntry.SetText("Loading large preview...")
+			p.guiState.TemplatePreviewEntry.SetText(locale.T("wizard.preview.loading_large"))
 			if p.guiState.TemplatePreviewStatusLabel != nil {
-				p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Loading large preview...")
+				p.guiState.TemplatePreviewStatusLabel.SetText(locale.T("wizard.preview.status_loading_large"))
 			}
 		})
 

@@ -27,6 +27,7 @@ import (
 
 	"singbox-launcher/internal/debuglog"
 	internaldialogs "singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
 )
 
@@ -50,7 +51,7 @@ func ShowLoadStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 	states, err := stateStore.ListWizardStateNames()
 	if err != nil {
 		debuglog.ErrorLog("ShowLoadStateDialog: failed to list states: %v", err)
-		dialog.ShowError(fmt.Errorf("Failed to load states list: %w", err), guiState.Window)
+		dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.load_state.error_load_list"), err), guiState.Window)
 		onResult(LoadStateResult{Action: "cancel"})
 		return
 	}
@@ -87,7 +88,7 @@ func ShowLoadStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 			fileNames[i] = state.ID + ".json"
 		}
 		if state.IsCurrent {
-			fileNames[i] += " (Current)"
+			fileNames[i] += locale.T("wizard.load_state.suffix_current")
 		}
 	}
 
@@ -152,7 +153,7 @@ func ShowLoadStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 				fileNames[i] = state.ID + ".json"
 			}
 			if state.IsCurrent {
-				fileNames[i] += " (Current)"
+				fileNames[i] += locale.T("wizard.load_state.suffix_current")
 			}
 		}
 
@@ -175,7 +176,7 @@ func ShowLoadStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 	}
 
 	// Buttons
-	loadButton := widget.NewButton("Load", func() {
+	loadButton := widget.NewButton(locale.T("wizard.load_state.button_load"), func() {
 		selectedID := ""
 		if selectedIndex >= 0 && selectedIndex < widget.ListItemID(len(states)) {
 			selectedID = states[selectedIndex].ID
@@ -190,7 +191,7 @@ func ShowLoadStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 	})
 	loadButton.Importance = widget.HighImportance
 
-	newButton := widget.NewButton("New", func() {
+	newButton := widget.NewButton(locale.T("wizard.load_state.button_new"), func() {
 		if dialogWindow != nil {
 			dialogWindow.Hide()
 		}
@@ -198,7 +199,7 @@ func ShowLoadStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 	})
 
 	// Кнопка удаления
-	deleteButton := widget.NewButton("Delete", func() {
+	deleteButton := widget.NewButton(locale.T("wizard.load_state.button_delete"), func() {
 		if selectedIndex < 0 || selectedIndex >= widget.ListItemID(len(states)) {
 			return
 		}
@@ -207,12 +208,12 @@ func ShowLoadStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 
 		// Нельзя удалять state.json (текущее состояние)
 		if selectedState.IsCurrent {
-			dialog.ShowError(fmt.Errorf("Cannot delete current state (state.json)"), guiState.Window)
+			dialog.ShowError(fmt.Errorf("%s", locale.T("wizard.load_state.error_delete_current")), guiState.Window)
 			return
 		}
 
 		// Подтверждение удаления
-		dialog.ShowConfirm("Delete State", fmt.Sprintf("Delete state '%s'?", selectedState.ID+".json"), func(confirmed bool) {
+		dialog.ShowConfirm(locale.T("wizard.load_state.dialog_delete_title"), locale.Tf("wizard.load_state.dialog_delete_confirm", selectedState.ID+".json"), func(confirmed bool) {
 			if !confirmed {
 				return
 			}
@@ -220,7 +221,7 @@ func ShowLoadStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 			// Удаляем состояние
 			stateStore := presenter.GetStateStore()
 			if err := stateStore.DeleteWizardState(selectedState.ID); err != nil {
-				dialog.ShowError(fmt.Errorf("Failed to delete state: %w", err), guiState.Window)
+				dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.load_state.error_delete_failed"), err), guiState.Window)
 				return
 			}
 
@@ -246,7 +247,7 @@ func ShowLoadStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 	originalOnTypedKey := guiState.Window.Canvas().OnTypedKey()
 
 	// Create dialog with simplified API (cancelButton через dismissText, ESC обрабатывается автоматически)
-	dialogWindow = internaldialogs.NewCustom("Load State", scrollList, buttonsContainer, "Cancel", guiState.Window)
+	dialogWindow = internaldialogs.NewCustom(locale.T("wizard.load_state.title"), scrollList, buttonsContainer, locale.T("wizard.load_state.button_cancel"), guiState.Window)
 	dialogWindow.Resize(fyne.NewSize(300, 220))
 
 	// Обработчик для cancelButton через dismissText и ESC

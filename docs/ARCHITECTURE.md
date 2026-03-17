@@ -484,6 +484,13 @@ singbox-launcher/
 │   │   │   - ShouldLog()                       # Проверка уровня логирования
 │   │   │   - Level enum (Off/Error/Warn/Info/Verbose/Trace)
 │   │   │
+│   ├── locale/                 # Локализация (i18n)
+│   │   │   - T(key) / Tf(key, args...)            # Перевод строки / с форматированием
+│   │   │   - SetLang(lang) / GetLang()            # Установка/получение языка
+│   │   │   - Languages() / LangDisplayName(code)  # Список языков / имя для отображения
+│   │   │   - LoadSettings(binDir) / SaveSettings() # Чтение/запись settings.json (lang)
+│   │   │   - en.json, ru.json (go:embed)          # Встроенные JSON-переводы
+│   │   │
 │   ├── dialogs/                # Диалоги (без зависимости от ui)
 │   │   │   - NewCustom()                                # Кастомный диалог: mainContent (центр), buttons (низ), Border; ESC закрывает
 │   │   │   - ShowDownloadFailedManual()                 # Единый диалог при ошибке загрузки (sing-box, wintun, шаблон, SRS): короткое сообщение, ссылка «Open download page» + кнопка копирования URL, «Open folder», «Close»

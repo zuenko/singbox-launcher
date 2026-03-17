@@ -21,7 +21,6 @@ package tabs
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -38,6 +37,7 @@ import (
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
@@ -47,13 +47,13 @@ import (
 // ShowAddRuleDialogFunc is a function type for showing the add rule dialog.
 type ShowAddRuleDialogFunc func(p *wizardpresentation.WizardPresenter, editRule *wizardmodels.RuleState, ruleIndex int)
 
-// SRS button labels (managed in one place)
 const (
-	srsBtnDownload       = "⬇ srs"
-	srsBtnLoading        = "🔄 srs"
-	srsBtnDone           = "✔️ srs"
 	srsGroupDownloadTimeout = 90 * time.Second
 )
+
+func srsBtnDownload() string { return locale.T("wizard.rules.button_srs_download") }
+func srsBtnLoading() string  { return locale.T("wizard.rules.button_srs_loading") }
+func srsBtnDone() string     { return locale.T("wizard.rules.button_srs_done") }
 
 // srsEntriesTooltip возвращает строку URL для tooltip кнопки SRS.
 func srsEntriesTooltip(entries []services.SRSEntry) string {
@@ -81,7 +81,7 @@ func runSRSDownloadAsync(
 		return
 	}
 	btn.Disable()
-	btn.SetText(srsBtnLoading)
+	btn.SetText(srsBtnLoading())
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), srsGroupDownloadTimeout)
 		defer cancel()
@@ -89,17 +89,17 @@ func runSRSDownloadAsync(
 		presenter.UpdateUI(func() {
 			btn.Enable()
 			if err != nil {
-				btn.SetText(srsBtnDownload)
+				btn.SetText(srsBtnDownload())
 				ruleSetsDir := filepath.Join(model.ExecDir, constants.BinDirName, constants.RuleSetsDirName)
 				downloadURL := ""
 				if len(srsEntries) > 0 {
 					downloadURL = srsEntries[0].URL
 				}
 				debuglog.DebugLog("rules_tab: SRS download failed")
-				dialogs.ShowDownloadFailedManual(guiState.Window, "Rule-set (SRS) download failed", downloadURL, ruleSetsDir)
+				dialogs.ShowDownloadFailedManual(guiState.Window, locale.T("wizard.rules.error_srs_failed"), downloadURL, ruleSetsDir)
 				return
 			}
-			btn.SetText(srsBtnDone)
+			btn.SetText(srsBtnDone())
 			if outboundSelect != nil {
 				outboundSelect.Enable()
 			}
@@ -143,8 +143,8 @@ func CreateRulesTab(presenter *wizardpresentation.WizardPresenter, showAddRuleDi
 func createTemplateNotFoundMessage() fyne.CanvasObject {
 	templateFileName := wizardtemplate.GetTemplateFileName()
 	return container.NewVBox(
-		widget.NewLabel(fmt.Sprintf("Template file bin/%s not found.", templateFileName)),
-		widget.NewLabel("Create the template file to enable this tab."),
+		widget.NewLabel(locale.Tf("wizard.rules.template_not_found", templateFileName)),
+		widget.NewLabel(locale.T("wizard.rules.template_create_hint")),
 	)
 }
 
@@ -171,7 +171,7 @@ func createSelectableRulesUI(presenter *wizardpresentation.WizardPresenter, mode
 	rulesBox := container.NewVBox()
 
 	if len(model.SelectableRuleStates) == 0 {
-		rulesBox.Add(widget.NewLabel("No selectable rules defined in template."))
+		rulesBox.Add(widget.NewLabel(locale.T("wizard.rules.no_selectable_rules")))
 		return rulesBox
 	}
 
@@ -239,7 +239,7 @@ func createOutboundSelectorForSelectableRule(
 	}
 
 	outboundRow := container.NewHBox(
-		widget.NewLabel("Outbound:"),
+		widget.NewLabel(locale.T("wizard.rules.label_outbound")),
 		outboundSelect,
 	)
 
@@ -303,9 +303,9 @@ func createSRSButton(
 	outboundSelect *widget.Select,
 	enableRuleOnSRSSuccess *bool,
 ) *ttwidget.Button {
-	initialText := srsBtnDownload
+	initialText := srsBtnDownload()
 	if services.AllSRSDownloadedForEntries(model.ExecDir, srsEntries) {
-		initialText = srsBtnDone
+		initialText = srsBtnDone()
 	}
 	btn := ttwidget.NewButton(initialText, nil)
 	btn.Importance = widget.LowImportance
@@ -343,7 +343,7 @@ func createSelectableRuleRowContent(
 ) []fyne.CanvasObject {
 	checkboxContainer := container.NewHBox(checkbox)
 	if ruleState.Rule.Description != "" {
-		infoButton := widget.NewButton("?", func() {
+		infoButton := widget.NewButton(locale.T("wizard.rules.button_info"), func() {
 			dialog.ShowInformation(ruleState.Rule.Label, ruleState.Rule.Description, guiState.Window)
 		})
 		infoButton.Importance = widget.LowImportance
@@ -450,13 +450,13 @@ func createCustomRuleActionButtons(
 	showAddRuleDialog ShowAddRuleDialogFunc,
 ) (*widget.Button, *widget.Button) {
 	// Edit button
-	editButton := widget.NewButton("✏️", func() {
+	editButton := widget.NewButton(locale.T("wizard.rules.button_edit"), func() {
 		showAddRuleDialog(presenter, customRule, idx)
 	})
 	editButton.Importance = widget.LowImportance
 
 	// Delete button
-	deleteButton := widget.NewButton("❌", func() {
+	deleteButton := widget.NewButton(locale.T("wizard.rules.button_delete"), func() {
 		deleteCustomRule(presenter, model, guiState, customRule, showAddRuleDialog)
 	})
 	deleteButton.Importance = widget.LowImportance
@@ -574,7 +574,7 @@ func createCustomRuleRowContent(
 
 	if outboundSelect != nil {
 		row = append(row, container.NewHBox(
-			widget.NewLabel("Outbound:"),
+			widget.NewLabel(locale.T("wizard.rules.label_outbound")),
 			outboundSelect,
 		))
 	}
@@ -594,9 +594,9 @@ func createCustomRuleSRSButton(
 	outboundSelect *widget.Select,
 	enableRuleOnSRSSuccess *bool,
 ) *ttwidget.Button {
-	initialText := srsBtnDownload
+	initialText := srsBtnDownload()
 	if services.AllSRSDownloadedForEntries(model.ExecDir, srsEntries) {
-		initialText = srsBtnDone
+		initialText = srsBtnDone()
 	}
 	btn := ttwidget.NewButton(initialText, nil)
 	btn.Importance = widget.LowImportance
@@ -625,7 +625,7 @@ func createAddRuleButton(
 	showAddRuleDialog ShowAddRuleDialogFunc,
 	rulesBox *fyne.Container,
 ) {
-	addRuleButton := widget.NewButton("➕ Add Rule", func() {
+	addRuleButton := widget.NewButton(locale.T("wizard.rules.button_add_rule"), func() {
 		showAddRuleDialog(presenter, nil, -1)
 	})
 	addRuleButton.Importance = widget.LowImportance
@@ -663,25 +663,25 @@ func createFinalOutboundSelect(
 func buildRulesTabContainer(presenter *wizardpresentation.WizardPresenter, rulesScroll fyne.CanvasObject, finalSelect *widget.Select) fyne.CanvasObject {
 	model := presenter.Model()
 	row := container.NewHBox(
-		widget.NewLabel("Final outbound:"),
+		widget.NewLabel(locale.T("wizard.rules.label_final_outbound")),
 		finalSelect,
 		layout.NewSpacer(),
 	)
 	if runtime.GOOS == "darwin" {
-		tunCheck := widget.NewCheck("TUN", func(checked bool) {
+		tunCheck := widget.NewCheck(locale.T("wizard.rules.checkbox_tun"), func(checked bool) {
 			model.EnableTunForMacOS = checked
 			model.TemplatePreviewNeedsUpdate = true
 			presenter.MarkAsChanged()
 		})
 		tunCheck.SetChecked(model.EnableTunForMacOS)
-		helpBtn := widget.NewButton("?", func() {
-			dialog.ShowInformation("TUN", "Enabling TUN will require entering your password when starting or stopping the VPN.", presenter.GUIState().Window)
+		helpBtn := widget.NewButton(locale.T("wizard.rules.button_info"), func() {
+			dialog.ShowInformation(locale.T("wizard.rules.checkbox_tun"), locale.T("wizard.rules.tun_help"), presenter.GUIState().Window)
 		})
 		row.Add(tunCheck)
 		row.Add(helpBtn)
 	}
 	return container.NewVBox(
-		widget.NewLabel("Selectable rules"),
+		widget.NewLabel(locale.T("wizard.rules.label_selectable")),
 		rulesScroll,
 		widget.NewSeparator(),
 		row,
