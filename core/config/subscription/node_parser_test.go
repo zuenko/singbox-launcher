@@ -26,6 +26,9 @@ func TestIsDirectLink(t *testing.T) {
 		{"SSH link", "ssh://user@server:22", true},
 		{"WireGuard link", "wireguard://key@10.0.0.1:51820?publickey=x&address=10.10.10.2/32&allowedips=0.0.0.0/0", true},
 		{"WireGuard with spaces", "  wireguard://key@host:51820?publickey=x&address=10.0.0.2/32&allowedips=0.0.0.0/0  ", true},
+		{"SOCKS5 link", "socks5://user:pass@proxy.example.com:1080", true},
+		{"SOCKS5 with tag", "socks5://user:pass@proxy.example.com:1080#Office SOCKS5", true},
+		{"SOCKS short form", "socks://127.0.0.1:1080#Local", true},
 		{"HTTP URL", "https://example.com/subscription", false},
 		{"Empty string", "", false},
 		{"Whitespace VLESS", "  vless://uuid@server:443  ", true},
@@ -975,6 +978,136 @@ func TestParseNode_SSH(t *testing.T) {
 
 			if user, ok := node.Outbound["user"].(string); !ok || user != node.UUID {
 				t.Errorf("Expected outbound user '%s', got '%v'", node.UUID, node.Outbound["user"])
+			}
+		})
+	}
+}
+
+// TestParseNode_SOCKS5 tests parsing SOCKS5 nodes (socks5:// and socks://).
+func TestParseNode_SOCKS5(t *testing.T) {
+	tests := []struct {
+		name        string
+		uri         string
+		expectError bool
+		checkFields func(*testing.T, *config.ParsedNode)
+	}{
+		{
+			name:        "SOCKS5 with auth and tag",
+			uri:         "socks5://myuser:mypass@proxy.example.com:1080#Office SOCKS5",
+			expectError: false,
+			checkFields: func(t *testing.T, node *config.ParsedNode) {
+				if node.Scheme != "socks" {
+					t.Errorf("Expected scheme 'socks', got '%s'", node.Scheme)
+				}
+				if node.Server != "proxy.example.com" {
+					t.Errorf("Expected server 'proxy.example.com', got '%s'", node.Server)
+				}
+				if node.Port != 1080 {
+					t.Errorf("Expected port 1080, got %d", node.Port)
+				}
+				if node.UUID != "myuser" {
+					t.Errorf("Expected username 'myuser', got '%s'", node.UUID)
+				}
+				if node.Query.Get("password") != "mypass" {
+					t.Errorf("Expected password 'mypass', got '%s'", node.Query.Get("password"))
+				}
+				if node.Tag != "Office SOCKS5" {
+					t.Errorf("Expected tag 'Office SOCKS5', got '%s'", node.Tag)
+				}
+			},
+		},
+		{
+			name:        "SOCKS5 without auth",
+			uri:         "socks5://proxy.example.com:1080",
+			expectError: false,
+			checkFields: func(t *testing.T, node *config.ParsedNode) {
+				if node.Scheme != "socks" {
+					t.Errorf("Expected scheme 'socks', got '%s'", node.Scheme)
+				}
+				if node.Server != "proxy.example.com" {
+					t.Errorf("Expected server 'proxy.example.com', got '%s'", node.Server)
+				}
+				if node.UUID != "" {
+					t.Errorf("Expected empty username, got '%s'", node.UUID)
+				}
+				if node.Query.Get("password") != "" {
+					t.Errorf("Expected empty password, got '%s'", node.Query.Get("password"))
+				}
+				if node.Tag != "socks-proxy.example.com-1080" {
+					t.Errorf("Expected default tag 'socks-proxy.example.com-1080', got '%s'", node.Tag)
+				}
+			},
+		},
+		{
+			name:        "SOCKS short form with tag",
+			uri:         "socks://127.0.0.1:1080#Local",
+			expectError: false,
+			checkFields: func(t *testing.T, node *config.ParsedNode) {
+				if node.Scheme != "socks" {
+					t.Errorf("Expected scheme 'socks', got '%s'", node.Scheme)
+				}
+				if node.Server != "127.0.0.1" {
+					t.Errorf("Expected server '127.0.0.1', got '%s'", node.Server)
+				}
+				if node.Tag != "Local" {
+					t.Errorf("Expected tag 'Local', got '%s'", node.Tag)
+				}
+			},
+		},
+		{
+			name:        "SOCKS5 default port 1080",
+			uri:         "socks5://user:pass@server.com#NoPort",
+			expectError: false,
+			checkFields: func(t *testing.T, node *config.ParsedNode) {
+				if node.Port != 1080 {
+					t.Errorf("Expected default port 1080, got %d", node.Port)
+				}
+			},
+		},
+		{
+			name:        "SOCKS5 invalid missing hostname",
+			uri:         "socks5://user:pass@:1080",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node, err := ParseNode(tt.uri, nil)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error for URI %q, but got none", tt.uri)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error for URI %q: %v", tt.uri, err)
+				return
+			}
+
+			if node == nil {
+				t.Errorf("Expected node, got nil for URI %q", tt.uri)
+				return
+			}
+
+			if tt.checkFields != nil {
+				tt.checkFields(t, node)
+			}
+
+			if node.Outbound == nil {
+				t.Errorf("Expected outbound to be built, got nil")
+				return
+			}
+
+			if outboundType, ok := node.Outbound["type"].(string); !ok || outboundType != "socks" {
+				t.Errorf("Expected outbound type 'socks', got '%v'", node.Outbound["type"])
+			}
+			if server, ok := node.Outbound["server"].(string); !ok || server != node.Server {
+				t.Errorf("Expected outbound server '%s', got '%v'", node.Server, node.Outbound["server"])
+			}
+			if serverPort, ok := node.Outbound["server_port"].(int); !ok || serverPort != node.Port {
+				t.Errorf("Expected outbound server_port %d, got '%v'", node.Port, node.Outbound["server_port"])
 			}
 		})
 	}

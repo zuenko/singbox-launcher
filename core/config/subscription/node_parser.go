@@ -1,5 +1,5 @@
 // Package subscription provides parsing logic for various proxy node formats.
-// It supports VLESS, VMess, Trojan, Shadowsocks, Hysteria2, and SSH protocols, handling
+// It supports VLESS, VMess, Trojan, Shadowsocks, Hysteria2, SSH, SOCKS5, and WireGuard protocols, handling
 // both direct links and subscription formats.
 package subscription
 
@@ -27,7 +27,9 @@ func IsDirectLink(input string) bool {
 		strings.HasPrefix(trimmed, "hysteria2://") ||
 		strings.HasPrefix(trimmed, "hy2://") ||
 		strings.HasPrefix(trimmed, "ssh://") ||
-		strings.HasPrefix(trimmed, "wireguard://")
+		strings.HasPrefix(trimmed, "wireguard://") ||
+		strings.HasPrefix(trimmed, "socks5://") ||
+		strings.HasPrefix(trimmed, "socks://")
 }
 
 // MaxURILength defines the maximum allowed length for a proxy URI
@@ -144,6 +146,10 @@ func ParseNode(uri string, skipFilters []map[string]string) (*configtypes.Parsed
 		scheme = "ssh"
 		defaultPort = 22 // Default port for SSH
 
+	case strings.HasPrefix(uri, "socks5://"), strings.HasPrefix(uri, "socks://"):
+		scheme = "socks"
+		defaultPort = 1080 // Default port for SOCKS5
+
 	case strings.HasPrefix(uri, "wireguard://"):
 		return parseWireGuardURI(uri, skipFilters)
 
@@ -165,6 +171,10 @@ func ParseNode(uri string, skipFilters []map[string]string) (*configtypes.Parsed
 		if parsedURL.User == nil || parsedURL.User.Username() == "" {
 			return nil, fmt.Errorf("invalid %s URI: missing userinfo (UUID/password/user)", scheme)
 		}
+	}
+	// Validate SOCKS: hostname required, user/password optional
+	if scheme == "socks" && parsedURL.Hostname() == "" {
+		return nil, fmt.Errorf("invalid socks URI: missing hostname")
 	}
 
 	// Extract components
@@ -201,8 +211,8 @@ func ParseNode(uri string, skipFilters []map[string]string) (*configtypes.Parsed
 		if decoded, err := url.QueryUnescape(node.UUID); err == nil && decoded != node.UUID {
 			node.UUID = decoded
 		}
-		// Extract password for SSH and Trojan (user:password@server)
-		if scheme == "ssh" || scheme == "trojan" {
+		// Extract password for SSH, Trojan and SOCKS (user:password@server)
+		if scheme == "ssh" || scheme == "trojan" || scheme == "socks" {
 			if password, hasPassword := parsedURL.User.Password(); hasPassword {
 				if decodedPassword, err := url.QueryUnescape(password); err == nil {
 					node.Query.Set("password", decodedPassword)
@@ -607,6 +617,13 @@ func buildOutbound(node *configtypes.ParsedNode) map[string]interface{} {
 		buildHysteria2Outbound(node, outbound)
 	} else if node.Scheme == "ssh" {
 		buildSSHOutbound(node, outbound)
+	} else if node.Scheme == "socks" {
+		if node.UUID != "" {
+			outbound["username"] = node.UUID
+		}
+		if password := node.Query.Get("password"); password != "" {
+			outbound["password"] = password
+		}
 	}
 
 	return outbound

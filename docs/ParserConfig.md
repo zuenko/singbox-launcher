@@ -45,7 +45,7 @@
       "proxies": [
         {
           // URL подписки (Base64 или plain-текст)
-          // Поддерживаются: VLESS, VMess, Trojan, Shadowsocks, Hysteria2, WireGuard
+          // Поддерживаются: VLESS, VMess, Trojan, Shadowsocks, Hysteria2, SOCKS5, WireGuard
           "source": "https://your-subscription-url.com/subscription",
           
           // Прямые ссылки на прокси-серверы (необязательно)
@@ -57,6 +57,7 @@
             "hysteria2://password@server.com:443?sni=example.com&insecure=1#🇺🇸 United States",
             "hy2://password@server.com:443?sni=example.com#🇺🇸 United States (short form)",
             "ssh://root:admin@127.0.0.1:22#Local SSH",
+            "socks5://user:pass@proxy.example.com:1080#Office SOCKS5",
             "wireguard://privatekey@10.0.0.1:51820?publickey=...&address=10.10.10.2/32&allowedips=0.0.0.0/0,::/0#WireGuard VPN"
           ],
           
@@ -186,7 +187,7 @@
 | Поле          | Тип      | Обязательное | Описание |
 |---------------|----------|--------------|----------|
 | `source`      | string   | Да           | URL подписки (поддерживаются протоколы: VLESS, VMess, Trojan, Shadowsocks, Hysteria2, SSH, WireGuard). Допускаются Base64 и plain-текст. |
-| `connections` | array    | Нет          | Массив прямых ссылок (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://, wireguard://). Можно комбинировать с подписками. Узлы WireGuard попадают в секцию `endpoints` конфига (требуется sing-box 1.11+). Подробнее о форматах URI см. раздел [Форматы URI для прямых ссылок](#форматы-uri-для-прямых-ссылок). |
+| `connections` | array    | Нет          | Массив прямых ссылок (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://, socks5:// или socks://, wireguard://). Можно комбинировать с подписками. Узлы WireGuard попадают в секцию `endpoints` конфига (требуется sing-box 1.11+). Подробнее о форматах URI см. раздел [Форматы URI для прямых ссылок](#форматы-uri-для-прямых-ссылок). |
 | `skip`        | array    | Нет          | Список фильтров. Если хотя бы один совпал — узел пропускается. |
 | `tag_prefix`  | string   | Нет          | Префикс, добавляемый ко всем тегам узлов из этого источника (версия 4). Применяется перед оригинальным тегом. Поддерживает переменные: `{$tag}`, `{$scheme}`, `{$protocol}`, `{$server}`, `{$port}`, `{$label}`, `{$comment}`, `{$num}`. Игнорируется, если указан `tag_mask`. |
 | `tag_postfix` | string   | Нет          | Постфикс, добавляемый ко всем тегам узлов из этого источника (версия 4). Применяется после оригинального тега. Поддерживает те же переменные, что и `tag_prefix`. Игнорируется, если указан `tag_mask`. |
@@ -416,7 +417,7 @@
      - Скачивается содержимое подписки (поддерживаются Base64 и plain-текст)
      - Декодируется и парсится список прокси-серверов
    - Для каждой прямой ссылки из `proxies[].connections`:
-     - Парсится прямая ссылка (vless://, vmess://, trojan://, ss://, hysteria2:// или hy2://, ssh://, wireguard://) и добавляется в список прокси
+     - Парсится прямая ссылка (vless://, vmess://, trojan://, ss://, hysteria2:// или hy2://, ssh://, socks5:// или socks://, wireguard://) и добавляется в список прокси
 
 3. **Поддерживаемые протоколы**
    - ✅ VLESS
@@ -425,6 +426,7 @@
    - ✅ Shadowsocks (SS)
    - ✅ Hysteria2
    - ✅ SSH
+   - ✅ SOCKS5 (socks5://, socks:// — outbound type "socks")
    - ✅ WireGuard (попадает в секцию endpoints; sing-box 1.11+)
 
 4. **Извлечение информации**
@@ -439,7 +441,7 @@
    - Узлы с дублирующимися тегами автоматически переименовываются (добавляется суффикс `-2`, `-3` и т.д.)
 
 6. **Генерация JSON узлов**
-   - Узлы VLESS/VMess/Trojan/SS/Hysteria2/SSH сериализуются в outbounds; узлы WireGuard — в endpoints (sing-box 1.11+)
+   - Узлы VLESS/VMess/Trojan/SS/Hysteria2/SSH/SOCKS5 сериализуются в outbounds; узлы WireGuard — в endpoints (sing-box 1.11+)
    - Комментарии выводятся из `label`
    - Порядок полей оптимизирован для читаемости
 
@@ -592,6 +594,23 @@ hysteria2://[email protected]:123,5000-6000/?insecure=1&pinSHA256=deadbeef#Multi
 ssh://root:admin@127.0.0.1:22#Local SSH
 ssh://user@server.com:22?private_key_path=$HOME/.ssh/id_rsa#Git Server
 ssh://root:password@192.168.1.1:22?private_key_path=/path/to/key&host_key=ecdsa-sha2-nistp256%20AAAA...&client_version=SSH-2.0-OpenSSH_7.4p1#My SSH Server
+```
+
+### SOCKS5 (`socks5://` или `socks://`)
+
+Формат: `socks5://[user:password@]host[:port]#tag` или `socks://...` (синоним). Результат — outbound типа `socks` в sing-box.
+
+**Структура:**
+- `user:password` — опциональная авторизация (логин и пароль прокси)
+- `host` — хост или IP SOCKS5-сервера (обязательный)
+- `port` — порт (по умолчанию **1080**, если не указан)
+- `#tag` — тег/комментарий ноды (опционально)
+
+**Примеры:**
+```
+socks5://myuser:mypass@proxy.example.com:1080#Office SOCKS5
+socks5://proxy.example.com:1080
+socks://127.0.0.1:1080#Local
 ```
 
 ### WireGuard (`wireguard://`)
