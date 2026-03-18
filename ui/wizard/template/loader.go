@@ -94,6 +94,10 @@ type TemplateSelectableRule struct {
 
 	// HasOutbound — true если правило имеет outbound/action, который можно выбрать.
 	HasOutbound bool
+
+	// Params — состояние UI по типу правила (только для custom rules). Не сериализуется из шаблона.
+	// Используется для сохранения/восстановления match_by_path, path_mode (processes), domain_regex (urls) и т.д.
+	Params map[string]interface{}
 }
 
 // TemplateParam — платформозависимый параметр из секции params шаблона (name, platforms, value, mode).
@@ -133,7 +137,7 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 
 	raw, err := os.ReadFile(templatePath)
 	if err != nil {
-		return nil, fmt.Errorf("не удалось прочитать %s: %w", TemplateFileName, err)
+		return nil, fmt.Errorf("failed to read %s: %w", TemplateFileName, err)
 	}
 
 	// Удаление UTF-8 BOM если присутствует
@@ -147,7 +151,7 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 		Params          []TemplateParam       `json:"params"`
 	}
 	if err := json.Unmarshal(raw, &root); err != nil {
-		return nil, fmt.Errorf("невалидный JSON в %s: %w", TemplateFileName, err)
+		return nil, fmt.Errorf("invalid JSON in %s: %w", TemplateFileName, err)
 	}
 
 	// 1. ParserConfig → оборачиваем содержимое parser_config в объект ParserConfig и форматируем
@@ -173,13 +177,13 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 	enableTunDefault := true
 	configJSON, err := applyParams(root.Config, root.Params, runtime.GOOS, enableTunDefault)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка применения params: %w", err)
+		return nil, fmt.Errorf("error applying params: %w", err)
 	}
 
 	// 3. Парсинг config в упорядоченные секции
 	configSections, configOrder, err := parseJSONWithOrder(configJSON)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка парсинга config: %w", err)
+		return nil, fmt.Errorf("error parsing config: %w", err)
 	}
 	debuglog.DebugLog("TemplateLoader: секции конфига: %v", configOrder)
 
@@ -212,7 +216,7 @@ func applyParams(configJSON json.RawMessage, params []TemplateParam, goos string
 
 	var config map[string]json.RawMessage
 	if err := json.Unmarshal(configJSON, &config); err != nil {
-		return nil, fmt.Errorf("не удалось распарсить config: %w", err)
+		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
 	for _, param := range params {
@@ -226,7 +230,7 @@ func applyParams(configJSON json.RawMessage, params []TemplateParam, goos string
 		debuglog.DebugLog("TemplateLoader: применение param '%s' (mode=%s) для платформы %s", param.Name, mode, goos)
 
 		if err := applyParam(config, param.Name, param.Value, mode); err != nil {
-			return nil, fmt.Errorf("ошибка применения param '%s': %w", param.Name, err)
+			return nil, fmt.Errorf("error applying param '%s': %w", param.Name, err)
 		}
 	}
 
@@ -253,7 +257,7 @@ func applyParam(config map[string]json.RawMessage, name string, value json.RawMe
 
 	var subConfig map[string]json.RawMessage
 	if err := json.Unmarshal(existing, &subConfig); err != nil {
-		return fmt.Errorf("секция '%s' не является объектом: %w", key, err)
+		return fmt.Errorf("section '%s' is not an object: %w", key, err)
 	}
 
 	if err := applyParam(subConfig, subKey, value, mode); err != nil {
@@ -292,7 +296,7 @@ func applyValue(config map[string]json.RawMessage, key string, value json.RawMes
 		return mergeArrays(config, key, existing, value)
 
 	default:
-		return fmt.Errorf("неизвестный mode: %s", mode)
+		return fmt.Errorf("unknown mode: %s", mode)
 	}
 }
 
@@ -300,10 +304,10 @@ func applyValue(config map[string]json.RawMessage, key string, value json.RawMes
 func mergeArrays(config map[string]json.RawMessage, key string, first, second json.RawMessage) error {
 	var arr1, arr2 []json.RawMessage
 	if err := json.Unmarshal(first, &arr1); err != nil {
-		return fmt.Errorf("'%s' первый массив невалиден: %w", key, err)
+		return fmt.Errorf("'%s' first array invalid: %w", key, err)
 	}
 	if err := json.Unmarshal(second, &arr2); err != nil {
-		return fmt.Errorf("'%s' второй массив невалиден: %w", key, err)
+		return fmt.Errorf("'%s' second array invalid: %w", key, err)
 	}
 	merged := append(arr1, arr2...)
 	result, err := json.Marshal(merged)
@@ -326,7 +330,9 @@ func GetEffectiveConfig(rawConfig json.RawMessage, params []TemplateParam, goos 
 	return parseJSONWithOrder(applied)
 }
 
-// matchesPlatform проверяет, подходит ли текущая платформа. При goos=="darwin" и enableTunForDarwin также матчится "darwin-tun".
+// matchesPlatform проверяет, подходит ли текущая платформа.
+// При goos=="darwin" и enableTunForDarwin также матчится "darwin-tun".
+// При сборке Win7 (GOOS=windows, GOARCH=386) также матчится "win7" вместе с "windows".
 func matchesPlatform(platforms []string, goos string, enableTunForDarwin bool) bool {
 	if len(platforms) == 0 {
 		return true
@@ -336,6 +342,9 @@ func matchesPlatform(platforms []string, goos string, enableTunForDarwin bool) b
 			return true
 		}
 		if goos == "darwin" && enableTunForDarwin && p == "darwin-tun" {
+			return true
+		}
+		if goos == "windows" && runtime.GOARCH == "386" && p == "win7" {
 			return true
 		}
 	}
@@ -418,7 +427,7 @@ func parseJSONWithOrder(jsonBytes []byte) (map[string]json.RawMessage, []string,
 		return nil, nil, err
 	}
 	if delim, ok := token.(json.Delim); !ok || delim != '{' {
-		return nil, nil, fmt.Errorf("ожидался '{', получен %v", token)
+		return nil, nil, fmt.Errorf("expected '{', got %v", token)
 	}
 
 	for decoder.More() {
@@ -428,12 +437,12 @@ func parseJSONWithOrder(jsonBytes []byte) (map[string]json.RawMessage, []string,
 		}
 		key, ok := keyToken.(string)
 		if !ok {
-			return nil, nil, fmt.Errorf("ожидался строковый ключ, получен %v", keyToken)
+			return nil, nil, fmt.Errorf("expected string key, got %v", keyToken)
 		}
 
 		var value json.RawMessage
 		if err := decoder.Decode(&value); err != nil {
-			return nil, nil, fmt.Errorf("ошибка декодирования значения для '%s': %w", key, err)
+			return nil, nil, fmt.Errorf("error decoding value for '%s': %w", key, err)
 		}
 
 		sections[key] = value
@@ -445,7 +454,7 @@ func parseJSONWithOrder(jsonBytes []byte) (map[string]json.RawMessage, []string,
 		return nil, nil, err
 	}
 	if delim, ok := token.(json.Delim); !ok || delim != '}' {
-		return nil, nil, fmt.Errorf("ожидался '}', получен %v", token)
+		return nil, nil, fmt.Errorf("expected '}', got %v", token)
 	}
 
 	return sections, order, nil
@@ -469,16 +478,10 @@ func extractDefaultFinal(sections map[string]json.RawMessage) string {
 	return ""
 }
 
-// stripUTF8BOM удаляет UTF-8 BOM (EF BB BF) если присутствует.
+// stripUTF8BOM удаляет UTF-8 BOM (EF BB BF) в начале файла, если присутствует.
 func stripUTF8BOM(b []byte) []byte {
 	if len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
-		b = b[3:]
-	}
-	if len(b) >= 3 {
-		n := len(b)
-		if b[n-3] == 0xEF && b[n-2] == 0xBB && b[n-1] == 0xBF {
-			b = b[:n-3]
-		}
+		return b[3:]
 	}
 	return b
 }

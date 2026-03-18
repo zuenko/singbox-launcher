@@ -7,6 +7,7 @@ import (
 
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 )
 
@@ -21,7 +22,7 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 
 	// Open
 	menuItems = append(menuItems,
-		fyne.NewMenuItem("Open", func() {
+		fyne.NewMenuItem(locale.T("tray.open"), func() {
 			if ac.hasUI() {
 				platform.RestoreDockIcon()
 				ac.UIService.ShowMainWindowOrFocusWizard()
@@ -41,7 +42,7 @@ func (ac *AppController) CreateTrayMenu() *fyne.Menu {
 	}
 
 	// Quit
-	menuItems = append(menuItems, fyne.NewMenuItem("Quit", ac.GracefulExit))
+	menuItems = append(menuItems, fyne.NewMenuItem(locale.T("tray.quit"), ac.GracefulExit))
 
 	return fyne.NewMenu("Singbox Launcher", menuItems...)
 }
@@ -55,17 +56,17 @@ func (ac *AppController) addVPNAndProxyMenuItems(menuItems []*fyne.MenuItem) []*
 	buttonState := ac.GetVPNButtonState()
 
 	if buttonState.StartEnabled {
-		menuItems = append(menuItems, fyne.NewMenuItem("Start VPN", func() { StartSingBoxProcess() }))
+		menuItems = append(menuItems, fyne.NewMenuItem(locale.T("tray.start_vpn"), func() { StartSingBoxProcess() }))
 	} else {
-		startItem := fyne.NewMenuItem("Start VPN", nil)
+		startItem := fyne.NewMenuItem(locale.T("tray.start_vpn"), nil)
 		startItem.Disabled = true
 		menuItems = append(menuItems, startItem)
 	}
 
 	if buttonState.StopEnabled {
-		menuItems = append(menuItems, fyne.NewMenuItem("Stop VPN", func() { StopSingBoxProcess() }))
+		menuItems = append(menuItems, fyne.NewMenuItem(locale.T("tray.stop_vpn"), func() { StopSingBoxProcess() }))
 	} else {
-		stopItem := fyne.NewMenuItem("Stop VPN", nil)
+		stopItem := fyne.NewMenuItem(locale.T("tray.stop_vpn"), nil)
 		stopItem.Disabled = true
 		menuItems = append(menuItems, stopItem)
 	}
@@ -78,7 +79,7 @@ func (ac *AppController) addVPNAndProxyMenuItems(menuItems []*fyne.MenuItem) []*
 
 	if clashAPIEnabled && selectedGroup != "" {
 		proxySubmenu := ac.buildProxySubmenu(selectedGroup)
-		selectProxyItem := fyne.NewMenuItem("Select Proxy", nil)
+		selectProxyItem := fyne.NewMenuItem(locale.T("tray.select_proxy"), nil)
 		selectProxyItem.ChildMenu = proxySubmenu
 		menuItems = append(menuItems, selectProxyItem, fyne.NewMenuItemSeparator())
 	}
@@ -115,7 +116,7 @@ func (ac *AppController) buildProxySubmenu(selectedGroup string) *fyne.Menu {
 			items = append(items, menuItem)
 		}
 	} else {
-		disabledItem := fyne.NewMenuItem("No proxies available", nil)
+		disabledItem := fyne.NewMenuItem(locale.T("tray.no_proxies_available"), nil)
 		disabledItem.Disabled = true
 		items = append(items, disabledItem)
 	}
@@ -152,7 +153,7 @@ func (ac *AppController) addHideDockMenuItem(menuItems []*fyne.MenuItem) []*fyne
 	}
 
 	hideDockEnabled := ac.UIService.HideAppFromDock
-	hideDockLabel := "Hide app from Dock"
+	hideDockLabel := locale.T("tray.hide_app_from_dock")
 	if hideDockEnabled {
 		hideDockLabel = "✓ " + hideDockLabel
 	}

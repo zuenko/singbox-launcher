@@ -3,7 +3,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-Leadaxe%2Fsingbox--launcher-blue)](https://github.com/Leadaxe/singbox-launcher)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.24%2B-blue)](https://golang.org/)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/Leadaxe/singbox-launcher/releases)
+[![Version](https://img.shields.io/badge/version-0.8.3-blue)](https://github.com/Leadaxe/singbox-launcher/releases)
 
 Кроссплатформенный графический лаунчер для [sing-box](https://github.com/SagerNet/sing-box) - универсального прокси-клиента.
 
@@ -106,7 +106,9 @@
 ## 📋 Требования
 
 ### Windows
-- Windows 10/11 (x64)
+- **Рекомендуемые системы:** Windows 10/11 (x64)
+- **Режим совместимости:** Windows 7 (x86/x64) через отдельную сборку лаунчера `singbox-launcher-<version>-win7-32.zip`  
+  В этом режиме лаунчер использует фиксированную legacy-версию `sing-box` (1.13.2, 32-bit) и 32-битный `wintun.dll`, работающие как на Win7 x86, так и на Win7 x64.
 - [sing-box](https://github.com/SagerNet/sing-box/releases) (исполняемый файл)
 - [WinTun](https://www.wintun.net/) (wintun.dll) - лицензия MIT, можно распространять
 
@@ -131,15 +133,17 @@
 
 ### Windows
 
-1. Скачайте последний релиз с [GitHub Releases](https://github.com/Leadaxe/singbox-launcher/releases)
+1. Скачайте последний релиз с [GitHub Releases](https://github.com/Leadaxe/singbox-launcher/releases)  
+   - для Windows 10/11 (x64) — обычный релизный архив для Windows;
+   - для Windows 7 (x86/x64) — архив `singbox-launcher-<version>-win7-32.zip` (отдельная legacy-сборка).
 2. Распакуйте архив в любую папку (например, `C:\Program Files\singbox-launcher`)
 3. Поместите `config.json` в папку `bin\`:
    - Скопируйте `config.example.json` в `config.json` и настройте под себя
 4. Запустите `singbox-launcher.exe`
 5. **Автоматическое скачивание** (рекомендуется):
    - Перейдите на вкладку **"Core"**
-   - Нажмите **"Download"** для скачивания `sing-box.exe` (автоматически скачает правильную версию для вашей системы)
-   - Нажмите **"Download wintun.dll"** при необходимости (автоматически скачает правильную архитектуру)
+   - Нажмите **"Download"** для скачивания `sing-box.exe` (лаунчер автоматически подберёт совместимый бинарник для вашей платформы; на Windows 7 используется фиксированная 32-битная версия 1.13.2)
+   - Нажмите **"Download wintun.dll"** при необходимости (автоматически скачает правильную архитектуру; на Windows 7 — 32-битный `wintun.dll`)
    - Лаунчер автоматически скачает с GitHub или зеркала SourceForge, если GitHub недоступен
 
 ### macOS
@@ -399,6 +403,10 @@ singbox-launcher.exe -start
      - Снимите галочку **"Запускать только при питании от электросети"** (если нужно запускать на ноутбуке)
    - Сохраните задачу
    - Задача будет автоматически запускаться с правами администратора при входе в систему
+
+   **Если лаунчер зависает при автозапуске из Планировщика** (не отвечает, приходится завершать через диспетчер задач):
+   - При триггере «При входе в систему» задача может стартовать до того, как рабочий стол и видеодрайвер полностью готовы — инициализация GUI (OpenGL, трей) тогда может зависнуть.
+   - **Обходной путь:** в том же триггере «При входе в систему» включите **задержку запуска**: в диалоге триггера нажмите «Дополнительно» и задайте «Отложить задачу на» **30 секунд** или **1 минуту**. После этого задача будет запускаться, когда сессия уже готова, и зависания обычно исчезают.
 
 **Примечания:**
 - Параметр можно комбинировать с другими параметрами (например, `-start -tray`)

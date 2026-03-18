@@ -22,3 +22,7 @@ func (a *FileServiceAdapter) ConfigPath() string {
 func (a *FileServiceAdapter) ExecDir() string {
 	return a.FileService.ExecDir
 }
+
+func (a *FileServiceAdapter) SingboxPath() string {
+	return a.FileService.SingboxPath
+}

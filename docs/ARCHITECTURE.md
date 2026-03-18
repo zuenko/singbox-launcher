@@ -104,13 +104,14 @@ singbox-launcher/
 │   │   │   - IsNetworkError()                       # Проверка сетевой ошибки
 │   │   │   - GetNetworkErrorMessage()               # Сообщение об ошибке
 │   │   │
-│   ├── services/              # Сервисы приложения
-│   │   ├── ui_service.go      # Управление UI состоянием и callbacks
-│   │   │   │   - NewUIService()                     # Создание сервиса
-│   │   │   │   - UpdateUI()                         # Обновление UI
-│   │   │   │   - StopTrayMenuUpdateTimer()          # Остановка таймера
-│   │   │   │   - QuitApplication()                  # Выход из приложения
-│   │   │   │
+│   ├── uiservice/             # UI-сервис (Fyne-зависимый, отдельный пакет)
+│   │   └── ui_service.go      # Управление UI состоянием и callbacks
+│   │       │   - NewUIService()                     # Создание сервиса
+│   │       │   - UpdateUI()                         # Обновление UI
+│   │       │   - StopTrayMenuUpdateTimer()          # Остановка таймера
+│   │       │   - QuitApplication()                  # Выход из приложения
+│   │
+│   ├── services/              # Сервисы приложения (Fyne-free)
 │   │   ├── api_service.go     # Взаимодействие с Clash API
 │   │   │   │   - NewAPIService()                    # Создание сервиса
 │   │   │   │   - GetClashAPIConfig()                # Получение конфигурации API
@@ -136,13 +137,14 @@ singbox-launcher/
 │   │       │   - BackupFile()                        # Создание бэкапа с ротацией (макс 1 старый)
 │   │       │
 │   └── config/                # Работа с конфигурацией
-│       ├── models.go           # Модели данных конфигурации
-│       │   │   - ParserConfig struct                # Конфигурация парсера
-│       │   │   - ProxySource struct                 # Источник прокси
-│       │   │   - OutboundConfig struct              # Конфигурация outbound
-│       │   │   - WizardConfig struct                # Настройки визарда
-│       │   │   - IsWizardHidden()                   # Проверка скрытия визарда
-│       │   │   - GetWizardRequired()                # Получение обязательных полей
+│       ├── configtypes/        # Общие типы (отдельный пакет для разрыва циклической зависимости)
+│       │   └── types.go        # ParserConfig, ProxySource, OutboundConfig, ParsedNode, NormalizeParserConfig
+│       │
+│       ├── models.go           # Type aliases → configtypes (обратная совместимость: config.ParsedNode и т.д.)
+│       │   │   - ParserConfig = configtypes.ParserConfig
+│       │   │   - ProxySource = configtypes.ProxySource
+│       │   │   - OutboundConfig = configtypes.OutboundConfig
+│       │   │   - ParsedNode = configtypes.ParsedNode
 │       │   │
 │       ├── config_loader.go    # Загрузка и чтение config.json
 │       │   │   - GetSelectorGroupsFromConfig()      # Получение групп селекторов
@@ -156,6 +158,11 @@ singbox-launcher/
 │       │   │   - GenerateOutboundsFromParserConfig()        # Оркестрация: wireguard → EndpointsJSON, остальные → OutboundsJSON
 │       │   │   - OutboundGenerationResult struct             # Результат (OutboundsJSON, EndpointsJSON, счётчики)
 │       │   │   - outboundInfo struct                         # Информация о динамическом селекторе
+│       │   │
+│       ├── outbound_filter.go    # Логика фильтрации нод для селекторов
+│       │   │   - filterNodesForSelector()                   # Фильтрация по tag/host/scheme/label
+│       │   │   - matchesFilter() / matchesPattern()         # Literal / regex / negation matching
+│       │   │   - PreviewSelectorNodes()                     # Фильтрация для UI preview
 │       │   │
 │       ├── updater.go          # Обновление конфигурации
 │       │   │   - UpdateConfigFromSubscriptions()        # Обновление из подписок (outbounds + endpoints)
@@ -181,10 +188,16 @@ singbox-launcher/
 │           │   │   - MakeTagUnique()                         # Уникальность тегов
 │           │   │   - IsSubscriptionURL()                     # Проверка URL подписки
 │           │   │
-│           ├── node_parser.go      # Парсинг узлов прокси
+│           ├── node_parser.go           # Парсинг узлов прокси (диспетчер + общие утилиты)
 │           │   │   - ParseNode()                               # Парсинг URI узла
 │           │   │   - IsDirectLink()                             # Проверка прямого линка
+│           │   │   - buildOutbound()                            # Диспетчер построения outbound по протоколу
 │           │   │
+│           ├── node_parser_vmess.go     # VMess протокол
+│           ├── node_parser_wireguard.go # WireGuard протокол
+│           ├── node_parser_hysteria2.go # Hysteria2 протокол
+│           ├── node_parser_ssh.go       # SSH протокол
+│           │
 │           ├── decoder.go          # Декодирование подписок
 │           │   │   - DecodeSubscriptionContent()              # Декодирование (base64, yaml)
 │           │   │
@@ -251,7 +264,8 @@ singbox-launcher/
 │       │   ├── wizard_state_file.go # Модель состояния визарда
 │       │   │   │   - WizardStateFile struct                  # Сериализуемое состояние визарда (version 2)
 │       │   │   │   - PersistedSelectableRuleState struct     # Упрощённое состояние правила (label, enabled, selected_outbound)
-│       │   │   │   - PersistedCustomRule struct              # Полное определение пользовательского правила
+│       │   │   │   - PersistedCustomRule struct              # Полное определение пользовательского правила (type, params, rule_set для srs)
+│       │   │   │   - DetermineRuleType()                     # Вывод типа правила из rule при загрузке (ips, urls, processes, srs, raw)
 │       │   │   │   - WizardStateMetadata struct              # Метаданные состояния
 │       │   │   │   - ValidateStateID()                       # Валидация ID состояния
 │       │   │   │   - MigrateSelectableRuleStates()           # Миграция v1 → v2 selectable rules
@@ -297,8 +311,7 @@ singbox-launcher/
 │       │   │   │   - finalizeSaveOperation()           # Завершение операции
 │       │   │   │   - waitForParsingIfNeeded()          # Ожидание парсинга при необходимости
 │       │   │   │   - buildConfigForSave()              # Построение конфигурации
-│       │   │   │   - saveConfigFile()                  # Сохранение файла с бэкапом
-│       │   │   │   - validateConfigFile()              # Валидация конфига через sing-box
+│       │   │   │   - saveConfigFile()                  # Валидация по временному файлу (config-check.json) и запись config.json с бэкапом
 │       │   │   │   - saveStateAndShowSuccessDialog()   # Сохранение state и показ диалога
 │       │   │   │   - showSaveSuccessDialog()           # Диалог успешного сохранения
 │       │   │   │   - completeSaveOperation()           # Завершение операции с задержкой
@@ -471,16 +484,33 @@ singbox-launcher/
 │   │   │   - ShouldLog()                       # Проверка уровня логирования
 │   │   │   - Level enum (Off/Error/Warn/Info/Verbose/Trace)
 │   │   │
+│   ├── locale/                 # Локализация (i18n)
+│   │   │   - T(key) / Tf(key, args...)            # Перевод строки / с форматированием
+│   │   │   - SetLang(lang) / GetLang()            # Установка/получение языка
+│   │   │   - Languages() / LangDisplayName(code)  # Список языков / имя для отображения
+│   │   │   - LoadSettings(binDir) / SaveSettings() # Чтение/запись settings.json (lang)
+│   │   │   - en.json, ru.json (go:embed)          # Встроенные JSON-переводы
+│   │   │
 │   ├── dialogs/                # Диалоги (без зависимости от ui)
 │   │   │   - NewCustom()                                # Кастомный диалог: mainContent (центр), buttons (низ), Border; ESC закрывает
 │   │   │   - ShowDownloadFailedManual()                 # Единый диалог при ошибке загрузки (sing-box, wintun, шаблон, SRS): короткое сообщение, ссылка «Open download page» + кнопка копирования URL, «Open folder», «Close»
 │   │   │   - ShowError() / ShowErrorText()              # Показать ошибку (используются из ui/dialogs)
 │   │   │
 │   └── platform/              # Платформо-зависимый код
-│       │   - платформо-специфичные функции
+│       │   - платформо-специфичные функции (пути, трей, Dock и т.д.)
+│       │   - события питания (Windows): sleep / resume, статус sleep — см. ниже «Platform: события питания»
 │
 └── assets/                     # Ресурсы (иконки)
 ```
+
+### Platform: события питания (internal/platform)
+
+Платформа даёт единый контракт для реакции на сон/пробуждение. **Клиенты не зависят от ОС:** они всегда вызывают одни и те же API; платформа сама решает, слать события и выставлять статус или нет (на поддерживаемых ОС — полная реализация, на остальных — no-op).
+
+- **События для подписки:** **sleep** (система уходит в сон) и **resume** (система вышла из сна/гибернации). Подписчики регистрируют колбэки; при sleep — прерывают текущие запросы и не начинают новые; при resume — могут возобновить работу (напр. сброс HTTP-транспорта).
+- **Статус sleep:** IsSleeping() — true между sleep и resume. Пакет **api** использует внутри requestContext() и normalizeRequestError() (PowerContext, ErrPlatformInterrupt); публичный API api без контекста. Таймеры (меню трея и т.д.) и цикл AutoLoadProxies проверяют IsSleeping() перед срабатыванием. main.go вызывает RegisterPowerResumeCallback и StopPowerResumeListener безусловно.
+
+Подписчики: api, таймер меню трея, AutoLoadProxies, UI (clash_api_tab). См. SPECS/011-B-C-launcher-freeze-after-sleep (SPEC, PLAN, IMPLEMENTATION_REPORT).
 
 ## Детальное описание компонентов
 
@@ -718,11 +748,11 @@ singbox-launcher/
 - `presenter_save.go`:
   - `SaveConfig()` - сохранение конфигурации с прогресс-баром и проверками (основная функция)
   - `validateSaveInput()`, `checkSaveOperationState()` - проверки перед сохранением
-  - `executeSaveOperation()` - выполнение сохранения в горутине: сборка конфига из текущей модели (без ожидания парсинга outbounds), запись файла, валидация, state.json, диалог; по завершении в фоне вызывается `core.RunParserProcess()` (обновление конфига из подписок)
+  - `executeSaveOperation()` - выполнение сохранения в горутине: сборка конфига, валидация по временному файлу (config-check.json) и запись config.json, state.json, диалог; перезапуск sing-box не выполняется; по завершении в фоне вызывается `core.RunParserProcess()` (обновление конфига из подписок)
   - `finalizeSaveOperation()` - завершение операции и восстановление UI
   - `buildConfigForSave()` - построение конфигурации из шаблона и модели
-  - `saveConfigFile()`, `validateConfigFile()` - запись в файл и валидация sing-box
-  - `saveStateAndShowSuccessDialog()`, `showSaveSuccessDialog()` - сохранение state и диалог успеха
+  - `saveConfigFile()` - валидация sing-box check по временному файлу (config-check.json) и при успехе запись в config.json с бэкапом (вызов SaveConfigWithBackup)
+  - `saveStateAndShowSuccessDialog()`, `showSaveSuccessDialog()` - сохранение state и диалог успеха (без перезапуска sing-box)
   - `completeSaveOperation()` - финализация и запуск RunParserProcess в фоне
 - `presenter_state.go`:
   - `CreateStateFromModel()` - создание WizardStateFile из текущей модели
@@ -732,6 +762,7 @@ singbox-launcher/
   - `HasUnsavedChanges()` - проверка наличия несохранённых изменений
   - `MarkAsChanged()` - установка флага изменений
   - `MarkAsSaved()` - сброс флага изменений
+  - **Хранение и загрузка state:** состояние хранится в `bin/wizard_states/state.json` (текущее) и в `bin/wizard_states/<id>.json` (именованные). При сохранении презентер вызывает `CreateStateFromModel()`, затем state_store записывает файл. При загрузке state_store читает файл, вызывается `LoadState()`: миграции (MigrateCustomRules, MigrateSelectableRuleStates), восстановление custom_rules через `ToRuleState()` (тип при отсутствии/старом формате выводится из rule через DetermineRuleType; params и rule_set восстанавливаются в модель). Формат полей и логика — **docs/WIZARD_STATE.md**.
 - `presenter_rules.go`:
   - `RefreshRulesTab()` - обновление содержимого таба Rules (принимает функцию создания вкладки)
   - `RefreshRulesTabAfterLoadState()` - пересоздание вкладки Rules после LoadState (использует сохранённую функцию через DI)
@@ -811,7 +842,8 @@ singbox-launcher/
   - `EnsureRequiredOutbounds()` - обеспечение наличия требуемых outbounds из template
   - `CloneOutbound()` - создание глубокой копии OutboundConfig
 - `saver.go`:
-  - `SaveConfigWithBackup()` - сохранение конфигурации с бэкапом (через services.BackupFile) и генерацией secret для Clash API
+  - `SaveConfigWithBackup()` - при непустом fileService.SingboxPath(): запись во временный файл `config-check.json`, валидация `sing-box check`, при успехе — бэкап и запись в config; генерация secret для Clash API (prepareConfigText)
+  - `ValidateConfigWithSingBox()` - валидация конфига через sing-box check
   - `FileServiceAdapter` - адаптер для services.FileService
 - `state_store.go`:
   - `NewStateStore()` - создание хранилища состояний
@@ -1162,9 +1194,7 @@ UI (core_dashboard_tab.go)
       │   │   ├─> buildConfigForSave()
       │   │   │   └─> wizard/business/create_config.go: BuildTemplateConfig()
       │   │   ├─> saveConfigFile()
-      │   │   │   └─> wizard/business/saver.go: SaveConfigWithBackup()
-      │   │   ├─> validateConfigFile()
-      │   │   │   └─> wizard/business/saver.go: ValidateConfigWithSingBox()
+      │   │   │   └─> wizard/business/saver.go: SaveConfigWithBackup() (внутри: запись в config-check.json, ValidateConfigWithSingBox, при успехе — запись в config)
       │   │   └─> saveStateAndShowSuccessDialog()
       │   │       ├─> wizard/presentation/presenter_state.go: SaveCurrentState()
       │   │       │   └─> wizard/business/state_store.go: SaveCurrentState()
@@ -1219,9 +1249,12 @@ UI (core_dashboard_tab.go)
 ```
 main.go
   └─> core
-      ├─> core/services
+      ├─> core/services          # Fyne-free: FileService, APIService, StateService
+      ├─> core/uiservice         # Fyne-зависимый UIService (отдельный пакет)
       ├─> core/config
-      │   └─> core/config/subscription
+      │   ├─> core/config/configtypes  # Общие типы (ParsedNode, ParserConfig и пр.)
+      │   ├─> core/config/parser
+      │   └─> core/config/subscription # Импортирует configtypes (не config) → нет цикла
       └─> ui
           └─> ui/wizard
               ├─> ui/wizard/models
@@ -1237,7 +1270,28 @@ main.go
 - `core` не зависит от `ui`
 - `ui/wizard` не зависит от `ui` (кроме точки входа)
 - `core/config` не зависит от `core/services`
+- `core/services` не зависит от Fyne (UIService вынесен в `core/uiservice`)
+- `core/config/subscription` импортирует `core/config/configtypes` (не `core/config`) — цикл разорван
+- `core/config` может импортировать `core/config/subscription`
 - Подпакеты не зависят друг от друга (кроме явной необходимости)
+
+## Известные архитектурные ограничения
+
+### AppController как god object
+
+`AppController` (`core/controller.go`) является центральным координатором, совмещающим:
+- Координацию сервисов
+- Управление жизненным циклом процессов
+- Прямое взаимодействие с UI (диалоги, иконки трея)
+- Управление состоянием VPN
+- Управление обновлениями
+
+**Риск:** по мере роста проекта контроллер станет сложнее для понимания и тестирования.
+**Текущий статус:** оставлено как есть — декомпозиция потребует значительного рефакторинга.
+**Рекомендации при будущем рефакторинге:**
+- Выделить `UpdateCoordinator` для управления обновлениями ядра
+- Выделить `DialogCoordinator` для показа диалогов из core (вместо прямого доступа к `fyne.Window`)
+- Перенести логику трея в отдельный сервис
 
 ## Тестирование
 

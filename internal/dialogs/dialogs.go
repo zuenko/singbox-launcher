@@ -14,14 +14,9 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 )
-
-// downloadFailedMessage — единая фраза в диалоге при любой ошибке загрузки.
-const downloadFailedMessage = "Download failed. See the log for details."
-
-// downloadFailedManualHint — подсказка скачать вручную.
-const downloadFailedManualHint = "Please download the file manually and place it in the folder below."
 
 // NewCustom создает диалог с упрощенным API: mainContent (центр), buttons (низ), Border.
 // Если dismissText не пустой, создается кнопка закрытия слева от buttons; ESC закрывает диалог.
@@ -95,15 +90,15 @@ func ShowDownloadFailedManual(window fyne.Window, title, downloadURL, targetDir 
 	debuglog.DebugLog("dialogs: ShowDownloadFailedManual start title=%s", title)
 	fyne.Do(func() {
 		mainContent := container.NewVBox()
-		msgLabel := widget.NewLabel(downloadFailedMessage)
+		msgLabel := widget.NewLabel(locale.T("dialog.download_failed"))
 		msgLabel.Wrapping = fyne.TextWrapWord
 		mainContent.Add(msgLabel)
-		hintLabel := widget.NewLabel(downloadFailedManualHint)
+		hintLabel := widget.NewLabel(locale.T("dialog.download_failed_manual_hint"))
 		hintLabel.Wrapping = fyne.TextWrapWord
 		mainContent.Add(hintLabel)
 
 		if downloadURL != "" {
-			link := widget.NewHyperlink("Open download page", nil)
+			link := widget.NewHyperlink(locale.T("dialog.open_download_page"), nil)
 			if err := link.SetURLFromString(downloadURL); err == nil {
 				link.OnTapped = func() {
 					if err := platform.OpenURL(downloadURL); err != nil {
@@ -114,7 +109,7 @@ func ShowDownloadFailedManual(window fyne.Window, title, downloadURL, targetDir 
 				}
 			}
 			copyBtn := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
-				window.Clipboard().SetContent(downloadURL)
+				fyne.CurrentApp().Clipboard().SetContent(downloadURL)
 			})
 			copyBtn.Importance = widget.LowImportance
 			linkRow := container.NewHBox(link, copyBtn)
@@ -129,7 +124,7 @@ func ShowDownloadFailedManual(window fyne.Window, title, downloadURL, targetDir 
 
 		var buttons fyne.CanvasObject
 		if targetDir != "" {
-			openFolderBtn := widget.NewButton("Open folder", func() {
+			openFolderBtn := widget.NewButton(locale.T("dialog.open_folder"), func() {
 				if err := platform.OpenFolder(targetDir); err != nil {
 					ShowError(window, fmt.Errorf("failed to open folder: %w", err))
 				}
@@ -137,7 +132,7 @@ func ShowDownloadFailedManual(window fyne.Window, title, downloadURL, targetDir 
 			buttons = openFolderBtn
 		}
 
-		d := NewCustom(title, mainContent, buttons, "Close", window)
+		d := NewCustom(title, mainContent, buttons, locale.T("dialog.close"), window)
 		d.Show()
 		debuglog.DebugLog("dialogs: ShowDownloadFailedManual shown")
 	})
@@ -147,6 +142,36 @@ func ShowDownloadFailedManual(window fyne.Window, title, downloadURL, targetDir 
 func ShowError(window fyne.Window, err error) {
 	fyne.Do(func() {
 		dialog.ShowError(err, window)
+	})
+}
+
+// ShowLinuxCapabilitiesRequired shows a dialog for the Linux capabilities message
+// with the setcap command in a selectable entry and a Copy button (issue #34).
+// title is the dialog title (e.g. "Error" or "Linux Capabilities"); message is the full
+// text (warning + explanation); command is the single line to copy (e.g. sudo setcap ...).
+func ShowLinuxCapabilitiesRequired(window fyne.Window, title, message, command string) {
+	fyne.Do(func() {
+		mainContent := container.NewVBox()
+		msgLabel := widget.NewLabel(message)
+		msgLabel.Wrapping = fyne.TextWrapWord
+		mainContent.Add(msgLabel)
+
+		// Selectable command line and Copy button
+		entry := widget.NewEntry()
+		entry.SetText(command)
+		entry.Disable()
+		entry.Wrapping = fyne.TextWrapOff
+		copyBtn := widget.NewButtonWithIcon(locale.T("dialog.copy"), theme.ContentCopyIcon(), func() {
+			if command != "" {
+				fyne.CurrentApp().Clipboard().SetContent(command)
+			}
+		})
+		copyBtn.Importance = widget.LowImportance
+		cmdRow := container.NewBorder(nil, nil, nil, copyBtn, entry)
+		mainContent.Add(cmdRow)
+
+		d := NewCustom(title, mainContent, nil, locale.T("dialog.ok"), window)
+		d.Show()
 	})
 }
 
@@ -183,14 +208,14 @@ func ShowConfirm(window fyne.Window, title, message string, onConfirm func(bool)
 func ShowProcessKillConfirmation(window fyne.Window, onKill func()) {
 	fyne.Do(func() {
 		var d dialog.Dialog
-		killButton := widget.NewButton("Kill Process", nil)
-		closeButton := widget.NewButton("Close This Warning", nil)
+		killButton := widget.NewButton(locale.T("dialog.kill_process"), nil)
+		closeButton := widget.NewButton(locale.T("dialog.close_warning"), nil)
 		content := container.NewVBox(
-			widget.NewLabel("Sing-Box appears to be already running.\nWould you like to kill the existing process?"),
+			widget.NewLabel(locale.T("dialog.process_already_running")),
 			killButton,
 			closeButton,
 		)
-		d = dialog.NewCustomWithoutButtons("Warning", content, window)
+		d = dialog.NewCustomWithoutButtons(locale.T("dialog.warning"), content, window)
 		killButton.OnTapped = func() {
 			go onKill()
 			d.Hide()

@@ -16,6 +16,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/core/config"
+	"singbox-launcher/internal/locale"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 )
 
@@ -44,7 +45,7 @@ func collectRows(pc *config.ParserConfig) []outboundRow {
 	for si, proxy := range pc.ParserConfig.Proxies {
 		label := proxy.Source
 		if label == "" {
-			label = "Source " + strconv.Itoa(si+1)
+			label = locale.T("wizard.outbound.label_source") + strconv.Itoa(si+1)
 		}
 		if len(label) > 40 {
 			label = label[:37] + "..."
@@ -225,7 +226,7 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 				downBtn.Disable()
 			}
 
-			editBtn := widget.NewButtonWithIcon("Edit", theme.DocumentCreateIcon(), func() {
+			editBtn := widget.NewButtonWithIcon(locale.T("wizard.outbound.button_edit"), theme.DocumentCreateIcon(), func() {
 				parserConfig := getParserConfig(editPresenter.Model())
 				if parserConfig == nil {
 					return
@@ -268,7 +269,7 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 				})
 			})
 
-			delBtn := widget.NewButtonWithIcon("Del", theme.DeleteIcon(), func() {
+			delBtn := widget.NewButtonWithIcon(locale.T("wizard.outbound.button_del"), theme.DeleteIcon(), func() {
 				parserConfig := getParserConfig(editPresenter.Model())
 				if parserConfig == nil {
 					return
@@ -305,7 +306,7 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 
 	refreshList()
 
-	addBtn := widget.NewButton("Add", func() {
+	addBtn := widget.NewButton(locale.T("wizard.outbound.button_add"), func() {
 		parserConfig := getParserConfig(editPresenter.Model())
 		if parserConfig == nil {
 			return
@@ -330,7 +331,7 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 	scroll := container.NewScroll(listContent)
 	scroll.SetMinSize(fyne.NewSize(0, 280))
 
-	top := container.NewBorder(nil, nil, nil, addBtn, widget.NewLabel("Outbounds:"))
+	top := container.NewBorder(nil, nil, nil, addBtn, widget.NewLabel(locale.T("wizard.outbound.configurator_label")))
 	return container.NewBorder(
 		top,
 		nil,

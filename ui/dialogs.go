@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 )
 
 // ShowError shows an error dialog to the user
@@ -55,7 +56,7 @@ func ShowDownloadFailedManual(window fyne.Window, title, downloadURL, targetDir 
 // This can be used for inline error display in forms
 func ShowErrorBanner(message string) *widget.Entry {
 	entry := widget.NewEntry()
-	entry.SetText("❌ " + message)
+	entry.SetText(locale.T("dialog.error_prefix") + message)
 	entry.Disable()
 	entry.Wrapping = fyne.TextWrapWord
 	return entry

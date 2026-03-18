@@ -22,14 +22,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"image/color"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"time"
-
-	"image/color"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -40,6 +39,8 @@ import (
 	"singbox-launcher/core"
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/locale"
+	"singbox-launcher/internal/platform"
 	internaldialogs "singbox-launcher/internal/dialogs"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
@@ -69,7 +70,7 @@ func downloadGetFreeJSON(presenter *wizardpresentation.WizardPresenter, force bo
 	}
 
 	binDir := filepath.Join(ac.FileService.ExecDir, "bin")
-	if err := os.MkdirAll(binDir, 0755); err != nil {
+	if err := os.MkdirAll(binDir, platform.DefaultDirMode); err != nil {
 		return fmt.Errorf("failed to create bin directory: %w", err)
 	}
 
@@ -104,7 +105,11 @@ func downloadGetFreeJSON(presenter *wizardpresentation.WizardPresenter, force bo
 		}
 		return fmt.Errorf("failed to download: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			debuglog.WarnLog("downloadGetFreeJSON: failed to close response body: %v", cerr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed: server returned status %d. Please try again later", resp.StatusCode)
@@ -133,7 +138,7 @@ func downloadGetFreeJSON(presenter *wizardpresentation.WizardPresenter, force bo
 	}
 
 	// Write to file
-	if err := os.WriteFile(targetPath, data, 0644); err != nil {
+	if err := os.WriteFile(targetPath, data, platform.DefaultFileMode); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
@@ -227,7 +232,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 	}
 
 	// Show loading indicator
-	loadingDialog := dialog.NewInformation("Loading", "Downloading get_free.json...", guiState.Window)
+	loadingDialog := dialog.NewInformation(locale.T("wizard.get_free.loading_title"), locale.T("wizard.get_free.loading_msg"), guiState.Window)
 	loadingDialog.Show()
 
 	// Download and load get_free.json in background
@@ -237,7 +242,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 				debuglog.ErrorLog("Panic in ShowGetFreeVPNDialog goroutine: %v", r)
 				fyne.Do(func() {
 					loadingDialog.Hide()
-					dialog.ShowError(fmt.Errorf("Произошла ошибка: %v", r), guiState.Window)
+					dialog.ShowError(fmt.Errorf("%s", locale.Tf("wizard.get_free.error_occurred", r)), guiState.Window)
 				})
 			}
 		}()
@@ -247,7 +252,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 			debuglog.ErrorLog("Failed to download get_free.json: %v", err)
 			fyne.Do(func() {
 				loadingDialog.Hide()
-				dialog.ShowError(fmt.Errorf("Не удалось скачать get_free.json:\n\n%w\n\nПроверьте подключение к интернету и попробуйте снова.", err), guiState.Window)
+				dialog.ShowError(fmt.Errorf("%s:\n\n%w", locale.T("wizard.get_free.error_download"), err), guiState.Window)
 			})
 			return
 		}
@@ -258,7 +263,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 			debuglog.ErrorLog("Failed to load get_free.json: %v", err)
 			fyne.Do(func() {
 				loadingDialog.Hide()
-				dialog.ShowError(fmt.Errorf("Не удалось загрузить get_free.json:\n\n%w\n\nПроверьте файл или попробуйте скачать заново.", err), guiState.Window)
+				dialog.ShowError(fmt.Errorf("%s:\n\n%w", locale.T("wizard.get_free.error_load"), err), guiState.Window)
 			})
 			return
 		}
@@ -268,7 +273,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 			debuglog.ErrorLog("getFreeData is nil after loading")
 			fyne.Do(func() {
 				loadingDialog.Hide()
-				dialog.ShowError(fmt.Errorf("Ошибка: данные не загружены"), guiState.Window)
+				dialog.ShowError(fmt.Errorf("%s", locale.T("wizard.get_free.error_data_not_loaded")), guiState.Window)
 			})
 			return
 		}
@@ -283,7 +288,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 			debuglog.ErrorLog("Failed to convert get_free.json to state: %v", err)
 			fyne.Do(func() {
 				loadingDialog.Hide()
-				dialog.ShowError(fmt.Errorf("Не удалось обработать get_free.json:\n\n%w", err), guiState.Window)
+				dialog.ShowError(fmt.Errorf("%s:\n\n%w", locale.T("wizard.get_free.error_process"), err), guiState.Window)
 			})
 			return
 		}
@@ -299,14 +304,14 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 			link := widget.NewHyperlink(linkStr, linkURL)
 
 			var freeVPNDialog dialog.Dialog
-			applyButton := widget.NewButton("Apply configuration", func() {
-				dialog.ShowConfirm("Apply configuration", "Applying this configuration will replace your current sources and rules. Continue?", func(confirmed bool) {
+			applyButton := widget.NewButton(locale.T("wizard.get_free.button_apply"), func() {
+				dialog.ShowConfirm(locale.T("wizard.get_free.dialog_apply_title"), locale.T("wizard.get_free.dialog_apply_confirm"), func(confirmed bool) {
 					if !confirmed {
 						return
 					}
 					if err := presenter.LoadState(stateFile); err != nil {
 						debuglog.ErrorLog("Failed to load state from get_free.json: %v", err)
-						dialog.ShowError(fmt.Errorf("Failed to apply configuration:\n\n%w", err), guiState.Window)
+						dialog.ShowError(fmt.Errorf("%s:\n\n%w", locale.T("wizard.get_free.error_apply"), err), guiState.Window)
 						return
 					}
 					debuglog.InfoLog("Successfully applied configuration from get_free.json")
@@ -314,7 +319,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 					if guiState.SourceURLEntry != nil {
 						guiState.SourceURLEntry.SetText("")
 					}
-					dialog.ShowInformation("Success", "Configuration from get_free.json has been applied successfully!", guiState.Window)
+					dialog.ShowInformation(locale.T("wizard.get_free.dialog_success_title"), locale.T("wizard.get_free.dialog_success_msg"), guiState.Window)
 					if freeVPNDialog != nil {
 						freeVPNDialog.Hide()
 					}
@@ -330,7 +335,7 @@ func ShowGetFreeVPNDialog(presenter *wizardpresentation.WizardPresenter) {
 				applyButton,
 			)
 
-			freeVPNDialog = internaldialogs.NewCustom("Get free VPN", mainContent, nil, "Close", guiState.Window)
+			freeVPNDialog = internaldialogs.NewCustom(locale.T("wizard.get_free.dialog_title"), mainContent, nil, locale.T("wizard.get_free.button_close"), guiState.Window)
 			freeVPNDialog.SetOnClosed(func() {
 				// Dialog closed
 			})

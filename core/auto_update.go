@@ -6,8 +6,10 @@ import (
 	"fyne.io/fyne/v2"
 
 	"singbox-launcher/core/config/parser"
+	"singbox-launcher/internal/ctxutil"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/platform"
 )
 
 // Constants for auto-update configuration
@@ -36,13 +38,10 @@ func (ac *AppController) startAutoUpdateLoop() {
 
 		// Check if auto-update is enabled
 		if !ac.StateService.IsAutoUpdateEnabled() {
-			// Auto-update is stopped, wait and check again
-			select {
-			case <-ac.ctx.Done():
+			if err := ctxutil.SleepWithContext(ac.ctx, 1*time.Minute); err != nil {
 				return
-			case <-time.After(1 * time.Minute):
-				continue
 			}
+			continue
 		}
 
 		// Calculate check interval from config
@@ -54,10 +53,15 @@ func (ac *AppController) startAutoUpdateLoop() {
 
 		debuglog.DebugLog("Auto-update: Calculated interval: %v (min: %v)", checkInterval, autoUpdateMinInterval)
 
-		// Check if update is needed immediately (before waiting)
-		// Use the same calculated interval to avoid duplicate function call
-		requiredInterval := checkInterval
+		if platform.IsSleeping() {
+			if err := ctxutil.SleepWithContext(ac.ctx, 1*time.Minute); err != nil {
+				return
+			}
+			continue
+		}
 
+		// Check if update is needed immediately (before waiting)
+		requiredInterval := checkInterval
 		needsUpdate, err := ac.shouldAutoUpdate(requiredInterval)
 		if err != nil {
 			debuglog.WarnLog("Auto-update: Failed to check if update needed: %v, skipping this check", err)
@@ -97,11 +101,8 @@ func (ac *AppController) startAutoUpdateLoop() {
 		}
 
 		// Wait for check interval before next check
-		select {
-		case <-ac.ctx.Done():
+		if err := ctxutil.SleepWithContext(ac.ctx, checkInterval); err != nil {
 			return
-		case <-time.After(checkInterval):
-			// Time for next check
 		}
 	}
 }
@@ -199,13 +200,9 @@ func (ac *AppController) attemptAutoUpdateWithRetries(retryInterval time.Duratio
 		debuglog.WarnLog("Auto-update: Failed (attempt %d/%d, total consecutive failures: %d): %v", attempt, maxRetries, currentAttempts, err)
 
 		if attempt < maxRetries {
-			// Wait before retry (except for last attempt)
 			debuglog.DebugLog("Auto-update: Retrying in %v...", retryInterval)
-			select {
-			case <-ac.ctx.Done():
+			if err := ctxutil.SleepWithContext(ac.ctx, retryInterval); err != nil {
 				return false
-			case <-time.After(retryInterval):
-				// Continue to next attempt
 			}
 		}
 	}

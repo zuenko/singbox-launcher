@@ -5,9 +5,9 @@
 //
 // SaveConfig выполняет следующие шаги:
 //  1. Проверяет, что ParserConfig заполнен (хотя бы один proxy с Source или Connections)
-//  2. Генерирует конфигурацию из текущей модели (BuildTemplateConfig; без ожидания парсинга outbounds)
-//  3. Сохраняет конфигурацию в файл с созданием бэкапа (SaveConfigWithBackup)
-//  4. Показывает диалог успешного сохранения; после сохранения в фоне запускается RunParserProcess (update from subscriptions)
+//  2. Гарантирует наличие outbounds (ensureOutboundsParsed: ждёт текущий парсинг или запускает ParseAndPreview)
+//  3. Генерирует конфигурацию из текущей модели (BuildTemplateConfig с пустыми @ParserSTART/@ParserEND маркерами)
+//  4. Заполняет маркеры outbounds из памяти (PopulateParserMarkers), валидирует через sing-box, пишет config.json
 //
 // Все операции выполняются асинхронно в отдельной горутине с обновлением прогресс-бара.
 //
@@ -21,16 +21,18 @@
 // Использует:
 //   - business/create_config.go - BuildTemplateConfig для генерации конфигурации
 //   - business/saver.go - SaveConfigWithBackup для сохранения файла
-//   - core.RunParserProcess - обновление конфига из подписок после сохранения (в фоне)
+//   - core/config.PopulateParserMarkers - заполнение маркеров @ParserSTART/@ParserEND из памяти
 package presentation
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
@@ -40,6 +42,7 @@ import (
 	"singbox-launcher/core/config"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 )
@@ -72,13 +75,13 @@ func (p *WizardPresenter) SaveConfig() {
 func (p *WizardPresenter) validateSaveInput() bool {
 	if strings.TrimSpace(p.model.ParserConfigJSON) == "" {
 		debuglog.WarnLog("SaveConfig: ParserConfig is empty")
-		dialog.ShowError(fmt.Errorf("ParserConfig is empty"), p.guiState.Window)
+		dialog.ShowError(errors.New(locale.T("wizard.save.error_config_empty")), p.guiState.Window)
 		return false
 	}
 	var pc config.ParserConfig
 	if err := json.Unmarshal([]byte(p.model.ParserConfigJSON), &pc); err != nil {
 		debuglog.WarnLog("SaveConfig: ParserConfig JSON invalid: %v", err)
-		dialog.ShowError(fmt.Errorf("ParserConfig is invalid: %w", err), p.guiState.Window)
+		dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.save.error_config_invalid"), err), p.guiState.Window)
 		return false
 	}
 	for _, px := range pc.ParserConfig.Proxies {
@@ -87,7 +90,7 @@ func (p *WizardPresenter) validateSaveInput() bool {
 		}
 	}
 	debuglog.WarnLog("SaveConfig: no proxy with source or connections in ParserConfig")
-	dialog.ShowError(fmt.Errorf("Add at least one source: use the Sources tab (Add) or add proxies in ParserConfig on the Outbounds tab."), p.guiState.Window)
+	dialog.ShowError(errors.New(locale.T("wizard.save.error_no_sources")), p.guiState.Window)
 	return false
 }
 
@@ -95,17 +98,26 @@ func (p *WizardPresenter) validateSaveInput() bool {
 func (p *WizardPresenter) checkSaveOperationState() bool {
 	if p.guiState.SaveInProgress {
 		debuglog.WarnLog("SaveConfig: Save operation already in progress")
-		dialog.ShowInformation("Saving", "Save operation already in progress... Please wait.", p.guiState.Window)
+		dialog.ShowInformation(locale.T("wizard.save.dialog_saving"), locale.T("wizard.save.dialog_in_progress"), p.guiState.Window)
 		return false
 	}
 	return true
 }
 
 // executeSaveOperation выполняет операцию сохранения в отдельной горутине.
-// Save does not wait for outbounds parsing: it writes current model state (existing GeneratedOutbounds or empty).
-// After save, config update from subscriptions is triggered in background (RunParserProcess).
+// Before building config, ensures outbounds are parsed (waits for in-progress parse or runs ParseAndPreview).
+// Then builds config, validates via sing-box check, and writes config.json with populated outbounds.
 func (p *WizardPresenter) executeSaveOperation() {
 	defer p.finalizeSaveOperation()
+
+	// Step 0: Ensure outbounds are parsed (0.0-0.15)
+	if err := p.ensureOutboundsParsed(); err != nil {
+		debuglog.ErrorLog("SaveConfig: ensureOutboundsParsed failed: %v", err)
+		p.UpdateUI(func() {
+			dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.save.error_parse_failed"), err), p.guiState.Window)
+		})
+		return
+	}
 
 	// Step 1: Build config from current model (0.2-0.4)
 	configText, err := p.buildConfigForSave()
@@ -113,19 +125,16 @@ func (p *WizardPresenter) executeSaveOperation() {
 		return
 	}
 
-	// Step 2: Save file (0.4-0.5)
+	// Step 2: Validate (по временному файлу) и запись config.json (0.4-0.6)
 	configPath, err := p.saveConfigFile(configText)
 	if err != nil {
 		return
 	}
 
-	// Step 3: Validate config with sing-box (0.5-0.6)
-	validationErr := p.validateConfigFile(configPath)
+	// Step 3: Save state.json and show success dialog (0.6-0.9)
+	p.saveStateAndShowSuccessDialog(configPath)
 
-	// Step 4: Save state.json and show success dialog (0.6-0.9)
-	p.saveStateAndShowSuccessDialog(configPath, validationErr)
-
-	// Step 5: Completion (0.9-1.0)
+	// Step 4: Completion (0.9-1.0)
 	p.completeSaveOperation()
 }
 
@@ -141,10 +150,61 @@ func (p *WizardPresenter) finalizeSaveOperation() {
 	}
 }
 
+const (
+	parseWaitTimeout      = 60 * time.Second
+	parseWaitPollInterval = 200 * time.Millisecond
+)
+
+// ensureOutboundsParsed guarantees GeneratedOutbounds are populated before save.
+// If parsing is already in progress (user triggered preview), waits for completion.
+// If outbounds are still empty, runs ParseAndPreview synchronously.
+// Called from executeSaveOperation which already runs in a goroutine.
+func (p *WizardPresenter) ensureOutboundsParsed() error {
+	if p.model.AutoParseInProgress {
+		debuglog.InfoLog("SaveConfig: waiting for in-progress parsing to complete")
+		p.UpdateSaveStatusText(locale.T("wizard.save.status_waiting"))
+		p.UpdateSaveProgress(0.05)
+
+		deadline := time.Now().Add(parseWaitTimeout)
+		for p.model.AutoParseInProgress {
+			if time.Now().After(deadline) {
+				return fmt.Errorf("subscription parsing timed out")
+			}
+			time.Sleep(parseWaitPollInterval)
+		}
+		debuglog.InfoLog("SaveConfig: in-progress parsing completed, outbounds: %d, endpoints: %d",
+			len(p.model.GeneratedOutbounds), len(p.model.GeneratedEndpoints))
+	}
+
+	if len(p.model.GeneratedOutbounds) > 0 || len(p.model.GeneratedEndpoints) > 0 {
+		return nil
+	}
+
+	debuglog.InfoLog("SaveConfig: no outbounds generated yet, running ParseAndPreview before save")
+	p.UpdateSaveStatusText(locale.T("wizard.save.status_parsing"))
+	p.UpdateSaveProgress(0.05)
+
+	p.model.AutoParseInProgress = true
+	configService := p.ConfigServiceAdapter()
+	if configService == nil {
+		p.model.AutoParseInProgress = false
+		return fmt.Errorf("config service not available")
+	}
+	if err := wizardbusiness.ParseAndPreview(p, configService); err != nil {
+		return fmt.Errorf("subscription parsing failed: %w", err)
+	}
+	p.RefreshOutboundOptions()
+
+	debuglog.InfoLog("SaveConfig: ParseAndPreview completed, outbounds: %d, endpoints: %d",
+		len(p.model.GeneratedOutbounds), len(p.model.GeneratedEndpoints))
+	p.UpdateSaveProgress(0.15)
+	return nil
+}
+
 // buildConfigForSave строит конфигурацию из шаблона и модели.
 // Возвращает текст конфигурации или ошибку.
 func (p *WizardPresenter) buildConfigForSave() (string, error) {
-	p.UpdateSaveStatusText("Building config...")
+	p.UpdateSaveStatusText(locale.T("wizard.save.status_building"))
 	p.UpdateSaveProgress(0.2)
 
 	// Check if save operation was cancelled
@@ -164,69 +224,109 @@ func (p *WizardPresenter) buildConfigForSave() (string, error) {
 	}
 
 	debuglog.InfoLog("SaveConfig: template config built successfully, length: %d", len(text))
-	p.UpdateSaveStatusText("Saving file...")
+	p.UpdateSaveStatusText(locale.T("wizard.save.status_preparing"))
 	p.UpdateSaveProgress(0.4)
 	return text, nil
 }
 
-// saveConfigFile сохраняет конфигурацию в файл с созданием бэкапа.
-// Возвращает путь к сохраненному файлу или ошибку.
+// saveConfigFile валидирует конфиг через sing-box (по временному файлу) и при успехе пишет config.json с бэкапом.
+// Возвращает путь к сохранённому файлу или ошибку (в т.ч. ошибку валидации).
 func (p *WizardPresenter) saveConfigFile(configText string) (string, error) {
-	// Check if save operation was cancelled
 	if !p.guiState.SaveInProgress {
 		debuglog.DebugLog("presenter_save: Save operation cancelled before saving file")
 		return "", fmt.Errorf("save operation cancelled")
 	}
 
+	p.UpdateSaveStatusText(locale.T("wizard.save.status_validating"))
+	p.UpdateSaveProgress(0.45)
+
 	ac := core.GetController()
-	fileService := &wizardbusiness.FileServiceAdapter{
-		FileService: ac.FileService,
+	if ac == nil || ac.FileService == nil {
+		debuglog.WarnLog("SaveConfig: controller or FileService not available")
+		p.UpdateUI(func() {
+			dialog.ShowError(errors.New(locale.T("wizard.save.error_controller")), p.guiState.Window)
+		})
+		return "", fmt.Errorf("controller not available")
 	}
-	debuglog.InfoLog("SaveConfig: saving config file")
-	path, err := wizardbusiness.SaveConfigWithBackup(fileService, configText)
+
+	fileService := &wizardbusiness.FileServiceAdapter{FileService: ac.FileService}
+
+	populateCheckText := func(text string) (string, error) {
+		outboundsContent := strings.Join(p.model.GeneratedOutbounds, "\n")
+		endpointsContent := strings.Join(p.model.GeneratedEndpoints, ",\n")
+		if outboundsContent == "" && endpointsContent == "" {
+			return text, nil
+		}
+		return config.PopulateParserMarkers(text, outboundsContent, endpointsContent)
+	}
+
+	debuglog.InfoLog("SaveConfig: validating then saving config file")
+	path, err := wizardbusiness.SaveConfigWithBackup(fileService, configText, populateCheckText)
 	if err != nil {
 		debuglog.ErrorLog("SaveConfig: SaveConfigWithBackup failed: %v", err)
 		p.UpdateUI(func() {
-			dialog.ShowError(err, p.guiState.Window)
+			p.showSaveErrorDialog(err)
 		})
 		return "", err
 	}
 
 	debuglog.InfoLog("SaveConfig: config saved to %s", path)
-	p.UpdateSaveStatusText("Validating...")
-	p.UpdateSaveProgress(0.5)
+	p.UpdateSaveStatusText(locale.T("wizard.save.status_saving_state"))
+	p.UpdateSaveProgress(0.6)
 	return path, nil
 }
 
-// validateConfigFile валидирует сохраненный конфиг с помощью sing-box.
-// Возвращает ошибку валидации, если она есть.
-func (p *WizardPresenter) validateConfigFile(configPath string) error {
-	// Check if save operation was cancelled
-	if !p.guiState.SaveInProgress {
-		debuglog.DebugLog("presenter_save: Save operation cancelled before validation")
-		return fmt.Errorf("save operation cancelled")
+// showSaveErrorDialog показывает ошибку сохранения; при ValidationError — диалог с кнопкой «Копировать конфиг».
+func (p *WizardPresenter) showSaveErrorDialog(err error) {
+	var valErr *wizardbusiness.ValidationError
+	if errors.As(err, &valErr) && valErr.ConfigText != "" {
+		p.showValidationErrorDialog(valErr)
+		return
 	}
+	dialog.ShowError(err, p.guiState.Window)
+}
 
-	ac := core.GetController()
-	singBoxPath := ""
-	if ac != nil && ac.FileService != nil {
-		singBoxPath = ac.FileService.SingboxPath
+// showValidationErrorDialog показывает ошибку валидации и кнопку «Копировать конфиг» в буфер обмена.
+func (p *WizardPresenter) showValidationErrorDialog(valErr *wizardbusiness.ValidationError) {
+	if p.guiState.Window == nil {
+		return
 	}
+	msg := valErr.Error()
+	messageLabel := widget.NewLabel(msg)
+	messageLabel.Wrapping = fyne.TextWrapWord
 
-	validationErr := wizardbusiness.ValidateConfigWithSingBox(configPath, singBoxPath)
-	p.UpdateSaveStatusText("Saving state...")
-	p.UpdateSaveProgress(0.6)
-	return validationErr
+	var d dialog.Dialog
+	copyBtn := widget.NewButton(locale.T("wizard.save.button_copy"), func() {
+		if app := fyne.CurrentApp(); app != nil && app.Clipboard() != nil {
+			app.Clipboard().SetContent(valErr.ConfigText)
+			if p.guiState.Window != nil {
+				dialogs.ShowAutoHideInfo(app, p.guiState.Window, locale.T("wizard.save.dialog_copied_title"), locale.T("wizard.save.dialog_copied_message"))
+			}
+		}
+	})
+	copyBtn.Importance = widget.MediumImportance
+	closeBtn := widget.NewButton(locale.T("dialog.close"), func() {
+		if d != nil {
+			d.Hide()
+		}
+	})
+	closeBtn.Importance = widget.HighImportance
+
+	buttons := container.NewHBox(layout.NewSpacer(), copyBtn, closeBtn)
+	content := container.NewBorder(nil, buttons, nil, nil, messageLabel)
+	d = dialog.NewCustomWithoutButtons(locale.T("wizard.save.dialog_validation_failed"), content, p.guiState.Window)
+	d.Show()
 }
 
 // saveStateAndShowSuccessDialog сохраняет state.json и показывает диалог успешного сохранения.
-func (p *WizardPresenter) saveStateAndShowSuccessDialog(configPath string, validationErr error) {
+// Вызывается только после успешной валидации и записи config.json, поэтому диалог всегда с «Validation: Passed».
+func (p *WizardPresenter) saveStateAndShowSuccessDialog(configPath string) {
 	// Check if save operation was cancelled
 	if !p.guiState.SaveInProgress {
 		debuglog.DebugLog("presenter_save: Save operation cancelled before saving state")
 		return
 	}
-	p.UpdateSaveStatusText("Saving state...")
+	p.UpdateSaveStatusText(locale.T("wizard.save.status_saving_state"))
 	p.UpdateSaveProgress(0.7)
 
 	ac := core.GetController()
@@ -252,62 +352,20 @@ func (p *WizardPresenter) saveStateAndShowSuccessDialog(configPath string, valid
 		// Логируем итоговую информацию о сохранении
 		debuglog.InfoLog("SaveConfig: completed - config.json=%s, state.json=%s", configPath, statePath)
 
-		// Перезапускаем сервер, если он запущен
-		ac := core.GetController()
-		if ac != nil && ac.RunningState != nil && ac.RunningState.IsRunning() {
-			debuglog.InfoLog("SaveConfig: restarting sing-box server after config save")
-			// Останавливаем сервер
-			core.StopSingBoxProcess()
-			// Ждем немного, чтобы процесс корректно остановился
-			go func() {
-				<-time.After(500 * time.Millisecond)
-				// Проверяем, что сервер остановился
-				ticker := time.NewTicker(100 * time.Millisecond)
-				defer ticker.Stop()
-				timeout := time.After(2 * time.Second)
-				for {
-					select {
-					case <-timeout:
-						debuglog.WarnLog("SaveConfig: timeout waiting for sing-box to stop")
-						return
-					case <-ticker.C:
-						if !ac.RunningState.IsRunning() {
-							// Сервер остановлен, запускаем заново
-							debuglog.InfoLog("SaveConfig: sing-box stopped, starting again")
-							core.StartSingBoxProcess(true) // skipRunningCheck = true
-							return
-						}
-					}
-				}
-			}()
-		}
-
-		// Show success dialog
-		p.showSaveSuccessDialog(configPath, validationErr)
+		p.showSaveSuccessDialog(configPath)
 	})
-	p.UpdateSaveStatusText("Done")
+	p.UpdateSaveStatusText(locale.T("wizard.save.status_done"))
 	p.UpdateSaveProgress(0.9)
 }
 
-// showSaveSuccessDialog показывает диалог успешного сохранения.
-func (p *WizardPresenter) showSaveSuccessDialog(configPath string, validationErr error) {
-	// Build message with validation status
-	message := fmt.Sprintf("Config written to %s", configPath)
-	if validationErr != nil {
-		message += fmt.Sprintf("\n\n⚠️ Validation warning:\n%v\n\nPlease check the config manually.", validationErr)
-	} else {
-		message += "\n\n✅ Validation: Passed"
-	}
-
-	// Determine dialog title
-	title := "Config Saved"
-	if validationErr != nil {
-		title = "Config Saved (with warnings)"
-	}
+// showSaveSuccessDialog показывает диалог успешного сохранения (вызывается только после успешной валидации).
+func (p *WizardPresenter) showSaveSuccessDialog(configPath string) {
+	message := locale.Tf("wizard.save.dialog_success_message", configPath)
+	title := locale.T("wizard.save.dialog_success_title")
 
 	// Create dialog with OK button that closes both dialog and wizard
 	var d dialog.Dialog
-	okButton := widget.NewButton("OK", func() {
+	okButton := widget.NewButton(locale.T("dialog.ok"), func() {
 		// Close dialog first
 		if d != nil {
 			d.Hide()
@@ -331,10 +389,10 @@ func (p *WizardPresenter) showSaveSuccessDialog(configPath string, validationErr
 }
 
 // completeSaveOperation завершает операцию сохранения с небольшой задержкой.
-// Triggers config update from subscriptions in background (same as "Update" on main tab).
+// Config.json already contains outbounds populated via PopulateParserMarkers —
+// no immediate parser run needed. Subscriptions will refresh on the next auto-update cycle.
 func (p *WizardPresenter) completeSaveOperation() {
-	debuglog.InfoLog("SaveConfig: triggering config update from subscriptions (background)")
-	go core.RunParserProcess()
+	debuglog.InfoLog("SaveConfig: save complete, config.json contains populated outbounds")
 	<-time.After(100 * time.Millisecond)
 	p.UpdateSaveProgress(1.0)
 	<-time.After(200 * time.Millisecond)

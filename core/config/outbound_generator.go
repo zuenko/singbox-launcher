@@ -33,9 +33,9 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"log"
-	"regexp"
 	"strings"
+
+	"singbox-launcher/internal/debuglog"
 )
 
 // OutboundGenerationResult is the return value of GenerateOutboundsFromParserConfig: slice of JSON strings
@@ -273,11 +273,11 @@ func GenerateSelectorWithFilteredAddOutbounds(
 ) (string, error) {
 	// Filter nodes based on filters (version 3)
 	filterMap := outboundConfig.Filters
-	log.Printf("Parser: GenerateSelectorWithFilteredAddOutbounds for '%s' (type: %s): filters=%v, addOutbounds=%v, allNodes=%d",
+	debuglog.DebugLog("Parser: GenerateSelectorWithFilteredAddOutbounds for '%s' (type: %s): filters=%v, addOutbounds=%v, allNodes=%d",
 		outboundConfig.Tag, outboundConfig.Type, filterMap, outboundConfig.AddOutbounds, len(allNodes))
 
 	filteredNodes := filterNodesForSelector(allNodes, filterMap)
-	log.Printf("Parser: filterNodesForSelector returned %d nodes for '%s'", len(filteredNodes), outboundConfig.Tag)
+	debuglog.DebugLog("Parser: filterNodesForSelector returned %d nodes for '%s'", len(filteredNodes), outboundConfig.Tag)
 
 	// Build outbounds list with unique tags
 	// Pre-allocate with estimated capacity to reduce allocations
@@ -289,11 +289,11 @@ func GenerateSelectorWithFilteredAddOutbounds(
 	// Add addOutbounds first (version 3) - only valid dynamic ones + all constants
 	addOutboundsList := outboundConfig.AddOutbounds
 	if len(addOutboundsList) > 0 {
-		log.Printf("Parser: Processing %d addOutbounds for selector '%s'", len(addOutboundsList), outboundConfig.Tag)
+		debuglog.DebugLog("Parser: Processing %d addOutbounds for selector '%s'", len(addOutboundsList), outboundConfig.Tag)
 		for _, tag := range addOutboundsList {
 			if seenTags[tag] {
 				duplicateCountInSelector++
-				log.Printf("Parser: Skipping duplicate tag '%s' in addOutbounds for selector '%s'", tag, outboundConfig.Tag)
+				debuglog.DebugLog("Parser: Skipping duplicate tag '%s' in addOutbounds for selector '%s'", tag, outboundConfig.Tag)
 				continue
 			}
 
@@ -302,42 +302,42 @@ func GenerateSelectorWithFilteredAddOutbounds(
 				if addInfo.isValid {
 					outboundsList = append(outboundsList, tag)
 					seenTags[tag] = true
-					log.Printf("Parser: Adding valid dynamic addOutbound '%s' to selector '%s'", tag, outboundConfig.Tag)
+					debuglog.DebugLog("Parser: Adding valid dynamic addOutbound '%s' to selector '%s'", tag, outboundConfig.Tag)
 				} else {
-					log.Printf("Parser: Skipping invalid (empty) dynamic addOutbound '%s' for selector '%s'", tag, outboundConfig.Tag)
+					debuglog.DebugLog("Parser: Skipping invalid (empty) dynamic addOutbound '%s' for selector '%s'", tag, outboundConfig.Tag)
 				}
 			} else {
 				// This is a constant from template (direct-out, auto-proxy-out, etc.)
 				// Constants always exist, always add them
 				outboundsList = append(outboundsList, tag)
 				seenTags[tag] = true
-				log.Printf("Parser: Adding constant addOutbound '%s' to selector '%s'", tag, outboundConfig.Tag)
+				debuglog.DebugLog("Parser: Adding constant addOutbound '%s' to selector '%s'", tag, outboundConfig.Tag)
 			}
 		}
 	}
 
 	// Add filtered node tags (without duplicates)
-	log.Printf("Parser: Processing %d filtered nodes for selector '%s'", len(filteredNodes), outboundConfig.Tag)
+	debuglog.DebugLog("Parser: Processing %d filtered nodes for selector '%s'", len(filteredNodes), outboundConfig.Tag)
 	for _, node := range filteredNodes {
 		if !seenTags[node.Tag] {
 			outboundsList = append(outboundsList, node.Tag)
 			seenTags[node.Tag] = true
 		} else {
 			duplicateCountInSelector++
-			log.Printf("Parser: Skipping duplicate tag '%s' in filtered nodes for selector '%s'", node.Tag, outboundConfig.Tag)
+			debuglog.DebugLog("Parser: Skipping duplicate tag '%s' in filtered nodes for selector '%s'", node.Tag, outboundConfig.Tag)
 		}
 	}
 
 	// Check if we have any outbounds at all (addOutbounds + filteredNodes)
 	if len(outboundsList) == 0 {
-		log.Printf("Parser: No outbounds (neither addOutbounds nor filteredNodes) for %s '%s'", outboundConfig.Type, outboundConfig.Tag)
+		debuglog.DebugLog("Parser: No outbounds (neither addOutbounds nor filteredNodes) for %s '%s'", outboundConfig.Type, outboundConfig.Tag)
 		return "", nil
 	}
 
 	if duplicateCountInSelector > 0 {
-		log.Printf("Parser: Removed %d duplicate tags from selector '%s' outbounds list", duplicateCountInSelector, outboundConfig.Tag)
+		debuglog.DebugLog("Parser: Removed %d duplicate tags from selector '%s' outbounds list", duplicateCountInSelector, outboundConfig.Tag)
 	}
-	log.Printf("Parser: Selector '%s' will have %d unique outbounds", outboundConfig.Tag, len(outboundsList))
+	debuglog.DebugLog("Parser: Selector '%s' will have %d unique outbounds", outboundConfig.Tag, len(outboundsList))
 
 	// Determine default - only if preferredDefault is specified in config (version 3)
 	preferredDefaultMap := outboundConfig.PreferredDefault
@@ -493,15 +493,15 @@ func logDuplicateTagIfExists(outboundsInfo map[string]*outboundInfo, tag, kind s
 		if existingInfo.isLocal {
 			selectorType = "local"
 		}
-		log.Printf("GenerateOutboundsFromParserConfig: Warning: Duplicate tag '%s' detected. "+
+		debuglog.WarnLog("GenerateOutboundsFromParserConfig: Duplicate tag '%s' detected. "+
 			"Local selector from source %d will overwrite %s selector. This may cause unexpected behavior.",
 			tag, sourceIndex, selectorType)
 	} else {
 		if existingInfo.isLocal {
-			log.Printf("GenerateOutboundsFromParserConfig: Warning: Duplicate tag '%s' detected. "+
+			debuglog.WarnLog("GenerateOutboundsFromParserConfig: Duplicate tag '%s' detected. "+
 				"Global selector will overwrite local selector. This may cause unexpected behavior.", tag)
 		} else {
-			log.Printf("GenerateOutboundsFromParserConfig: Warning: Duplicate tag '%s' detected. "+
+			debuglog.WarnLog("GenerateOutboundsFromParserConfig: Duplicate tag '%s' detected. "+
 				"Multiple global selectors with same tag. This may cause unexpected behavior.", tag)
 		}
 	}
@@ -567,7 +567,7 @@ func computeOutboundValidity(outboundsInfo map[string]*outboundInfo, progressCal
 				unprocessed = append(unprocessed, tag)
 			}
 		}
-		log.Printf("GenerateOutboundsFromParserConfig: Warning: Not all outbounds processed (processed: %d, total: %d). "+
+		debuglog.WarnLog("GenerateOutboundsFromParserConfig: Not all outbounds processed (processed: %d, total: %d). "+
 			"Possible cycles in dependency graph. Unprocessed outbounds: %v",
 			processedCount, len(outboundsInfo), unprocessed)
 	}
@@ -602,13 +602,13 @@ func generateSelectorJSONs(
 			info, exists := outboundsInfo[outboundConfig.Tag]
 			if !exists || !info.isValid {
 				if exists && !info.isValid {
-					log.Printf("GenerateOutboundsFromParserConfig: Skipping empty local selector '%s'", outboundConfig.Tag)
+					debuglog.DebugLog("GenerateOutboundsFromParserConfig: Skipping empty local selector '%s'", outboundConfig.Tag)
 				}
 				continue
 			}
 			selectorJSON, err := GenerateSelectorWithFilteredAddOutbounds(sourceNodes, outboundConfig, outboundsInfo)
 			if err != nil {
-				log.Printf("GenerateOutboundsFromParserConfig: Warning: Failed to generate local selector %s for source %d: %v",
+				debuglog.WarnLog("GenerateOutboundsFromParserConfig: Failed to generate local selector %s for source %d: %v",
 					outboundConfig.Tag, i+1, err)
 				continue
 			}
@@ -623,13 +623,13 @@ func generateSelectorJSONs(
 		info, exists := outboundsInfo[outboundConfig.Tag]
 		if !exists || !info.isValid {
 			if exists && !info.isValid {
-				log.Printf("GenerateOutboundsFromParserConfig: Skipping empty global selector '%s'", outboundConfig.Tag)
+				debuglog.DebugLog("GenerateOutboundsFromParserConfig: Skipping empty global selector '%s'", outboundConfig.Tag)
 			}
 			continue
 		}
 		selectorJSON, err := GenerateSelectorWithFilteredAddOutbounds(allNodes, outboundConfig, outboundsInfo)
 		if err != nil {
-			log.Printf("GenerateOutboundsFromParserConfig: Warning: Failed to generate global selector %s: %v",
+			debuglog.WarnLog("GenerateOutboundsFromParserConfig: Failed to generate global selector %s: %v",
 				outboundConfig.Tag, err)
 			continue
 		}
@@ -668,7 +668,7 @@ func GenerateOutboundsFromParserConfig(
 
 		nodesFromSource, err := loadNodesFunc(proxySource, tagCounts, progressCallback, i, totalSources)
 		if err != nil {
-			log.Printf("GenerateOutboundsFromParserConfig: Error processing source %d/%d: %v", i+1, totalSources, err)
+			debuglog.ErrorLog("GenerateOutboundsFromParserConfig: Error processing source %d/%d: %v", i+1, totalSources, err)
 			continue
 		}
 
@@ -696,7 +696,7 @@ func GenerateOutboundsFromParserConfig(
 		if node.Scheme == "wireguard" {
 			epJSON, err := GenerateEndpointJSON(node)
 			if err != nil {
-				log.Printf("GenerateOutboundsFromParserConfig: Warning: Failed to generate JSON for endpoint %s: %v", node.Tag, err)
+				debuglog.WarnLog("GenerateOutboundsFromParserConfig: Failed to generate JSON for endpoint %s: %v", node.Tag, err)
 				continue
 			}
 			endpointsJSON = append(endpointsJSON, epJSON)
@@ -704,7 +704,7 @@ func GenerateOutboundsFromParserConfig(
 		} else {
 			nodeJSON, err := GenerateNodeJSON(node)
 			if err != nil {
-				log.Printf("GenerateOutboundsFromParserConfig: Warning: Failed to generate JSON for node %s: %v", node.Tag, err)
+				debuglog.WarnLog("GenerateOutboundsFromParserConfig: Failed to generate JSON for node %s: %v", node.Tag, err)
 				continue
 			}
 			selectorsJSON = append(selectorsJSON, nodeJSON)
@@ -727,150 +727,4 @@ func GenerateOutboundsFromParserConfig(
 	}, nil
 }
 
-// Helper functions for selector filters (ParserConfig filters: tag, host, scheme, label, etc.).
-// Supports literal match, negation !literal, regex /pattern/i, negation regex !/pattern/i.
-
-// filterNodesForSelector returns nodes that match the filter. filter may be nil (all nodes),
-// a single map (AND of key/pattern), or a slice of maps (OR of maps). Empty map = no filter.
-func filterNodesForSelector(allNodes []*ParsedNode, filter interface{}) []*ParsedNode {
-	if filter == nil {
-		return allNodes // No filter, return all nodes
-	}
-
-	// Check if filter is an empty map - treat as no filter
-	if filterMap, ok := filter.(map[string]interface{}); ok {
-		if len(filterMap) == 0 {
-			return allNodes // Empty filter object means no filter, return all nodes
-		}
-	}
-
-	filtered := make([]*ParsedNode, 0)
-
-	// Check if filter is an array
-	if filterArray, ok := filter.([]interface{}); ok {
-		// OR between filter objects
-		for _, node := range allNodes {
-			for _, filterObj := range filterArray {
-				if filterMap, ok := filterObj.(map[string]interface{}); ok {
-					filterStrMap := convertFilterToStringMap(filterMap)
-					if matchesFilter(node, filterStrMap) {
-						filtered = append(filtered, node)
-						break // Node matched at least one filter, add it
-					}
-				}
-			}
-		}
-	} else if filterMap, ok := filter.(map[string]interface{}); ok {
-		// Single filter object (AND between keys)
-		filterStrMap := convertFilterToStringMap(filterMap)
-		for _, node := range allNodes {
-			if matchesFilter(node, filterStrMap) {
-				filtered = append(filtered, node)
-			}
-		}
-	}
-
-	return filtered
-}
-
-// convertFilterToStringMap flattens filter map to string values for matching (non-string values are skipped).
-func convertFilterToStringMap(filter map[string]interface{}) map[string]string {
-	result := make(map[string]string)
-	for k, v := range filter {
-		if str, ok := v.(string); ok {
-			result[k] = str
-		}
-	}
-	return result
-}
-
-// matchesFilter returns true if the node has matching values for every key in filter (AND); each value is checked with matchesPattern.
-func matchesFilter(node *ParsedNode, filter map[string]string) bool {
-	for key, pattern := range filter {
-		value := getNodeValue(node, key)
-		if !matchesPattern(value, pattern) {
-			return false // At least one key doesn't match
-		}
-	}
-	return true // All keys match
-}
-
-// getNodeValue returns the node field used in filters: tag, host, label, scheme, fragment (alias for label), comment.
-func getNodeValue(node *ParsedNode, key string) string {
-	switch key {
-	case "tag":
-		return node.Tag
-	case "host":
-		return node.Server
-	case "label":
-		return node.Label
-	case "scheme":
-		return node.Scheme
-	case "fragment":
-		return node.Label // fragment == label
-	case "comment":
-		return node.Comment
-	default:
-		return ""
-	}
-}
-
-// matchesPattern matches value against pattern: literal, !literal, /regex/i, !/regex/i. Case-insensitive for regex.
-func matchesPattern(value, pattern string) bool {
-	// Negation literal: !literal
-	if strings.HasPrefix(pattern, "!") && !strings.HasPrefix(pattern, "!/") {
-		literal := strings.TrimPrefix(pattern, "!")
-		return value != literal
-	}
-
-	// Negation regex: !/regex/i
-	if strings.HasPrefix(pattern, "!/") && strings.HasSuffix(pattern, "/i") {
-		regexStr := strings.TrimPrefix(pattern, "!/")
-		regexStr = strings.TrimSuffix(regexStr, "/i")
-		re, err := regexp.Compile("(?i)" + regexStr)
-		if err != nil {
-			log.Printf("Parser: Invalid regex pattern %s: %v", pattern, err)
-			return false
-		}
-		return !re.MatchString(value)
-	}
-
-	// Regex: /regex/i
-	if strings.HasPrefix(pattern, "/") && strings.HasSuffix(pattern, "/i") {
-		regexStr := strings.TrimPrefix(pattern, "/")
-		regexStr = strings.TrimSuffix(regexStr, "/i")
-		re, err := regexp.Compile("(?i)" + regexStr)
-		if err != nil {
-			log.Printf("Parser: Invalid regex pattern %s: %v", pattern, err)
-			return false
-		}
-		return re.MatchString(value)
-	}
-
-	// Literal match
-	return value == pattern
-}
-
-// PreviewSelectorNodes returns nodes that match outboundConfig.Filters and the default tag
-// based on outboundConfig.PreferredDefault. It is used by UI layers to build a selector
-// preview that is consistent with the real selector generation logic.
-//
-// allNodes must be the same set of nodes that will be used for selector generation
-// (i.e. result of the same LoadNodesFromSource pipeline that GenerateOutboundsFromParserConfig uses).
-func PreviewSelectorNodes(allNodes []*ParsedNode, outboundConfig OutboundConfig) ([]*ParsedNode, string) {
-	filtered := filterNodesForSelector(allNodes, outboundConfig.Filters)
-
-	defaultTag := ""
-	if len(outboundConfig.PreferredDefault) > 0 {
-		preferredFilter := convertFilterToStringMap(outboundConfig.PreferredDefault)
-		for _, node := range filtered {
-			if matchesFilter(node, preferredFilter) {
-				defaultTag = node.Tag
-				break
-			}
-		}
-	}
-
-	return filtered, defaultTag
-}
 

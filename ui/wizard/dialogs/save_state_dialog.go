@@ -25,6 +25,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	internaldialogs "singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
 )
@@ -47,10 +48,10 @@ func ShowSaveStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 
 	// Input fields
 	idEntry := widget.NewEntry()
-	idEntry.SetPlaceHolder("Enter state ID (a-z, A-Z, 0-9, -, _)")
+	idEntry.SetPlaceHolder(locale.T("wizard.save_state.placeholder_id"))
 
 	commentEntry := widget.NewMultiLineEntry()
-	commentEntry.SetPlaceHolder("Comment (optional)")
+	commentEntry.SetPlaceHolder(locale.T("wizard.save_state.placeholder_comment"))
 	commentEntry.Wrapping = fyne.TextWrapWord
 
 	// Предупреждение о существующем ID
@@ -61,7 +62,7 @@ func ShowSaveStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 	validateID := func() (string, error) {
 		id := idEntry.Text
 		if id == "" {
-			return "", fmt.Errorf("ID cannot be empty")
+			return "", fmt.Errorf("%s", locale.T("wizard.save_state.error_empty"))
 		}
 		if err := wizardmodels.ValidateStateID(id); err != nil {
 			return "", err
@@ -83,7 +84,7 @@ func ShowSaveStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 			return
 		}
 		if checkIDExists(id) {
-			warningLabel.SetText("State with this ID already exists. It will be overwritten.")
+			warningLabel.SetText(locale.T("wizard.save_state.warning_exists"))
 			warningLabel.Show()
 		} else {
 			warningLabel.Hide()
@@ -92,7 +93,7 @@ func ShowSaveStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 
 	// Buttons
 	var dialogWindow dialog.Dialog
-	saveButton := widget.NewButton("Save", func() {
+	saveButton := widget.NewButton(locale.T("wizard.save_state.button_save"), func() {
 		id, err := validateID()
 		if err != nil {
 			dialog.ShowError(err, guiState.Window)
@@ -113,9 +114,9 @@ func ShowSaveStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 
 	// Fields container
 	fieldsContainer := container.NewVBox(
-		widget.NewLabel("State ID:"),
+		widget.NewLabel(locale.T("wizard.save_state.label_id")),
 		idEntry,
-		widget.NewLabel("Comment:"),
+		widget.NewLabel(locale.T("wizard.save_state.label_comment")),
 		container.NewScroll(commentEntry),
 		warningLabel,
 	)
@@ -130,7 +131,7 @@ func ShowSaveStateDialog(presenter *wizardpresentation.WizardPresenter, onResult
 	originalOnTypedKey := guiState.Window.Canvas().OnTypedKey()
 
 	// Create dialog with simplified API (cancelButton через dismissText, ESC обрабатывается автоматически)
-	dialogWindow = internaldialogs.NewCustom("Save State", fieldsContainer, buttonsContainer, "Cancel", guiState.Window)
+	dialogWindow = internaldialogs.NewCustom(locale.T("wizard.save_state.title"), fieldsContainer, buttonsContainer, locale.T("wizard.save_state.button_cancel"), guiState.Window)
 	dialogWindow.Resize(fyne.NewSize(400, 300))
 
 	// Обработчик для cancelButton через dismissText и ESC

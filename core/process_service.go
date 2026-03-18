@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"singbox-launcher/core/config"
+	"singbox-launcher/internal/ctxutil"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 	"singbox-launcher/internal/process"
 )
@@ -29,10 +31,6 @@ const (
 	// before forcing kill
 	gracefulShutdownTimeout = 2 * time.Second
 
-	// Privileged start (macOS TUN): script and PID file names, pkill pattern for "already running" kill
-	privilegedScriptName   = "start-singbox-privileged.sh"
-	privilegedPidFileName  = "singbox.pid"
-	privilegedPkillPattern = "sing-box run|start-singbox-privileged"
 )
 
 // ProcessService encapsulates sing-box process lifecycle management.
@@ -49,7 +47,7 @@ func NewProcessService(ac *AppController) *ProcessService {
 
 // buildPrivilegedKillByPatternScript returns the shell command to kill privileged script and sing-box by process name pattern (for "already running" dialog on macOS).
 func buildPrivilegedKillByPatternScript() string {
-	return "pkill -TERM -f " + strconv.Quote(privilegedPkillPattern) + " 2>/dev/null"
+	return "pkill -TERM -f " + strconv.Quote(platform.PrivilegedPkillPattern) + " 2>/dev/null"
 }
 
 // Start launches the sing-box process. Behavior is identical to the previous StartSingBoxProcess.
@@ -58,7 +56,7 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 	ac := svc.ac
 	if ac.RunningState.IsRunning() {
 		if ac.UIService != nil && ac.UIService.Application != nil && ac.UIService.MainWindow != nil {
-			dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Info", "Sing-Box already running (according to internal state).")
+			dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, locale.T("core.info_title"), locale.T("core.already_running"))
 		}
 		return
 	}
@@ -78,7 +76,8 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 	if suggestion := platform.CheckAndSuggestCapabilities(ac.FileService.SingboxPath); suggestion != "" {
 		debuglog.WarnLog("startSingBox: Capabilities check failed: %s", suggestion)
 		if ac.UIService != nil && ac.UIService.MainWindow != nil {
-			dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Linux capabilities required\n\n%s", suggestion))
+			cmd := platform.GetSetCapCommand(ac.FileService.SingboxPath)
+			dialogs.ShowLinuxCapabilitiesRequired(ac.UIService.MainWindow, locale.T("error.linux_capabilities"), locale.T("error.linux_capabilities")+"\n\n"+suggestion, cmd)
 		}
 		return
 	}
@@ -153,8 +152,7 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 }
 
 // startSingBoxPrivileged starts sing-box with elevated privileges on macOS (for TUN).
-// The script echoes its PID and sing-box's PID to stdout, runs sing-box in a subshell in background, then wait.
-// On Stop we kill both PIDs explicitly (no process group).
+// Скрипт создаётся в platform; оркестрация и состояние — здесь.
 func (svc *ProcessService) startSingBoxPrivileged() error {
 	ac := svc.ac
 	binDir := platform.GetBinDir(ac.FileService.ExecDir)
@@ -164,19 +162,10 @@ func (svc *ProcessService) startSingBoxPrivileged() error {
 		ac.FileService.CheckAndRotateLogFile(logPath)
 	}
 
-	scriptPath := filepath.Join(binDir, privilegedScriptName)
-	pidFilePath := filepath.Join(binDir, privilegedPidFileName)
+	scriptPath := filepath.Join(binDir, platform.PrivilegedScriptName)
+	pidFilePath := filepath.Join(binDir, platform.PrivilegedPidFileName)
 
-	// Script: echo script PID, run sing-box in subshell (redirect to log so nothing goes to pipe), echo sing-box PID, then exec and wait
-	scriptBody := fmt.Sprintf(`#!/bin/sh
-echo $$
-cd %s
-%s run -c %s >> %s 2>&1 &
-echo $!
-exec 1>>%s 2>&1
-wait
-`, strconv.Quote(binDir), strconv.Quote(ac.FileService.SingboxPath), strconv.Quote(configName), strconv.Quote(logPath), strconv.Quote(logPath))
-	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0700); err != nil {
+	if err := platform.WritePrivilegedStartScript(scriptPath, pidFilePath, binDir, ac.FileService.SingboxPath, configName, logPath); err != nil {
 		return fmt.Errorf("failed to write script %s: %w", scriptPath, err)
 	}
 
@@ -210,7 +199,7 @@ wait
 		ac.StoppedByUser = false
 		ac.StateService.ResetAutoUpdateFailedAttempts() // Reset so auto-update can retry after successful Start
 		ac.CmdMutex.Unlock()
-		_ = os.WriteFile(pidFilePath, []byte(fmt.Sprintf("%d\n%d", scriptPID, singboxPID)), 0644)
+		_ = os.WriteFile(pidFilePath, []byte(fmt.Sprintf("%d\n%d", scriptPID, singboxPID)), platform.DefaultFileMode)
 		debuglog.DebugLog("startSingBox: Sing-Box started with privileges (script PID=%d, sing-box PID=%d).", scriptPID, singboxPID)
 		platform.WaitForPrivilegedExit(scriptPID)
 		svc.onPrivilegedScriptExited()
@@ -248,18 +237,30 @@ func (svc *ProcessService) onPrivilegedScriptExited() {
 		debuglog.InfoLog("onPrivilegedScriptExited: Stopped by user.")
 		return
 	}
+	if ac.RestartRequestedByUser {
+		ac.RestartRequestedByUser = false
+		ac.ConsecutiveCrashAttempts = 0
+		debuglog.InfoLog("onPrivilegedScriptExited: Restart requested by user, starting sing-box...")
+		ac.CmdMutex.Unlock()
+		svc.Start(true)
+		if ac.UIService != nil && ac.UIService.UpdateCoreStatusFunc != nil {
+			ac.UIService.UpdateCoreStatusFunc()
+		}
+		ac.CmdMutex.Lock()
+		return
+	}
 	ac.ConsecutiveCrashAttempts++
 	if ac.ConsecutiveCrashAttempts > restartAttempts {
 		debuglog.DebugLog("onPrivilegedScriptExited: Max restart attempts reached.")
 		if ac.UIService != nil && ac.UIService.MainWindow != nil {
-			dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Sing-Box failed to restart after %d attempts. Check sing-box.log for details.", restartAttempts))
+			dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("%s", locale.Tf("error.restart_failed", restartAttempts)))
 		}
 		ac.ConsecutiveCrashAttempts = 0
 		return
 	}
 	debuglog.WarnLog("onPrivilegedScriptExited: Sing-Box exited, auto-restart (attempt %d/%d)", ac.ConsecutiveCrashAttempts, restartAttempts)
 	if ac.UIService != nil && ac.UIService.Application != nil && ac.UIService.MainWindow != nil {
-		dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Crash", fmt.Sprintf("Sing-Box crashed, restarting... (attempt %d/%d)", ac.ConsecutiveCrashAttempts, restartAttempts))
+		dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, locale.T("core.crash_title"), locale.Tf("core.crash_restarting", ac.ConsecutiveCrashAttempts, restartAttempts))
 	}
 	ac.CmdMutex.Unlock()
 	<-time.After(2 * time.Second)
@@ -268,17 +269,15 @@ func (svc *ProcessService) onPrivilegedScriptExited() {
 	if ac.RunningState.IsRunning() {
 		currentAttemptCount := ac.ConsecutiveCrashAttempts
 		go func() {
-			select {
-			case <-ac.ctx.Done():
+			if ctxutil.SleepWithContext(ac.ctx, stabilityThreshold) != nil {
 				return
-			case <-time.After(stabilityThreshold):
-				ac.CmdMutex.Lock()
-				defer ac.CmdMutex.Unlock()
-				if ac.RunningState.IsRunning() && ac.ConsecutiveCrashAttempts == currentAttemptCount {
-					ac.ConsecutiveCrashAttempts = 0
-					if ac.UIService != nil && ac.UIService.UpdateCoreStatusFunc != nil {
-						ac.UIService.UpdateCoreStatusFunc()
-					}
+			}
+			ac.CmdMutex.Lock()
+			defer ac.CmdMutex.Unlock()
+			if ac.RunningState.IsRunning() && ac.ConsecutiveCrashAttempts == currentAttemptCount {
+				ac.ConsecutiveCrashAttempts = 0
+				if ac.UIService != nil && ac.UIService.UpdateCoreStatusFunc != nil {
+					ac.UIService.UpdateCoreStatusFunc()
 				}
 			}
 		}()
@@ -314,7 +313,22 @@ func (svc *ProcessService) Monitor(cmdToMonitor *exec.Cmd) {
 		return
 	}
 
-	// 3. Then err == nil (exited normally?)
+	// 3. Restart by user (Restart button): bring process back up immediately
+	if ac.RestartRequestedByUser {
+		ac.RestartRequestedByUser = false
+		ac.RunningState.Set(false)
+		ac.ConsecutiveCrashAttempts = 0
+		debuglog.InfoLog("monitorSingBox: Restart requested by user, starting sing-box...")
+		ac.CmdMutex.Unlock()
+		svc.Start(true)
+		if ac.UIService != nil && ac.UIService.UpdateCoreStatusFunc != nil {
+			ac.UIService.UpdateCoreStatusFunc() // refresh "Restarting..." → "Running" or "Stopped" if start failed
+		}
+		ac.CmdMutex.Lock()
+		return
+	}
+
+	// 4. Then err == nil (exited normally, not restart) — do not restart
 	if err == nil {
 		debuglog.InfoLog("monitorSingBox: Sing-Box exited gracefully (exit code 0).")
 		ac.ConsecutiveCrashAttempts = 0
@@ -322,53 +336,45 @@ func (svc *ProcessService) Monitor(cmdToMonitor *exec.Cmd) {
 		return
 	}
 
-	// 4. Only then — crash → restart
-	// Процесс завершился с ошибкой - проверяем лимит попыток
+	// 5. Crash → restart with delay and attempt limit
 	ac.RunningState.Set(false)
 	ac.ConsecutiveCrashAttempts++
 
 	if ac.ConsecutiveCrashAttempts > restartAttempts {
 		debuglog.DebugLog("monitorSingBox: Maximum restart attempts (%d) reached. Stopping auto-restart.", restartAttempts)
 		if ac.UIService != nil && ac.UIService.MainWindow != nil {
-			dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Sing-Box failed to restart after %d attempts. Check sing-box.log for details.", restartAttempts))
+			dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("%s", locale.Tf("error.restart_failed", restartAttempts)))
 		}
 		ac.ConsecutiveCrashAttempts = 0
 		return
 	}
 
-	// Try to restart
 	debuglog.WarnLog("monitorSingBox: Sing-Box crashed: %v, attempting auto-restart (attempt %d/%d)", err, ac.ConsecutiveCrashAttempts, restartAttempts)
 	if ac.UIService != nil && ac.UIService.Application != nil && ac.UIService.MainWindow != nil {
-		dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, "Crash", fmt.Sprintf("Sing-Box crashed, restarting... (attempt %d/%d)", ac.ConsecutiveCrashAttempts, restartAttempts))
+		dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, locale.T("core.crash_title"), locale.Tf("core.crash_restarting", ac.ConsecutiveCrashAttempts, restartAttempts))
 	}
 
-	// Wait 2 seconds before restart
 	ac.CmdMutex.Unlock()
 	<-time.After(2 * time.Second)
-	svc.Start(true) // skipRunningCheck = true для автоперезапуска
+	svc.Start(true)
 	ac.CmdMutex.Lock()
 
 	if ac.RunningState.IsRunning() {
 		debuglog.InfoLog("monitorSingBox: Sing-Box restarted successfully.")
 		currentAttemptCount := ac.ConsecutiveCrashAttempts
 		go func() {
-			select {
-			case <-ac.ctx.Done():
+			if ctxutil.SleepWithContext(ac.ctx, stabilityThreshold) != nil {
 				debuglog.InfoLog("monitorSingBox: Stability check cancelled (context cancelled)")
 				return
-			case <-time.After(stabilityThreshold):
-				ac.CmdMutex.Lock()
-				defer ac.CmdMutex.Unlock()
-
-				if ac.RunningState.IsRunning() && ac.ConsecutiveCrashAttempts == currentAttemptCount {
-					debuglog.DebugLog("monitorSingBox: Process has been stable for %v. Resetting crash counter from %d to 0.", stabilityThreshold, ac.ConsecutiveCrashAttempts)
-					ac.ConsecutiveCrashAttempts = 0
-					// Обновляем UI, чтобы счетчик исчез из статуса на вкладке Core
-					if ac.UIService != nil && ac.UIService.UpdateCoreStatusFunc != nil {
-						ac.UIService.UpdateCoreStatusFunc()
-					}
+			}
+			ac.CmdMutex.Lock()
+			defer ac.CmdMutex.Unlock()
+			if ac.RunningState.IsRunning() && ac.ConsecutiveCrashAttempts == currentAttemptCount {
+				debuglog.DebugLog("monitorSingBox: Process has been stable for %v. Resetting crash counter from %d to 0.", stabilityThreshold, ac.ConsecutiveCrashAttempts)
+				ac.ConsecutiveCrashAttempts = 0
+				if ac.UIService != nil && ac.UIService.UpdateCoreStatusFunc != nil {
+					ac.UIService.UpdateCoreStatusFunc()
 				}
-				// Когда сброс не выполнен (процесс уже остановлен или счётчик изменился), не логируем — избегаем шума по таймеру
 			}
 		}()
 	} else {
@@ -392,20 +398,14 @@ func (svc *ProcessService) Stop() {
 		return
 	}
 
-	// Privileged mode (macOS TUN): kill both script and sing-box by PID via RunWithPrivileges
 	if ac.SingboxPrivilegedMode && ac.SingboxPrivilegedPID != 0 && ac.SingboxPrivilegedPIDFile != "" {
 		pidFile := ac.SingboxPrivilegedPIDFile
 		scriptPID := ac.SingboxPrivilegedPID
 		singboxPID := ac.SingboxPrivilegedSingboxPID
 		ac.CmdMutex.Unlock()
-		debuglog.InfoLog("stopSingBox: Stopping privileged Sing-Box (script PID %d, sing-box PID %d)...", scriptPID, singboxPID)
-		killScript := fmt.Sprintf("kill -TERM %d 2>/dev/null", scriptPID)
-		if singboxPID > 0 {
-			killScript += fmt.Sprintf("; kill -TERM %d 2>/dev/null", singboxPID)
-		}
-		killScript += fmt.Sprintf("; rm -f %s", strconv.Quote(pidFile))
-		if _, _, err := platform.RunWithPrivileges("/bin/sh", []string{"-c", killScript}); err != nil {
-			debuglog.WarnLog("stopSingBox: Privileged kill failed (process may have already exited): %v", err)
+		debuglog.InfoLog("stopSingBox: Killing privileged Sing-Box (script PID %d, sing-box PID %d)...", scriptPID, singboxPID)
+		if err := platform.KillPrivilegedProcess(scriptPID, singboxPID, pidFile); err != nil {
+			debuglog.WarnLog("stopSingBox: Privileged kill failed: %v", err)
 		}
 		ac.CmdMutex.Lock()
 		ac.SingboxPrivilegedMode = false
@@ -459,6 +459,48 @@ func (svc *ProcessService) Stop() {
 				debuglog.DebugLog("stopSingBox watchdog: error checking process %d: %v", pid, err)
 			}
 		}(processToStop.Pid)
+	}
+}
+
+// KillForRestart kills the sing-box process and asks the watcher to restart it (RestartRequestedByUser).
+func (svc *ProcessService) KillForRestart() {
+	ac := svc.ac
+	ac.CmdMutex.Lock()
+
+	if !ac.RunningState.IsRunning() {
+		ac.CmdMutex.Unlock()
+		return
+	}
+
+	ac.RestartRequestedByUser = true // watcher will see exit and call Start(true)
+
+	if ac.SingboxPrivilegedMode && ac.SingboxPrivilegedPID != 0 && ac.SingboxPrivilegedPIDFile != "" {
+		pidFile := ac.SingboxPrivilegedPIDFile
+		scriptPID := ac.SingboxPrivilegedPID
+		singboxPID := ac.SingboxPrivilegedSingboxPID
+		ac.CmdMutex.Unlock()
+		debuglog.InfoLog("KillForRestart: Killing privileged Sing-Box (script PID %d, sing-box PID %d)...", scriptPID, singboxPID)
+		if err := platform.KillPrivilegedProcess(scriptPID, singboxPID, pidFile); err != nil {
+			debuglog.WarnLog("KillForRestart: Privileged kill failed: %v", err)
+		}
+		return
+	}
+
+	if ac.SingboxCmd == nil || ac.SingboxCmd.Process == nil {
+		ac.CmdMutex.Unlock()
+		return
+	}
+
+	processToStop := ac.SingboxCmd.Process
+	ac.CmdMutex.Unlock()
+
+	debuglog.InfoLog("KillForRestart: Sending signal to PID %d...", processToStop.Pid)
+	if runtime.GOOS == "windows" {
+		_ = platform.KillProcessByPID(processToStop.Pid)
+	} else {
+		if err := processToStop.Signal(os.Interrupt); err != nil {
+			_ = processToStop.Kill()
+		}
 	}
 }
 

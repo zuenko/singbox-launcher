@@ -84,6 +84,10 @@ type PersistedCustomRule struct {
 	Rule             map[string]interface{} `json:"rule,omitempty"`
 	DefaultOutbound  string                 `json:"default_outbound,omitempty"`
 	HasOutbound      bool                   `json:"has_outbound"`
+	// Params — состояние UI по типу правила (processes: match_by_path, path_mode; urls: domain_regex и т.д.). В конфиг не попадает.
+	Params map[string]interface{} `json:"params,omitempty"`
+	// RuleSet — определения rule_set для типа srs (формат как в bin/wizard_template.json: tag, type, format, url).
+	RuleSet []json.RawMessage `json:"rule_set,omitempty"`
 }
 
 // WizardStateMetadata — метаданные состояния для списка (без полного содержимого).
@@ -119,9 +123,10 @@ func ToPersistedSelectableRuleState(ruleState *RuleState) PersistedSelectableRul
 }
 
 // ToPersistedCustomRule конвертирует RuleState (custom rule) в формат для сохранения.
+// Записывает type только константами (ips, urls, processes, srs, raw); params и rule_set по типу.
 func ToPersistedCustomRule(ruleState *RuleState) PersistedCustomRule {
 	ruleType := DetermineRuleType(ruleState.Rule.Rule)
-	return PersistedCustomRule{
+	p := PersistedCustomRule{
 		Label:            ruleState.Rule.Label,
 		Type:             ruleType,
 		Enabled:          ruleState.Enabled,
@@ -131,18 +136,42 @@ func ToPersistedCustomRule(ruleState *RuleState) PersistedCustomRule {
 		DefaultOutbound:  ruleState.Rule.DefaultOutbound,
 		HasOutbound:      ruleState.Rule.HasOutbound,
 	}
+	if len(ruleState.Rule.Params) > 0 {
+		p.Params = make(map[string]interface{}, len(ruleState.Rule.Params))
+		for k, v := range ruleState.Rule.Params {
+			p.Params[k] = v
+		}
+	}
+	if ruleType == RuleTypeSRS && len(ruleState.Rule.RuleSets) > 0 {
+		p.RuleSet = ruleState.Rule.RuleSets
+	}
+	return p
 }
 
 // ToRuleState конвертирует PersistedCustomRule в RuleState.
+// При отсутствии или старом формате type тип выводится из rule (DetermineRuleType).
 func (pcr *PersistedCustomRule) ToRuleState() *RuleState {
+	rule := pcr.Rule
+	if rule == nil {
+		rule = make(map[string]interface{})
+	}
+	ruleType := pcr.Type
+	if !isKnownRuleType(ruleType) {
+		ruleType = DetermineRuleType(rule)
+	}
+	tsr := wizardtemplate.TemplateSelectableRule{
+		Label:           pcr.Label,
+		Description:     pcr.Description,
+		Rule:            rule,
+		DefaultOutbound: pcr.DefaultOutbound,
+		HasOutbound:     pcr.HasOutbound,
+		Params:          pcr.Params,
+	}
+	if ruleType == RuleTypeSRS && len(pcr.RuleSet) > 0 {
+		tsr.RuleSets = pcr.RuleSet
+	}
 	return &RuleState{
-		Rule: wizardtemplate.TemplateSelectableRule{
-			Label:           pcr.Label,
-			Description:     pcr.Description,
-			Rule:            pcr.Rule,
-			DefaultOutbound: pcr.DefaultOutbound,
-			HasOutbound:     pcr.HasOutbound,
-		},
+		Rule:             tsr,
 		Enabled:          pcr.Enabled,
 		SelectedOutbound: pcr.SelectedOutbound,
 	}
@@ -212,30 +241,48 @@ func NewWizardStateFile(
 	}, nil
 }
 
-// DetermineRuleType определяет тип правила на основе содержимого.
+// Известные константы типов правил (должны совпадать с dialogs).
+const (
+	RuleTypeIPS      = "ips"
+	RuleTypeURLs     = "urls"
+	RuleTypeProcesses = "processes"
+	RuleTypeSRS      = "srs"
+	RuleTypeRaw      = "raw"
+)
+
+// isKnownRuleType возвращает true, если s — одна из актуальных констант типов.
+func isKnownRuleType(s string) bool {
+	return s == RuleTypeIPS || s == RuleTypeURLs || s == RuleTypeProcesses || s == RuleTypeSRS || s == RuleTypeRaw
+}
+
+// DetermineRuleType определяет тип правила по содержимому rule. Возвращает только ips, urls, processes, srs, raw.
+// Распознавание: ровно одна группа полей → соответствующий тип; иначе raw.
 func DetermineRuleType(rule map[string]interface{}) string {
 	if rule == nil {
-		return "Custom JSON"
+		return RuleTypeRaw
 	}
-	if _, ok := rule["ip_cidr"]; ok {
-		return "IP Addresses (CIDR)"
+	hasIP := hasKey(rule, "ip_cidr")
+	hasDomain := hasKey(rule, "domain") || hasKey(rule, "domain_suffix") || hasKey(rule, "domain_keyword") || hasKey(rule, "domain_regex")
+	hasProcess := hasKey(rule, "process_name") || hasKey(rule, "process_path_regex")
+	hasRuleSet := hasKey(rule, "rule_set")
+	if hasIP && !hasDomain && !hasProcess && !hasRuleSet {
+		return RuleTypeIPS
 	}
-	if _, ok := rule["domain_regex"]; ok {
-		return "Domains/URLs"
+	if hasDomain && !hasIP && !hasProcess && !hasRuleSet {
+		return RuleTypeURLs
 	}
-	if _, ok := rule["domain"]; ok {
-		return "Domains/URLs"
+	if hasProcess && !hasIP && !hasDomain && !hasRuleSet {
+		return RuleTypeProcesses
 	}
-	if _, ok := rule["domain_suffix"]; ok {
-		return "Domains/URLs"
+	if hasRuleSet && !hasIP && !hasDomain && !hasProcess {
+		return RuleTypeSRS
 	}
-	if _, ok := rule["domain_keyword"]; ok {
-		return "Domains/URLs"
-	}
-	if _, ok := rule["process_name"]; ok {
-		return "Processes"
-	}
-	return "System"
+	return RuleTypeRaw
+}
+
+func hasKey(m map[string]interface{}, key string) bool {
+	_, ok := m[key]
+	return ok
 }
 
 // MigrateSelectableRuleStates мигрирует selectable_rule_states из старого формата.

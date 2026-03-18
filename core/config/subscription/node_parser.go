@@ -7,14 +7,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
-	"singbox-launcher/core/config"
+	"singbox-launcher/core/config/configtypes"
 	"singbox-launcher/internal/debuglog"
 )
 
@@ -35,7 +34,7 @@ func IsDirectLink(input string) bool {
 const MaxURILength = 8192 // 8 KB - reasonable limit for proxy URIs
 
 // ParseNode parses a single node URI and applies skip filters
-func ParseNode(uri string, skipFilters []map[string]string) (*config.ParsedNode, error) {
+func ParseNode(uri string, skipFilters []map[string]string) (*configtypes.ParsedNode, error) {
 	// Validate URI length
 	if len(uri) > MaxURILength {
 		return nil, fmt.Errorf("URI length (%d) exceeds maximum (%d)", len(uri), MaxURILength)
@@ -57,17 +56,17 @@ func ParseNode(uri string, skipFilters []map[string]string) (*config.ParsedNode,
 			if len(uriPreview) > 50 {
 				uriPreview = uriPreview[:50] + "..."
 			}
-			log.Printf("Parser: Error: Failed to decode VMESS base64 (uri length: %d, base64 length: %d): %v. URI: %s. Skipping node.",
+			debuglog.ErrorLog("Parser: Failed to decode VMESS base64 (uri length: %d, base64 length: %d): %v. URI: %s. Skipping node.",
 				len(uri), len(base64Part), err, uriPreview)
 			return nil, fmt.Errorf("failed to decode VMESS base64: %w", err)
 		}
 		if len(decoded) == 0 {
-			log.Printf("Parser: Error: VMESS decoded content is empty. Skipping node.")
+			debuglog.ErrorLog("Parser: VMESS decoded content is empty. Skipping node.")
 			return nil, fmt.Errorf("VMESS decoded content is empty")
 		}
 		var vmessConfig map[string]interface{}
 		if err := json.Unmarshal(decoded, &vmessConfig); err != nil {
-			log.Printf("Parser: Error: Failed to parse VMESS JSON (decoded length: %d): %v. Skipping node.", len(decoded), err)
+			debuglog.ErrorLog("Parser: Failed to parse VMESS JSON (decoded length: %d): %v. Skipping node.", len(decoded), err)
 			return nil, fmt.Errorf("failed to parse VMESS JSON: %w", err)
 		}
 		// VMess uses base64-encoded JSON format instead of standard URI format,
@@ -90,25 +89,25 @@ func ParseNode(uri string, skipFilters []map[string]string) (*config.ParsedNode,
 			rest := ssPart[atIdx+1:]
 			decoded, err := decodeBase64WithPadding(encodedUserinfo)
 			if err != nil {
-				log.Printf("Parser: Error: Failed to decode SS base64 userinfo. Encoded: %s, Error: %v", encodedUserinfo, err)
+				debuglog.ErrorLog("Parser: Failed to decode SS base64 userinfo. Encoded: %s, Error: %v", encodedUserinfo, err)
 			} else {
 				decodedStr := string(decoded)
 				userinfoParts := strings.SplitN(decodedStr, ":", 2)
 				if len(userinfoParts) == 2 {
 					ssMethod = userinfoParts[0]
 					ssPassword = userinfoParts[1]
-					log.Printf("Parser: Successfully extracted SS credentials: method=%s, password length=%d", ssMethod, len(ssPassword))
+					debuglog.DebugLog("Parser: Successfully extracted SS credentials: method=%s, password length=%d", ssMethod, len(ssPassword))
 					if !isValidShadowsocksMethod(ssMethod) {
-						log.Printf("Parser: Warning: Invalid or unsupported Shadowsocks method '%s'. Skipping node.", ssMethod)
+						debuglog.WarnLog("Parser: Invalid or unsupported Shadowsocks method '%s'. Skipping node.", ssMethod)
 						return nil, fmt.Errorf("unsupported Shadowsocks encryption method: %s", ssMethod)
 					}
 				} else {
-					log.Printf("Parser: Error: SS decoded userinfo doesn't contain ':' separator. Decoded: %s", decodedStr)
+					debuglog.ErrorLog("Parser: SS decoded userinfo doesn't contain ':' separator. Decoded: %s", decodedStr)
 				}
 			}
 			uriToParse = "ss://" + rest
 		} else {
-			log.Printf("Parser: Warning: SS link is not in SIP002 format (no @ found): %s", uri)
+			debuglog.WarnLog("Parser: SS link is not in SIP002 format (no @ found): %s", uri)
 		}
 
 	case strings.HasPrefix(uri, "hysteria2://"), strings.HasPrefix(uri, "hy2://"):
@@ -129,15 +128,15 @@ func ParseNode(uri string, skipFilters []map[string]string) (*config.ParsedNode,
 		if err == nil && len(decoded) > 0 {
 			decodedStr, valid := validateAndFixUTF8Bytes(decoded)
 			if !valid {
-				log.Printf("Parser: Error: Decoded base64 contains invalid UTF-8 that cannot be fixed. Skipping node.")
+				debuglog.ErrorLog("Parser: Decoded base64 contains invalid UTF-8 that cannot be fixed. Skipping node.")
 				return nil, fmt.Errorf("decoded base64 contains invalid UTF-8")
 			}
 			if decodedStr != string(decoded) {
-				log.Printf("Parser: Fixed invalid UTF-8 in decoded base64 Hysteria2 link")
+				debuglog.DebugLog("Parser: Fixed invalid UTF-8 in decoded base64 Hysteria2 link")
 			}
 			if strings.Contains(decodedStr, "@") {
 				uriToParse = "hysteria2://" + decodedStr
-				log.Printf("Parser: Successfully decoded base64 Hysteria2 link")
+				debuglog.DebugLog("Parser: Successfully decoded base64 Hysteria2 link")
 			}
 		}
 
@@ -169,7 +168,7 @@ func ParseNode(uri string, skipFilters []map[string]string) (*config.ParsedNode,
 	}
 
 	// Extract components
-	node := &config.ParsedNode{
+	node := &configtypes.ParsedNode{
 		Scheme: scheme,
 		Server: parsedURL.Hostname(),
 		Query:  parsedURL.Query(),
@@ -178,7 +177,7 @@ func ParseNode(uri string, skipFilters []map[string]string) (*config.ParsedNode,
 	// For SS, store method and password in Query (if extracted during parsing)
 	if scheme == "ss" {
 		if ssMethod == "" || ssPassword == "" {
-			log.Printf("Parser: Error: SS link missing method or password. URI: %s", uri)
+			debuglog.ErrorLog("Parser: SS link missing method or password. URI: %s", uri)
 			return nil, fmt.Errorf("SS link missing required method or password")
 		}
 		node.Query.Set("method", ssMethod)
@@ -225,12 +224,12 @@ func ParseNode(uri string, skipFilters []map[string]string) (*config.ParsedNode,
 		// Validate and fix UTF-8 encoding
 		fixed, valid := validateAndFixUTF8(node.Label)
 		if !valid {
-			log.Printf("Parser: Error: Fragment contains invalid UTF-8 that cannot be fixed: %q. Skipping node.", parsedURL.Fragment)
+			debuglog.ErrorLog("Parser: Fragment contains invalid UTF-8 that cannot be fixed: %q. Skipping node.", parsedURL.Fragment)
 			return nil, fmt.Errorf("fragment contains invalid UTF-8: %q", parsedURL.Fragment)
 		}
 
 		if fixed != node.Label {
-			log.Printf("Parser: Fixed invalid UTF-8 in fragment: %q -> %q", parsedURL.Fragment, fixed)
+			debuglog.DebugLog("Parser: Fixed invalid UTF-8 in fragment: %q -> %q", parsedURL.Fragment, fixed)
 			node.Label = fixed
 		}
 
@@ -323,12 +322,6 @@ func isValidShadowsocksMethod(method string) bool {
 	return validMethods[method]
 }
 
-// isValidHysteria2ObfsType checks if the obfs type is supported by sing-box for Hysteria2
-// According to sing-box documentation, only "salamander" is supported
-func isValidHysteria2ObfsType(obfsType string) bool {
-	return obfsType == "salamander"
-}
-
 // validateAndFixUTF8 validates and fixes invalid UTF-8 in a string
 // Returns fixed string and true if valid, or original string and false if unfixable
 func validateAndFixUTF8(s string) (string, bool) {
@@ -404,7 +397,7 @@ func generateDefaultTag(scheme, server string, port int) string {
 }
 
 // getNodeValue extracts a value from node by key (supports nested keys with dots)
-func getNodeValue(node *config.ParsedNode, key string) string {
+func getNodeValue(node *configtypes.ParsedNode, key string) string {
 	switch key {
 	case "tag":
 		return node.Tag
@@ -439,7 +432,7 @@ func matchesPattern(value, pattern string) bool {
 		regexStr = strings.TrimSuffix(regexStr, "/i")
 		re, err := regexp.Compile("(?i)" + regexStr)
 		if err != nil {
-			log.Printf("Parser: Invalid regex pattern %s: %v", pattern, err)
+			debuglog.WarnLog("Parser: Invalid regex pattern %s: %v", pattern, err)
 			return false
 		}
 		return !re.MatchString(value)
@@ -451,7 +444,7 @@ func matchesPattern(value, pattern string) bool {
 		regexStr = strings.TrimSuffix(regexStr, "/i")
 		re, err := regexp.Compile("(?i)" + regexStr)
 		if err != nil {
-			log.Printf("Parser: Invalid regex pattern %s: %v", pattern, err)
+			debuglog.WarnLog("Parser: Invalid regex pattern %s: %v", pattern, err)
 			return false
 		}
 		return re.MatchString(value)
@@ -461,7 +454,7 @@ func matchesPattern(value, pattern string) bool {
 	return value == pattern
 }
 
-func shouldSkipNode(node *config.ParsedNode, skipFilters []map[string]string) bool {
+func shouldSkipNode(node *configtypes.ParsedNode, skipFilters []map[string]string) bool {
 	for _, filter := range skipFilters {
 		allKeysMatch := true
 		for key, pattern := range filter {
@@ -478,205 +471,7 @@ func shouldSkipNode(node *config.ParsedNode, skipFilters []map[string]string) bo
 	return false // Don't skip
 }
 
-// parseWireGuardURI parses wireguard:// URI into ParsedNode with sing-box endpoint in Outbound.
-// Format: wireguard://<PRIVATE_KEY>@<SERVER_IP>:<PORT>?publickey=...&address=...&allowedips=...
-// Required query: publickey, address, allowedips. Optional: mtu, keepalive, presharedkey, listenport, name, dns.
-func parseWireGuardURI(uri string, skipFilters []map[string]string) (*config.ParsedNode, error) {
-	debuglog.DebugLog("parseWireGuardURI: start")
-	if len(uri) > MaxURILength {
-		debuglog.DebugLog("parseWireGuardURI: error URI length exceeded")
-		return nil, fmt.Errorf("URI length (%d) exceeds maximum (%d)", len(uri), MaxURILength)
-	}
-	// Extract fragment from raw URI; url.Parse may not set Fragment for non-standard schemes.
-	fragmentFromRaw := ""
-	if i := strings.LastIndex(uri, "#"); i >= 0 {
-		fragmentFromRaw = strings.TrimSpace(uri[i+1:])
-	}
-	parsedURL, err := url.Parse(uri)
-	if err != nil {
-		debuglog.DebugLog("parseWireGuardURI: error parse URL: %v", err)
-		return nil, fmt.Errorf("failed to parse wireguard URI: %w", err)
-	}
-	if parsedURL.Hostname() == "" {
-		debuglog.DebugLog("parseWireGuardURI: error missing hostname")
-		return nil, fmt.Errorf("invalid wireguard URI: missing hostname")
-	}
-	if parsedURL.User == nil || parsedURL.User.Username() == "" {
-		debuglog.DebugLog("parseWireGuardURI: error missing private key (userinfo)")
-		return nil, fmt.Errorf("invalid wireguard URI: missing private key (userinfo)")
-	}
-	// Use PathUnescape so + in base64 is preserved (QueryUnescape would turn + into space and break the key)
-	privateKey, err := url.PathUnescape(parsedURL.User.Username())
-	if err != nil {
-		privateKey = parsedURL.User.Username()
-	}
-	privateKey = strings.TrimSpace(privateKey)
-	if privateKey == "" {
-		return nil, fmt.Errorf("invalid wireguard URI: empty private key")
-	}
-	// Validate base64 private key (optional but recommended)
-	if _, err := base64.StdEncoding.DecodeString(privateKey); err != nil {
-		if _, err2 := base64.URLEncoding.DecodeString(privateKey); err2 != nil {
-			debuglog.DebugLog("parseWireGuardURI: warning private key may not be valid base64")
-		}
-	}
-
-	port := 51820
-	if p := parsedURL.Port(); p != "" {
-		if pi, err := strconv.Atoi(p); err == nil {
-			port = pi
-		}
-	}
-
-	q := parsedURL.Query()
-	// Preserve + in base64 (query parser would decode + as space)
-	publicKey := queryParamPreservePlus(parsedURL, "publickey")
-	if publicKey == "" {
-		publicKey = q.Get("publickey")
-	}
-	addressParam := q.Get("address")
-	allowedipsParam := q.Get("allowedips")
-	if publicKey == "" {
-		debuglog.DebugLog("parseWireGuardURI: error missing publickey")
-		return nil, fmt.Errorf("invalid wireguard URI: missing required query parameter publickey")
-	}
-	if addressParam == "" {
-		debuglog.DebugLog("parseWireGuardURI: error missing address")
-		return nil, fmt.Errorf("invalid wireguard URI: missing required query parameter address")
-	}
-	if allowedipsParam == "" {
-		debuglog.DebugLog("parseWireGuardURI: error missing allowedips")
-		return nil, fmt.Errorf("invalid wireguard URI: missing required query parameter allowedips")
-	}
-
-	addressDecoded, _ := url.QueryUnescape(addressParam)
-	allowedipsDecoded, _ := url.QueryUnescape(allowedipsParam)
-	addressList := splitAndTrim(addressDecoded, ",")
-	allowedipsList := splitAndTrim(allowedipsDecoded, ",")
-	if len(addressList) == 0 || len(allowedipsList) == 0 {
-		return nil, fmt.Errorf("invalid wireguard URI: address or allowedips empty after parse")
-	}
-
-	mtu := 1420
-	if m := q.Get("mtu"); m != "" {
-		if mi, err := strconv.Atoi(m); err == nil {
-			mtu = mi
-		}
-	}
-	listenport := 0
-	if lp := q.Get("listenport"); lp != "" {
-		if lpi, err := strconv.Atoi(lp); err == nil {
-			listenport = lpi
-		}
-	}
-	name := q.Get("name")
-	if name == "" {
-		name = "singbox-wg0"
-	}
-	if decoded, err := url.QueryUnescape(name); err == nil {
-		name = decoded
-	}
-
-	peer := map[string]interface{}{
-		"address":      parsedURL.Hostname(),
-		"port":         port,
-		"public_key":   publicKey,
-		"allowed_ips":  allowedipsList,
-	}
-	if keepalive := q.Get("keepalive"); keepalive != "" {
-		if ki, err := strconv.Atoi(keepalive); err == nil {
-			peer["persistent_keepalive_interval"] = ki
-		}
-	}
-	if psk := queryParamPreservePlus(parsedURL, "presharedkey"); psk != "" {
-		peer["pre_shared_key"] = psk
-	} else if psk := q.Get("presharedkey"); psk != "" {
-		peer["pre_shared_key"] = psk
-	}
-
-	endpoint := map[string]interface{}{
-		"type":        "wireguard",
-		"tag":         "", // set below after tag is computed
-		"name":        name,
-		"system":      false,
-		"mtu":         mtu,
-		"address":     addressList,
-		"private_key": privateKey,
-		"peers":       []map[string]interface{}{peer},
-	}
-	if listenport != 0 {
-		endpoint["listen_port"] = listenport
-	}
-
-	label := parsedURL.Fragment
-	if label == "" && fragmentFromRaw != "" {
-		label = fragmentFromRaw
-	}
-	if label == "" {
-		label = name
-	}
-	if decoded, err := url.QueryUnescape(label); err == nil {
-		label = decoded
-	}
-	label = sanitizeForDisplay(label)
-	tag, comment := extractTagAndComment(label)
-	if tag == "" {
-		tag = generateDefaultTag("wireguard", parsedURL.Hostname(), port)
-		comment = tag
-	}
-	tag = normalizeFlagTag(tag)
-	endpoint["tag"] = tag
-
-	node := &config.ParsedNode{
-		Scheme:   "wireguard",
-		Tag:      tag,
-		Server:   parsedURL.Hostname(),
-		Port:     port,
-		Label:    label,
-		Comment:  comment,
-		Query:    q,
-		Outbound: endpoint,
-	}
-
-	if shouldSkipNode(node, skipFilters) {
-		return nil, nil
-	}
-	debuglog.DebugLog("parseWireGuardURI: success tag=%s", node.Tag)
-	return node, nil
-}
-
-// queryParamPreservePlus returns the first value for key in u.RawQuery, decoded with PathUnescape.
-// This preserves '+' in base64 (QueryUnescape decodes '+' as space and would break keys).
-func queryParamPreservePlus(u *url.URL, key string) string {
-	for _, pair := range strings.Split(u.RawQuery, "&") {
-		if i := strings.Index(pair, "="); i >= 0 {
-			k := strings.TrimSpace(pair[:i])
-			if k != key {
-				continue
-			}
-			val := pair[i+1:]
-			if d, err := url.PathUnescape(val); err == nil {
-				return d
-			}
-			return val
-		}
-	}
-	return ""
-}
-
-func splitAndTrim(s string, sep string) []string {
-	parts := strings.Split(s, sep)
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-func buildOutbound(node *config.ParsedNode) map[string]interface{} {
+func buildOutbound(node *configtypes.ParsedNode) map[string]interface{} {
 	outbound := make(map[string]interface{})
 	outbound["tag"] = node.Tag
 	// Use "shadowsocks" instead of "ss" for sing-box
@@ -817,298 +612,3 @@ func buildOutbound(node *config.ParsedNode) map[string]interface{} {
 	return outbound
 }
 
-// buildHysteria2Outbound builds outbound configuration for Hysteria2 protocol
-func buildHysteria2Outbound(node *config.ParsedNode, outbound map[string]interface{}) {
-	// Password is required (stored in UUID field from userinfo)
-	if node.UUID != "" {
-		outbound["password"] = node.UUID
-	} else {
-		log.Printf("Parser: Warning: Hysteria2 link missing password. URI might be invalid.")
-	}
-
-	// Optional: ports range (mport parameter) - converted to server_ports array for sing-box 1.9+
-	// Format: "27200-28000" or "27200:28000" -> ["27200:28000"]
-	if mport := node.Query.Get("mport"); mport != "" {
-		// Convert mport format (can be "27200-28000" or "27200:28000") to sing-box format
-		// sing-box expects array of port ranges in format "start:end"
-		portRange := strings.ReplaceAll(mport, "-", ":")
-		serverPorts := []string{portRange}
-		outbound["server_ports"] = serverPorts
-		// hop_interval is optional, default is "30s" in sing-box, so we can omit it
-		// or set it explicitly if needed in the future
-	}
-
-	// Optional: obfs (obfuscation)
-	if obfs := node.Query.Get("obfs"); obfs != "" {
-		// Validate obfs type to prevent sing-box crashes
-		if !isValidHysteria2ObfsType(obfs) {
-			log.Printf("Parser: Warning: Invalid or unsupported Hysteria2 obfs type '%s'. Only 'salamander' is supported. Skipping obfs.", obfs)
-		} else {
-			obfsConfig := map[string]interface{}{
-				"type": obfs,
-			}
-			if obfsPassword := node.Query.Get("obfs-password"); obfsPassword != "" {
-				obfsConfig["password"] = obfsPassword
-			}
-			outbound["obfs"] = obfsConfig
-		}
-	}
-
-	// Optional: bandwidth (up/down in Mbps)
-	if up := node.Query.Get("upmbps"); up != "" {
-		if upMBps, err := strconv.Atoi(up); err == nil {
-			outbound["up_mbps"] = upMBps
-		}
-	}
-	if down := node.Query.Get("downmbps"); down != "" {
-		if downMBps, err := strconv.Atoi(down); err == nil {
-			outbound["down_mbps"] = downMBps
-		}
-	}
-
-	// TLS settings (required for hysteria2)
-	buildHysteria2TLS(node, outbound)
-}
-
-// buildHysteria2TLS builds TLS configuration for Hysteria2
-func buildHysteria2TLS(node *config.ParsedNode, outbound map[string]interface{}) {
-	sni := node.Query.Get("sni")
-
-	// Handle insecure parameter (can be "1" or "true")
-	insecure := node.Query.Get("insecure") == "true" || node.Query.Get("insecure") == "1"
-	skipCertVerify := node.Query.Get("skip-cert-verify") == "true" || node.Query.Get("skip-cert-verify") == "1"
-
-	// Always enable TLS for hysteria2 (required by protocol)
-	tlsData := map[string]interface{}{
-		"enabled": true,
-	}
-
-	// Set SNI if provided and valid (skip emoji or invalid values)
-	// SNI is valid if it contains dot (hostname) or colon (IPv6)
-	if sni != "" && sni != "🔒" && (strings.Contains(sni, ".") || strings.Contains(sni, ":")) {
-		tlsData["server_name"] = sni
-	} else if node.Server != "" {
-		tlsData["server_name"] = node.Server
-	}
-
-	if insecure || skipCertVerify {
-		tlsData["insecure"] = true
-	}
-
-	// Handle ALPN parameter (for hysteria2, typically "h3")
-	if alpn := node.Query.Get("alpn"); alpn != "" {
-		alpnList := strings.Split(alpn, ",")
-		for i := range alpnList {
-			alpnList[i] = strings.TrimSpace(alpnList[i])
-		}
-		tlsData["alpn"] = alpnList
-	}
-
-	outbound["tls"] = tlsData
-}
-
-// buildSSHOutbound builds outbound configuration for SSH protocol
-func buildSSHOutbound(node *config.ParsedNode, outbound map[string]interface{}) {
-	// User is required (stored in UUID field from userinfo)
-	if node.UUID != "" {
-		outbound["user"] = node.UUID
-	} else {
-		outbound["user"] = "root" // Default user for SSH
-		log.Printf("Parser: Warning: SSH link missing user, using default 'root'")
-	}
-
-	// Password is optional (can be in query params from userinfo)
-	if password := node.Query.Get("password"); password != "" {
-		outbound["password"] = password
-	}
-
-	// Private key (inline) - if provided, takes precedence over private_key_path
-	if privateKey := node.Query.Get("private_key"); privateKey != "" {
-		// URL decode if needed
-		if decoded, err := url.QueryUnescape(privateKey); err == nil {
-			outbound["private_key"] = decoded
-		} else {
-			outbound["private_key"] = privateKey
-		}
-	} else if privateKeyPath := node.Query.Get("private_key_path"); privateKeyPath != "" {
-		// Private key path
-		if decoded, err := url.QueryUnescape(privateKeyPath); err == nil {
-			outbound["private_key_path"] = decoded
-		} else {
-			outbound["private_key_path"] = privateKeyPath
-		}
-	}
-
-	// Private key passphrase
-	if passphrase := node.Query.Get("private_key_passphrase"); passphrase != "" {
-		if decoded, err := url.QueryUnescape(passphrase); err == nil {
-			outbound["private_key_passphrase"] = decoded
-		} else {
-			outbound["private_key_passphrase"] = passphrase
-		}
-	}
-
-	// Host key (can be multiple, comma-separated)
-	if hostKey := node.Query.Get("host_key"); hostKey != "" {
-		// Split by comma if multiple keys provided
-		hostKeys := strings.Split(hostKey, ",")
-		// Trim spaces and decode each key
-		decodedKeys := make([]string, 0, len(hostKeys))
-		for _, key := range hostKeys {
-			key = strings.TrimSpace(key)
-			if key != "" {
-				if decoded, err := url.QueryUnescape(key); err == nil {
-					decodedKeys = append(decodedKeys, decoded)
-				} else {
-					decodedKeys = append(decodedKeys, key)
-				}
-			}
-		}
-		if len(decodedKeys) > 0 {
-			outbound["host_key"] = decodedKeys
-		}
-	}
-
-	// Host key algorithms (can be multiple, comma-separated)
-	if algorithms := node.Query.Get("host_key_algorithms"); algorithms != "" {
-		algList := strings.Split(algorithms, ",")
-		for i := range algList {
-			algList[i] = strings.TrimSpace(algList[i])
-		}
-		// Remove empty strings
-		filteredAlgs := make([]string, 0, len(algList))
-		for _, alg := range algList {
-			if alg != "" {
-				filteredAlgs = append(filteredAlgs, alg)
-			}
-		}
-		if len(filteredAlgs) > 0 {
-			outbound["host_key_algorithms"] = filteredAlgs
-		}
-	}
-
-	// Client version
-	if clientVersion := node.Query.Get("client_version"); clientVersion != "" {
-		if decoded, err := url.QueryUnescape(clientVersion); err == nil {
-			outbound["client_version"] = decoded
-		} else {
-			outbound["client_version"] = clientVersion
-		}
-	}
-}
-
-// parseVMessJSON parses VMess configuration from decoded JSON.
-// VMess protocol uses base64-encoded JSON format (vmess://base64(json)) instead of
-// standard URI format used by other protocols (vless://, trojan://, ssh://, etc.).
-// This is why VMess requires separate parsing logic and cannot use the common
-// URI parsing path that other protocols share.
-func parseVMessJSON(vmessConfig map[string]interface{}, skipFilters []map[string]string) (*config.ParsedNode, error) {
-	node := &config.ParsedNode{
-		Scheme: "vmess",
-		Query:  make(url.Values),
-	}
-
-	var missingFields []string
-
-	if add, ok := vmessConfig["add"].(string); ok && add != "" {
-		node.Server = add
-	} else {
-		missingFields = append(missingFields, "add")
-	}
-
-	if port, ok := vmessConfig["port"].(float64); ok {
-		node.Port = int(port)
-	} else if portStr, ok := vmessConfig["port"].(string); ok {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			node.Port = p
-		} else {
-			missingFields = append(missingFields, "port (invalid format)")
-		}
-	} else {
-		missingFields = append(missingFields, "port")
-	}
-
-	if id, ok := vmessConfig["id"].(string); ok && id != "" {
-		node.UUID = id
-	} else {
-		missingFields = append(missingFields, "id")
-	}
-
-	if len(missingFields) > 0 {
-		return nil, fmt.Errorf("missing required fields: %v", missingFields)
-	}
-
-	if ps, ok := vmessConfig["ps"].(string); ok && ps != "" {
-		node.Label = ps
-		node.Tag, node.Comment = extractTagAndComment(ps)
-		node.Tag = normalizeFlagTag(node.Tag)
-	} else {
-		node.Tag = generateDefaultTag("vmess", node.Server, node.Port)
-		node.Comment = node.Tag
-	}
-
-	if scy, ok := vmessConfig["scy"].(string); ok && scy != "" {
-		node.Query.Set("security", scy)
-	} else {
-		node.Query.Set("security", "auto")
-	}
-
-	if aid, ok := vmessConfig["aid"].(string); ok && aid != "" && aid != "0" {
-		node.Query.Set("alter_id", aid)
-	} else if aidNum, ok := vmessConfig["aid"].(float64); ok && aidNum != 0 {
-		node.Query.Set("alter_id", strconv.Itoa(int(aidNum)))
-	}
-
-	net := ""
-	if netVal, ok := vmessConfig["net"].(string); ok && netVal != "" {
-		net = netVal
-		if net == "xhttp" {
-			net = "ws"
-		}
-		node.Query.Set("network", net)
-	} else {
-		net = "tcp"
-		node.Query.Set("network", net)
-	}
-
-	if path, ok := vmessConfig["path"].(string); ok && path != "" {
-		node.Query.Set("path", path)
-	}
-
-	if host, ok := vmessConfig["host"].(string); ok && host != "" {
-		node.Query.Set("host", host)
-	}
-
-	if tls, ok := vmessConfig["tls"].(string); ok && tls == "tls" {
-		node.Query.Set("tls_enabled", "true")
-
-		sni := ""
-		if sniVal, ok := vmessConfig["sni"].(string); ok && sniVal != "" {
-			sni = sniVal
-		} else if host, ok := vmessConfig["host"].(string); ok && host != "" {
-			sni = host
-		} else {
-			sni = node.Server
-		}
-		node.Query.Set("sni", sni)
-
-		if alpn, ok := vmessConfig["alpn"].(string); ok && alpn != "" {
-			node.Query.Set("alpn", alpn)
-		}
-
-		if fp, ok := vmessConfig["fp"].(string); ok && fp != "" {
-			node.Query.Set("fp", fp)
-		}
-
-		if insecure, ok := vmessConfig["insecure"].(string); ok && insecure == "1" {
-			node.Query.Set("insecure", "true")
-		}
-	}
-
-	if shouldSkipNode(node, skipFilters) {
-		return nil, nil // Skip node
-	}
-
-	node.Outbound = buildOutbound(node)
-	return node, nil
-}

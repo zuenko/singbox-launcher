@@ -32,6 +32,7 @@ import (
 	"singbox-launcher/core/config/subscription"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizarddialogs "singbox-launcher/ui/wizard/dialogs"
@@ -45,21 +46,21 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	guiState := presenter.GUIState()
 
 	// Section 1: Subscription URL or Direct Links
-	urlLabel := widget.NewLabel("Subscription URL or Direct Links:")
+	urlLabel := widget.NewLabel(locale.T("wizard.source.label_url"))
 	urlLabel.Importance = widget.MediumImportance
 
 	guiState.SourceURLEntry = widget.NewMultiLineEntry()
-	guiState.SourceURLEntry.SetPlaceHolder("https://your-subscription-url-here")
+	guiState.SourceURLEntry.SetPlaceHolder(locale.T("wizard.source.placeholder_url"))
 	guiState.SourceURLEntry.Wrapping = fyne.TextWrapOff
 	// No automatic application: URLs are applied only when the user clicks Add.
 	guiState.SourceURLEntry.OnChanged = func(value string) {
 		presenter.Model().PreviewNeedsParse = true
 	}
 
-	hintLabel := widget.NewLabel("Supports subscription URLs (http/https) or direct links (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://). For multiple links, use a new line for each.")
+	hintLabel := widget.NewLabel(locale.T("wizard.source.hint"))
 	hintLabel.Wrapping = fyne.TextWrapWord
 
-	addURLButton := widget.NewButton("Add", func() {
+	addURLButton := widget.NewButton(locale.T("wizard.source.button_add"), func() {
 		presenter.SyncGUIToModel()
 		trimmed := strings.TrimSpace(guiState.SourceURLEntry.Text)
 		if err := wizardbusiness.AppendURLsToParserConfig(presenter, trimmed); err != nil {
@@ -76,7 +77,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 		guiState.SourceURLEntry.SetText("")
 	})
 
-	getFreeVPNButton := widget.NewButton("Get free VPN!", func() {
+	getFreeVPNButton := widget.NewButton(locale.T("wizard.source.button_get_free"), func() {
 		wizarddialogs.ShowGetFreeVPNDialog(presenter)
 	})
 
@@ -117,7 +118,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	)
 
 	// Section 2: Sources list (based on ParserConfig.ParserConfig.Proxies)
-	sourcesLabel := widget.NewLabel("Sources")
+	sourcesLabel := widget.NewLabel(locale.T("wizard.source.label_sources"))
 	sourcesLabel.Importance = widget.MediumImportance
 
 	sourcesBox := container.NewVBox()
@@ -126,7 +127,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 		sourcesBox.Objects = sourcesBox.Objects[:0]
 		m := presenter.Model()
 		if m.ParserConfig == nil || len(m.ParserConfig.ParserConfig.Proxies) == 0 {
-			sourcesBox.Add(widget.NewLabel("No sources defined in ParserConfig."))
+			sourcesBox.Add(widget.NewLabel(locale.T("wizard.source.no_sources")))
 			sourcesBox.Refresh()
 			return
 		}
@@ -152,9 +153,9 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 				if label == "" {
 					// Connection-only block (no subscription URL): show as "Connections" or "Connections N"
 					if len(proxy.Connections) > 0 {
-						label = fmt.Sprintf("Connections %d", sourceIndex+1)
-					} else {
-						label = fmt.Sprintf("Source %d", sourceIndex+1)
+					label = locale.Tf("wizard.source.connections_n", sourceIndex+1)
+				} else {
+					label = locale.Tf("wizard.source.source_n", sourceIndex+1)
 					}
 				}
 			}
@@ -195,9 +196,9 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 				if copyText == "" {
 					return
 				}
-				if guiState.Window != nil && guiState.Window.Clipboard() != nil {
-					guiState.Window.Clipboard().SetContent(copyText)
-					dialogs.ShowAutoHideInfo(fyne.CurrentApp(), guiState.Window, "Copied", "Source copied to clipboard.")
+				if guiState.Window != nil {
+					fyne.CurrentApp().Clipboard().SetContent(copyText)
+					dialogs.ShowAutoHideInfo(fyne.CurrentApp(), guiState.Window, locale.T("wizard.source.dialog_copied_title"), locale.T("wizard.source.dialog_copied_message"))
 				}
 			})
 			sourceButton.Importance = widget.LowImportance
@@ -207,7 +208,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 
 			prefixEntry := widget.NewEntry()
 			prefixEntry.SetText(proxy.TagPrefix)
-			prefixEntry.SetPlaceHolder("prefix")
+			prefixEntry.SetPlaceHolder(locale.T("wizard.source.placeholder_prefix"))
 			prefixEntry.OnChanged = func(s string) {
 				m := presenter.Model()
 				if m.ParserConfig == nil || sourceIndex >= len(m.ParserConfig.ParserConfig.Proxies) {
@@ -226,7 +227,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 				presenter.RefreshOutboundOptions()
 			}
 
-			viewBtn := widget.NewButton("View", func() {
+			viewBtn := widget.NewButton(locale.T("wizard.source.button_view"), func() {
 				m := presenter.Model()
 				if m.ParserConfig == nil || sourceIndex >= len(m.ParserConfig.ParserConfig.Proxies) {
 					return
@@ -235,7 +236,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 				showSourceServersWindow(presenter, guiState.Window, shortLabel, prox.Source, prox.Skip)
 			})
 
-			delBtn := widget.NewButton("Del", func() {
+			delBtn := widget.NewButton(locale.T("wizard.source.button_del"), func() {
 				m := presenter.Model()
 				if m.ParserConfig == nil || sourceIndex >= len(m.ParserConfig.ParserConfig.Proxies) {
 					return
@@ -280,7 +281,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 
 	// Section 3: Preview — servers from all sources (same as View, but combined at bottom of tab)
 	var previewNodes []*config.ParsedNode
-	previewStatusLabel := widget.NewLabel("Click Refresh to load servers from all sources.")
+	previewStatusLabel := widget.NewLabel(locale.T("wizard.source.preview_click_refresh"))
 	previewList := widget.NewList(
 		func() int { return len(previewNodes) },
 		func() fyne.CanvasObject { return widget.NewLabel("") },
@@ -301,10 +302,10 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 		if m.ParserConfig == nil || len(m.ParserConfig.ParserConfig.Proxies) == 0 {
 			previewNodes = nil
 			previewList.Refresh()
-			previewStatusLabel.SetText("No sources. Add URLs and click Refresh.")
+			previewStatusLabel.SetText(locale.T("wizard.source.preview_no_sources"))
 			return
 		}
-		previewStatusLabel.SetText("Loading...")
+		previewStatusLabel.SetText(locale.T("wizard.source.preview_loading"))
 
 		go func() {
 			errorCount, err := wizardbusiness.RebuildPreviewCache(m)
@@ -312,7 +313,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 				if err != nil {
 					previewNodes = nil
 					previewList.Refresh()
-					previewStatusLabel.SetText("Error: " + err.Error())
+					previewStatusLabel.SetText(locale.Tf("wizard.source.preview_error", err.Error()))
 					return
 				}
 				// m was updated in place by RebuildPreviewCache(m)
@@ -322,16 +323,16 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 				if m.ParserConfig != nil {
 					sourcesCount = len(m.ParserConfig.ParserConfig.Proxies)
 				}
-				status := fmt.Sprintf("%d server(s) from %d source(s)", len(previewNodes), sourcesCount)
+				status := locale.Tf("wizard.source.preview_servers", len(previewNodes), sourcesCount)
 				if errorCount > 0 {
-					status += fmt.Sprintf("  ⚠️ %d error(s)", errorCount)
+					status += locale.Tf("wizard.source.preview_errors", errorCount)
 				}
 				previewStatusLabel.SetText(status)
 			})
 		}()
 	}
 
-	previewRefreshBtn := widget.NewButton("Refresh", refreshPreview)
+	previewRefreshBtn := widget.NewButton(locale.T("wizard.source.button_refresh"), refreshPreview)
 	previewStatusRow := container.NewHBox(previewStatusLabel, layout.NewSpacer(), previewRefreshBtn)
 	// List full width, 20px strip on the right
 	previewListRow := container.NewBorder(nil, nil, nil, nil, previewScroll)
@@ -432,7 +433,7 @@ func showSourceServersWindow(presenter *wizardpresentation.WizardPresenter, pare
 	if app == nil {
 		return
 	}
-	title := "Servers — " + sourceLabel
+	title := locale.Tf("wizard.source.view_title", sourceLabel)
 	if len(title) > 50 {
 		title = title[:47] + "..."
 	}
@@ -444,8 +445,8 @@ func showSourceServersWindow(presenter *wizardpresentation.WizardPresenter, pare
 			presenter.UpdateChildOverlay()
 		})
 	}
-	statusLabel := widget.NewLabel("Loading...")
-	closeBtn := widget.NewButton("Close", func() { win.Close() })
+	statusLabel := widget.NewLabel(locale.T("wizard.source.preview_loading"))
+	closeBtn := widget.NewButton(locale.T("wizard.source.view_close"), func() { win.Close() })
 	topContent := container.NewBorder(nil, container.NewHBox(layout.NewSpacer(), closeBtn), nil, nil, statusLabel)
 	win.SetContent(topContent)
 	win.Resize(fyne.NewSize(420, 380))
@@ -497,14 +498,14 @@ func showSourceServersWindow(presenter *wizardpresentation.WizardPresenter, pare
 
 		fyne.Do(func() {
 			if err != nil {
-				statusLabel.SetText("Error: " + err.Error())
+				statusLabel.SetText(locale.Tf("wizard.source.preview_error", err.Error()))
 				return
 			}
 			if len(nodes) == 0 {
-				statusLabel.SetText("No servers found.")
+				statusLabel.SetText(locale.T("wizard.source.view_no_servers"))
 				return
 			}
-			statusLabel.SetText(fmt.Sprintf("%d server(s)", len(nodes)))
+			statusLabel.SetText(locale.Tf("wizard.source.view_server_count", len(nodes)))
 			list := widget.NewList(
 				func() int { return len(nodes) },
 				func() fyne.CanvasObject {
@@ -529,7 +530,7 @@ func CreateOutboundsAndParserConfigTab(presenter *wizardpresentation.WizardPrese
 
 	// ParserConfig multi-line editor
 	guiState.ParserConfigEntry = widget.NewMultiLineEntry()
-	guiState.ParserConfigEntry.SetPlaceHolder("Enter ParserConfig JSON here...")
+	guiState.ParserConfigEntry.SetPlaceHolder(locale.T("wizard.outbounds.placeholder"))
 	guiState.ParserConfigEntry.Wrapping = fyne.TextWrapOff
 	guiState.ParserConfigEntry.OnChanged = func(string) {
 		if guiState.ParserConfigUpdating {
@@ -554,14 +555,14 @@ func CreateOutboundsAndParserConfigTab(presenter *wizardpresentation.WizardPrese
 	)
 
 	// Documentation button
-	docButton := widget.NewButton("📖 Documentation", func() {
+	docButton := widget.NewButton(locale.T("wizard.outbounds.button_docs"), func() {
 		docURL := "https://github.com/Leadaxe/singbox-launcher/blob/main/docs/ParserConfig.md"
 		if err := platform.OpenURL(docURL); err != nil {
-			dialog.ShowError(fmt.Errorf("failed to open documentation: %w", err), guiState.Window)
+			dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.outbounds.error_open_docs"), err), guiState.Window)
 		}
 	})
 
-	parserLabel := widget.NewLabel("ParserConfig:")
+	parserLabel := widget.NewLabel(locale.T("wizard.outbounds.label"))
 	parserLabel.Importance = widget.MediumImportance
 
 	// Ensure model.ParserConfig is set so configurator can edit it (configurator reads via editPresenter.Model()).
@@ -582,7 +583,7 @@ func CreateOutboundsAndParserConfigTab(presenter *wizardpresentation.WizardPrese
 		serialized, err := wizardbusiness.SerializeParserConfig(m.ParserConfig)
 		if err != nil {
 			debuglog.ErrorLog("source_tab: SerializeParserConfig after configurator change: %v", err)
-			dialog.ShowError(fmt.Errorf("Failed to serialize ParserConfig: %w", err), guiState.Window)
+			dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.outbounds.error_serialize"), err), guiState.Window)
 			return
 		}
 		m.ParserConfigJSON = serialized

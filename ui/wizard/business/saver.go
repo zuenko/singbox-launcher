@@ -6,10 +6,9 @@
 //   - SaveConfigWithBackup - сохранение конфигурации с созданием бэкапа и генерацией случайного secret для Clash API
 //
 // SaveConfigWithBackup выполняет:
-//  1. Валидацию JSON конфигурации (включая поддержку JSONC с комментариями)
-//  2. Генерацию случайного secret для experimental.clash_api.secret (если отсутствует)
-//  3. Создание бэкапа существующего файла конфигурации
-//  4. Сохранение новой конфигурации в файл
+//  1. Подготовку итогового текста (JSON/JSONC, подстановка secret для clash_api)
+//  2. При заданном singBoxPath — запись во временный файл, валидация sing-box check, при ошибке возврат без записи в config
+//  3. Создание бэкапа существующего файла конфигурации и сохранение новой конфигурации в файл
 //
 // Эти функции работают только с данными (текст конфигурации, путь к файлу),
 // без зависимостей от GUI и WizardState, что делает их тестируемыми и переиспользуемыми.
@@ -42,8 +41,63 @@ import (
 	"singbox-launcher/internal/platform"
 )
 
+// tempConfigFileName — имя временного файла для валидации конфига перед записью (создаётся в той же директории, затем удаляется).
+const tempConfigFileName = "config-check.json"
+
 // SaveConfigWithBackup сохраняет конфигурацию с созданием бэкапа.
-func SaveConfigWithBackup(fileService FileServiceInterface, configText string) (string, error) {
+// Если fileService.SingboxPath() не пустой, сначала валидирует конфиг через sing-box check по временному файлу,
+// и только при успехе пишет в configPath (не перезаписывает рабочий конфиг до успешной валидации).
+//
+// populateCheckText — опциональный callback, заполняющий маркеры @ParserSTART/@ParserEND
+// динамическими outbounds в памяти. Принимает текст конфига (после prepareConfigText),
+// возвращает текст с outbounds. Результат записывается и в config-check.json (для валидации),
+// и в config.json (конфиг сразу полный, повторный парсинг не нужен).
+func SaveConfigWithBackup(fileService FileServiceInterface, configText string, populateCheckText func(string) (string, error)) (string, error) {
+	finalText, err := prepareConfigText(configText)
+	if err != nil {
+		return "", err
+	}
+
+	if populateCheckText != nil {
+		if populated, err := populateCheckText(finalText); err != nil {
+			debuglog.WarnLog("SaveConfigWithBackup: populateCheckText failed (continuing with empty markers): %v", err)
+		} else {
+			finalText = populated
+		}
+	}
+
+	configPath := fileService.ConfigPath()
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		return "", err
+	}
+
+	singBoxPath := fileService.SingboxPath()
+	if singBoxPath != "" {
+		tmpPath := filepath.Join(filepath.Dir(configPath), tempConfigFileName)
+		defer func() {
+			if err := os.Remove(tmpPath); err != nil && !os.IsNotExist(err) {
+				debuglog.WarnLog("SaveConfigWithBackup: failed to remove temp config %s: %v", tmpPath, err)
+			}
+		}()
+		if err := os.WriteFile(tmpPath, []byte(finalText), 0o644); err != nil {
+			return "", fmt.Errorf("write temp config: %w", err)
+		}
+		if err := ValidateConfigWithSingBox(tmpPath, singBoxPath); err != nil {
+			return "", &ValidationError{Err: err, ConfigText: finalText}
+		}
+	}
+
+	if err := services.BackupFile(configPath); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(configPath, []byte(finalText), 0o644); err != nil {
+		return "", err
+	}
+	return configPath, nil
+}
+
+// prepareConfigText подготавливает итоговый текст конфига (JSON/JSONC, подстановка secret для clash_api).
+func prepareConfigText(configText string) (string, error) {
 	jsonBytes := jsonc.ToJSON([]byte(configText))
 	var configJSON map[string]interface{}
 	if err := json.Unmarshal(jsonBytes, &configJSON); err != nil {
@@ -87,61 +141,39 @@ func SaveConfigWithBackup(fileService FileServiceInterface, configText string) (
 		finalText = string(finalJSONBytes)
 	}
 
-	configPath := fileService.ConfigPath()
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		return "", err
-	}
-	if err := services.BackupFile(configPath); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(configPath, []byte(finalText), 0o644); err != nil {
-		return "", err
-	}
-	return configPath, nil
+	return finalText, nil
 }
 
 func generateRandomSecret(length int) string {
-	bytes := make([]byte, length)
-	if _, err := rand.Read(bytes); err != nil {
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
 		return base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))[:length]
 	}
-	return base64.URLEncoding.EncodeToString(bytes)[:length]
+	return base64.URLEncoding.EncodeToString(b)[:length]
 }
 
-// ValidateConfigWithSingBox validates configuration file using sing-box check command.
-// Works on all platforms (Windows, macOS, Linux) with console window hidden.
-// Returns nil if valid or if sing-box is not available (graceful degradation).
+// ValidateConfigWithSingBox валидирует конфигурационный файл через sing-box check.
+// Окно консоли скрыто на всех платформах. Возвращает nil при успехе или если sing-box недоступен (graceful degradation).
 func ValidateConfigWithSingBox(configPath, singBoxPath string) error {
-	// Skip validation if sing-box path is not provided
 	if singBoxPath == "" {
 		debuglog.DebugLog("Skipping sing-box validation: singBoxPath is empty")
 		return nil
 	}
-
-	// Check if sing-box executable exists
 	if _, err := os.Stat(singBoxPath); os.IsNotExist(err) {
 		debuglog.DebugLog("Skipping sing-box validation: executable not found at %s", singBoxPath)
 		return nil
 	}
 
-	// Prepare command
 	cmd := exec.Command(singBoxPath, "check", "-c", configPath)
-
-	// Hide console window on all platforms
 	platform.PrepareCommand(cmd)
 
-	// Capture output
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	debuglog.DebugLog("Running validation: %s check -c %s", singBoxPath, configPath)
 
-	// Run validation
-	err := cmd.Run()
-
-	if err != nil {
-		// Validation failed - extract meaningful error message
+	if err := cmd.Run(); err != nil {
 		errorMsg := stderr.String()
 		if errorMsg == "" {
 			errorMsg = stdout.String()
@@ -149,15 +181,12 @@ func ValidateConfigWithSingBox(configPath, singBoxPath string) error {
 		if errorMsg == "" {
 			errorMsg = err.Error()
 		}
-
 		debuglog.ErrorLog("Config validation failed: %v", err)
 		debuglog.LogTextFragment("ConfigValidator", debuglog.LevelError,
 			"Validation error output", errorMsg, 500)
-
 		return fmt.Errorf("sing-box config validation failed: %s", errorMsg)
 	}
 
 	debuglog.InfoLog("Config validation passed successfully")
-
 	return nil
 }

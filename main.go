@@ -15,6 +15,7 @@ import (
 	"singbox-launcher/core"
 	"singbox-launcher/core/config/parser"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 	"singbox-launcher/ui"
 )
@@ -48,6 +49,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize application: %v", err)
 	}
+
+	// Load locale settings and external translations
+	binDir := platform.GetBinDir(controller.FileService.ExecDir)
+	locale.LoadExternalLocales(locale.GetLocaleDir(binDir))
+	settings := locale.LoadSettings(binDir)
+	locale.SetLang(settings.Lang)
+	debuglog.InfoLog("Locale: language set to %q, available: %v", locale.GetLang(), locale.Languages())
 
 	// Check launcher version on startup (always checks, popup shown on first window display)
 	controller.CheckLauncherVersionOnStartup()
@@ -92,6 +100,9 @@ func main() {
 			// Create new timer with dynamic debounce delay
 			// This prevents rapid successive menu updates that cause systray errors
 			controller.UIService.TrayMenuUpdateTimer = time.AfterFunc(delay, func() {
+				if platform.IsSleeping() {
+					return // Skip tray menu update while system is sleeping
+				}
 				// Check if update is already in progress
 				controller.UIService.TrayMenuUpdateMutex.Lock()
 				if controller.UIService.TrayMenuUpdateInProgress {
@@ -219,6 +230,12 @@ func main() {
 
 	controller.UpdateUI()
 
+	// Reset Clash API HTTP connections after sleep/hibernation (platform no-op where not supported).
+	platform.RegisterPowerResumeCallback(func() {
+		api.ResetClashHTTPTransport()
+		debuglog.InfoLog("Power resume: Clash API HTTP transport reset")
+	})
+
 	// Check if config.json exists and show a warning if it doesn't
 	core.CheckConfigFileExists()
 
@@ -252,6 +269,7 @@ func main() {
 	if runtime.GOOS == "darwin" {
 		platform.CleanupDockReopenHandler()
 	}
+	platform.StopPowerResumeListener()
 
 	controller.GracefulExit()
 

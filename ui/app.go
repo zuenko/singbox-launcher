@@ -5,6 +5,7 @@ import (
 	"fyne.io/fyne/v2/container"
 
 	"singbox-launcher/core"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/ui/components"
 )
 
@@ -31,13 +32,13 @@ func NewApp(window fyne.Window, controller *core.AppController) *App {
 
 	// Create tabs - Core is first (opens on startup)
 	// Создаем вкладку Core первой, чтобы её callback установился
-	coreTabItem := container.NewTabItem("⚙️ Core", CreateCoreDashboardTab(controller))
-	app.clashAPITab = container.NewTabItem("🖥️ Servers", CreateClashAPITab(controller))
+	coreTabItem := container.NewTabItem(locale.T("app.tab.core"), CreateCoreDashboardTab(controller))
+	app.clashAPITab = container.NewTabItem(locale.T("app.tab.servers"), CreateClashAPITab(controller))
 	app.tabs = container.NewAppTabs(
 		coreTabItem,
 		app.clashAPITab,
-		container.NewTabItem("🔍 Diagnostics", CreateDiagnosticsTab(controller)),
-		container.NewTabItem("❓ Help", CreateHelpTab(controller)),
+		container.NewTabItem(locale.T("app.tab.diagnostics"), CreateDiagnosticsTab(controller)),
+		container.NewTabItem(locale.T("app.tab.help"), CreateHelpTab(controller)),
 	)
 
 	// Set tab selection handler

@@ -18,6 +18,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/core/config"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 )
@@ -43,55 +44,55 @@ func ShowEditDialog(
 	}
 	parserConfig := getParserConfig(editPresenter.Model())
 	if parserConfig == nil {
-		dialog.ShowError(fmt.Errorf("ParserConfig is not available"), parent)
+		dialog.ShowError(fmt.Errorf("%s", locale.T("wizard.outbound.error_config")), parent)
 		return
 	}
 	isAdd := existing == nil
-	dialogTitle := "Edit Outbound"
+	dialogTitle := locale.T("wizard.outbound.title_edit")
 	if isAdd {
-		dialogTitle = "Add Outbound"
+		dialogTitle = locale.T("wizard.outbound.title_add")
 	}
 
 	tagEntry := widget.NewEntry()
 	if existing != nil {
 		tagEntry.SetText(existing.Tag)
 	}
-	tagEntry.SetPlaceHolder("e.g. proxy-out")
+	tagEntry.SetPlaceHolder(locale.T("wizard.outbound.placeholder_tag"))
 
-	typeSelect := widget.NewSelect([]string{"manual (selector)", "auto (urltest)"}, nil)
+	typeSelect := widget.NewSelect([]string{locale.T("wizard.outbound.type_manual"), locale.T("wizard.outbound.type_auto")}, nil)
 	if existing != nil {
 		if existing.Type == "urltest" {
-			typeSelect.SetSelected("auto (urltest)")
+			typeSelect.SetSelected(locale.T("wizard.outbound.type_auto"))
 		} else {
-			typeSelect.SetSelected("manual (selector)")
+			typeSelect.SetSelected(locale.T("wizard.outbound.type_manual"))
 		}
 	} else {
-		typeSelect.SetSelected("manual (selector)")
+		typeSelect.SetSelected(locale.T("wizard.outbound.type_manual"))
 	}
 
 	commentEntry := widget.NewEntry()
 	if existing != nil {
 		commentEntry.SetText(existing.Comment)
 	}
-	commentEntry.SetPlaceHolder("Optional comment")
+	commentEntry.SetPlaceHolder(locale.T("wizard.outbound.placeholder_comment"))
 
 	// Scope: For all | For source: ...
-	scopeOptions := []string{"For all"}
+	scopeOptions := []string{locale.T("wizard.outbound.scope_all")}
 	for i, p := range parserConfig.ParserConfig.Proxies {
 		label := p.Source
 		if label == "" {
-			label = "Source " + strconv.Itoa(i+1)
+			label = locale.T("wizard.outbound.label_source") + strconv.Itoa(i+1)
 		}
 		if len(label) > 35 {
 			label = label[:32] + "..."
 		}
-		scopeOptions = append(scopeOptions, "For source: "+label)
+		scopeOptions = append(scopeOptions, locale.T("wizard.outbound.scope_source")+label)
 	}
 	scopeSelect := widget.NewSelect(scopeOptions, nil)
 	if isAdd {
-		scopeSelect.SetSelected("For all")
+		scopeSelect.SetSelected(locale.T("wizard.outbound.scope_all"))
 	} else if isGlobal {
-		scopeSelect.SetSelected("For all")
+		scopeSelect.SetSelected(locale.T("wizard.outbound.scope_all"))
 	} else {
 		if sourceIndex >= 0 && sourceIndex < len(parserConfig.ParserConfig.Proxies) {
 			scopeSelect.SetSelected(scopeOptions[sourceIndex+1])
@@ -101,9 +102,9 @@ func ShowEditDialog(
 	}
 
 	// Filters: fixed key "tag", value editable
-	filterKeyLabel := widget.NewLabel("tag")
+	filterKeyLabel := widget.NewLabel(locale.T("wizard.outbound.label_tag"))
 	filterValEntry := widget.NewEntry()
-	filterValEntry.SetPlaceHolder("e.g. /🇳🇱/i or !/(🇷🇺)/i")
+	filterValEntry.SetPlaceHolder(locale.T("wizard.outbound.placeholder_filter"))
 	if existing != nil && existing.Filters != nil {
 		if v, ok := existing.Filters["tag"]; ok {
 			if s, ok := v.(string); ok {
@@ -120,9 +121,9 @@ func ShowEditDialog(
 	}
 
 	// Preferred default: fixed key "tag", value editable
-	defKeyLabel := widget.NewLabel("tag")
+	defKeyLabel := widget.NewLabel(locale.T("wizard.outbound.label_tag"))
 	defValEntry := widget.NewEntry()
-	defValEntry.SetPlaceHolder("e.g. /🇳🇱/i")
+	defValEntry.SetPlaceHolder(locale.T("wizard.outbound.placeholder_preferred"))
 	if existing != nil && existing.PreferredDefault != nil {
 		if v, ok := existing.PreferredDefault["tag"]; ok {
 			if s, ok := v.(string); ok {
@@ -187,14 +188,14 @@ func ShowEditDialog(
 	rawScroll.SetMinSize(fyne.NewSize(400, 360))
 
 	// Raw documentation button (opens ParserConfig.md "Секция outbounds")
-	rawDocButton := widget.NewButton("📖 Documentation", func() {
+	rawDocButton := widget.NewButton(locale.T("wizard.outbound.button_docs"), func() {
 		docURL := "https://github.com/Leadaxe/singbox-launcher/blob/main/docs/ParserConfig.md#%D1%81%D0%B5%D0%BA%D1%86%D0%B8%D1%8F-outbounds"
 		if err := platform.OpenURL(docURL); err != nil {
-			dialog.ShowError(fmt.Errorf("failed to open documentation: %w", err), parent)
+			dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.outbound.error_open_docs"), err), parent)
 		}
 	})
 	rawHeader := container.NewHBox(
-		widget.NewLabel("Raw outbound JSON"),
+		widget.NewLabel(locale.T("wizard.outbound.label_raw_json")),
 		layout.NewSpacer(),
 		rawDocButton,
 	)
@@ -212,7 +213,7 @@ func ShowEditDialog(
 	getScopeFromForm := func() (scopeKind string, idx int) {
 		scopeKind = "global"
 		idx = -1
-		if scopeSelect.Selected != "" && strings.HasPrefix(scopeSelect.Selected, "For source:") {
+		if scopeSelect.Selected != "" && strings.HasPrefix(scopeSelect.Selected, locale.T("wizard.outbound.scope_source")) {
 			scopeKind = "source"
 			for i, opt := range scopeOptions {
 				if i > 0 && opt == scopeSelect.Selected {
@@ -229,20 +230,20 @@ func ShowEditDialog(
 		if currentTab == "raw" {
 			var cfg config.OutboundConfig
 			if err := json.Unmarshal([]byte(rawEntry.Text), &cfg); err != nil {
-				return nil, fmt.Errorf("invalid outbound JSON: %w", err)
+				return nil, fmt.Errorf("%s: %w", locale.T("wizard.outbound.error_invalid_json"), err)
 			}
 			if strings.TrimSpace(cfg.Tag) == "" {
-				return nil, fmt.Errorf("tag is required")
+				return nil, fmt.Errorf("%s", locale.T("wizard.outbound.error_tag_required"))
 			}
 			return &cfg, nil
 		}
 
 		tag := strings.TrimSpace(tagEntry.Text)
 		if tag == "" {
-			return nil, fmt.Errorf("tag is required")
+			return nil, fmt.Errorf("%s", locale.T("wizard.outbound.error_tag_required"))
 		}
 		obType := "selector"
-		if typeSelect.Selected == "auto (urltest)" {
+		if typeSelect.Selected == locale.T("wizard.outbound.type_auto") {
 			obType = "urltest"
 		}
 
@@ -296,11 +297,11 @@ func ShowEditDialog(
 		if currentTab == "raw" {
 			var cfg config.OutboundConfig
 			if err := json.Unmarshal([]byte(rawEntry.Text), &cfg); err != nil {
-				dialog.ShowError(fmt.Errorf("invalid JSON: %w", err), dialogWin)
+				dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.outbound.error_invalid_json"), err), dialogWin)
 				return
 			}
 			if strings.TrimSpace(cfg.Tag) == "" {
-				dialog.ShowError(fmt.Errorf("tag is required"), dialogWin)
+				dialog.ShowError(fmt.Errorf("%s", locale.T("wizard.outbound.error_tag_required")), dialogWin)
 				return
 			}
 			scopeKind, idx := getScopeFromForm()
@@ -332,19 +333,19 @@ func ShowEditDialog(
 	}
 
 	form := container.NewVBox(
-		widget.NewLabel("Scope"),
+		widget.NewLabel(locale.T("wizard.outbound.label_scope")),
 		scopeSelect,
-		widget.NewLabel("Tag"),
+		widget.NewLabel(locale.T("wizard.outbound.label_tag_field")),
 		tagEntry,
-		widget.NewLabel("Type"),
+		widget.NewLabel(locale.T("wizard.outbound.label_type")),
 		typeSelect,
-		widget.NewLabel("Comment"),
+		widget.NewLabel(locale.T("wizard.outbound.label_comment")),
 		commentEntry,
-		widget.NewLabel("Filters (key and value; use !/regex/i for negation)"),
+		widget.NewLabel(locale.T("wizard.outbound.label_filters")),
 		container.NewGridWithColumns(2, filterKeyLabel, filterValEntry),
-		widget.NewLabel("Preferred default (filter for default node)"),
+		widget.NewLabel(locale.T("wizard.outbound.label_preferred")),
 		container.NewGridWithColumns(2, defKeyLabel, defValEntry),
-		widget.NewLabel("Add outbounds at start (direct-out, reject, others)"),
+		widget.NewLabel(locale.T("wizard.outbound.label_add_outbounds")),
 		container.NewHBox(directCheck, rejectCheck),
 		scrollOther,
 	)
@@ -360,7 +361,7 @@ func ShowEditDialog(
 	dialogScroll.SetMinSize(fyne.NewSize(400, 400))
 
 	// Preview tab: uses preview cache from the wizard model (via editPresenter.Model()).
-	previewStatusLabel := widget.NewLabel("Switch to Preview to see nodes for this outbound.")
+	previewStatusLabel := widget.NewLabel(locale.T("wizard.outbound.preview_switch"))
 	type previewRow struct {
 		text  string
 		color color.Color
@@ -394,30 +395,30 @@ func ShowEditDialog(
 		previewList.Refresh()
 
 		if editPresenter == nil {
-			previewStatusLabel.SetText("Preview is not available in this context (no presenter).")
+			previewStatusLabel.SetText(locale.T("wizard.outbound.preview_no_presenter"))
 			return
 		}
 		model := editPresenter.Model()
 		if model == nil {
-			previewStatusLabel.SetText("Preview is not available: wizard model is nil.")
+			previewStatusLabel.SetText(locale.T("wizard.outbound.preview_model_nil"))
 			return
 		}
 
 		cfg, err := buildConfigForPreview()
 		if err != nil {
-			previewStatusLabel.SetText("Failed to build preview: invalid outbound JSON. Please switch to the \"Raw\" tab and fix JSON first.")
+			previewStatusLabel.SetText(locale.T("wizard.outbound.preview_invalid_json"))
 			return
 		}
 
 		// Ensure preview cache is up to date.
 		errorCount, err := wizardbusiness.RebuildPreviewCache(model)
 		if err != nil {
-			previewStatusLabel.SetText(fmt.Sprintf("Failed to build preview cache: %v", err))
+			previewStatusLabel.SetText(locale.Tf("wizard.outbound.preview_cache_failed", err))
 			return
 		}
 		allNodes := model.PreviewNodes
 		if len(allNodes) == 0 {
-			previewStatusLabel.SetText("No nodes available for preview. Please configure sources and try again.")
+			previewStatusLabel.SetText(locale.T("wizard.outbound.preview_no_nodes"))
 			return
 		}
 
@@ -438,7 +439,7 @@ func ShowEditDialog(
 				proxy := model.ParserConfig.ParserConfig.Proxies[si]
 				label := proxy.Source
 				if label == "" {
-					label = fmt.Sprintf("Source %d", si+1)
+					label = locale.T("wizard.outbound.label_source") + fmt.Sprintf("%d", si+1)
 				}
 				if len(label) > 40 {
 					label = label[:37] + "..."
@@ -459,7 +460,7 @@ func ShowEditDialog(
 
 			src := sourceLabels[node]
 			if src == "" {
-				src = "Unknown source"
+				src = locale.T("wizard.outbound.preview_unknown_source")
 			}
 			text := node.Tag
 			if text == "" {
@@ -498,15 +499,15 @@ func ShowEditDialog(
 		previewRows = append(defaultRows, otherRows...)
 		previewList.Refresh()
 
-		status := fmt.Sprintf("%d node(s) total, %d matched filters", len(allNodes), len(filteredNodes))
+		status := locale.Tf("wizard.outbound.preview_status", len(allNodes), len(filteredNodes))
 		if defaultTag != "" {
-			status += fmt.Sprintf(", default: %s", defaultTag)
+			status += locale.Tf("wizard.outbound.preview_default", defaultTag)
 		}
 		if len(cfg.AddOutbounds) > 0 {
-			status += fmt.Sprintf(" | Also includes: %s", strings.Join(cfg.AddOutbounds, ", "))
+			status += locale.Tf("wizard.outbound.preview_also_includes", strings.Join(cfg.AddOutbounds, ", "))
 		}
 		if errorCount > 0 {
-			status += fmt.Sprintf(" | ⚠️ %d source error(s)", errorCount)
+			status += locale.Tf("wizard.outbound.preview_source_errors", errorCount)
 		}
 		previewStatusLabel.SetText(status)
 	}
@@ -523,9 +524,9 @@ func ShowEditDialog(
 		}
 		tagEntry.SetText(cfg.Tag)
 		if cfg.Type == "urltest" {
-			typeSelect.SetSelected("auto (urltest)")
+			typeSelect.SetSelected(locale.T("wizard.outbound.type_auto"))
 		} else {
-			typeSelect.SetSelected("manual (selector)")
+			typeSelect.SetSelected(locale.T("wizard.outbound.type_manual"))
 		}
 		commentEntry.SetText(cfg.Comment)
 		filterValEntry.SetText("")
@@ -563,15 +564,15 @@ func ShowEditDialog(
 	}
 
 	tabs := container.NewAppTabs(
-		container.NewTabItem("Settings", dialogScroll),
-		container.NewTabItem("Raw", rawContainer),
-		container.NewTabItem("Preview", previewContent),
+		container.NewTabItem(locale.T("wizard.outbound.tab_settings"), dialogScroll),
+		container.NewTabItem(locale.T("wizard.outbound.tab_raw"), rawContainer),
+		container.NewTabItem(locale.T("wizard.outbound.tab_preview"), previewContent),
 	)
 	tabs.OnSelected = func(t *container.TabItem) {
 		switch t.Text {
-		case "Raw":
+		case locale.T("wizard.outbound.tab_raw"):
 			currentTab = "raw"
-		case "Preview":
+		case locale.T("wizard.outbound.tab_preview"):
 			currentTab = "preview"
 			buildPreview()
 		default:
@@ -580,12 +581,12 @@ func ShowEditDialog(
 		}
 	}
 
-	cancelBtn := widget.NewButton("Cancel", func() {
+	cancelBtn := widget.NewButton(locale.T("wizard.outbound.button_cancel"), func() {
 		if dialogWin != nil {
 			dialogWin.Close()
 		}
 	})
-	saveBtn := widget.NewButton("Save", func() { save() })
+	saveBtn := widget.NewButton(locale.T("wizard.outbound.button_save"), func() { save() })
 
 	buttonsContainer := container.NewHBox(
 		layout.NewSpacer(),

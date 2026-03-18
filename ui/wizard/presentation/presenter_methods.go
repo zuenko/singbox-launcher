@@ -20,6 +20,7 @@ package presentation
 import (
 	"singbox-launcher/core/services"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/locale"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 )
@@ -199,9 +200,9 @@ func (p *WizardPresenter) SetTemplatePreviewText(text string) {
 	// For large texts (>50KB) show loading message before insertion
 	if len(text) > 50000 {
 		p.UpdateUI(func() {
-			p.guiState.TemplatePreviewEntry.SetText("Loading large preview...")
+			p.guiState.TemplatePreviewEntry.SetText(locale.T("wizard.preview.loading_large"))
 			if p.guiState.TemplatePreviewStatusLabel != nil {
-				p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Loading large preview...")
+				p.guiState.TemplatePreviewStatusLabel.SetText(locale.T("wizard.preview.status_loading_large"))
 			}
 		})
 
