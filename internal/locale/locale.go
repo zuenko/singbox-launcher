@@ -27,7 +27,10 @@ var enJSON []byte
 const displayNameKey = "_display_name"
 
 // RemoteLanguages lists language codes available for download from GitHub.
-var RemoteLanguages = []string{"ru"}
+// Order is used for download; all matching bin/locale/*.json are loaded at startup.
+var RemoteLanguages = []string{
+	"ru", "de", "es", "fr", "it", "pt-BR", "zh", "ja", "ko", "tr",
+}
 
 var (
 	mu       sync.RWMutex
