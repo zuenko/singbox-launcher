@@ -766,28 +766,48 @@ GOOS=darwin GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -o singbox-la
 
 ### Linux
 
-**⚠️ Note**: Linux builds are not available. The build process and functionality need testing. Help is welcome!
+**⚠️ Note**: Linux builds are not distributed. Build from source; the process needs testing. Help is welcome!
 
-**Linux:**
+**Required system packages** (OpenGL + X11 for Fyne/GLFW). Install before building:
+
+- **Debian/Ubuntu:**
+  ```bash
+  sudo apt-get update && sudo apt-get install -y \
+    build-essential pkg-config libgl1-mesa-dev libxcursor-dev \
+    libxrandr-dev libxi-dev libxinerama-dev libxft-dev \
+    libxkbcommon-x11-dev libxxf86vm-dev libwayland-dev
+  ```
+- **Fedora/RHEL:** `mesa-libGL-devel libXcursor-devel libXrandr-devel libXi-devel libXinerama-devel libXft-devel libxkbcommon-x11-devel libXxf86vm-devel libwayland-devel` (install via `dnf`).
+
+**Build:**
 ```bash
 # Clone the repository
 git clone https://github.com/Leadaxe/singbox-launcher.git
 cd singbox-launcher
 
-# Install dependencies
 go mod download
 
-# Build the project
 chmod +x build/build_linux.sh
 ./build/build_linux.sh
 ```
 
-Or manually:
+The script checks for the required packages and prints install commands if something is missing.
+
+**Alternative: build in Docker** (no local dev packages needed):
+```bash
+# From repository root
+docker build -f build/Dockerfile.linux --target export -o type=local,dest=. .
+chmod +x singbox-launcher
+```
+
+Or manually (after installing the packages above):
 ```bash
 GOOS=linux GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -o singbox-launcher
 ```
 
-**Help Wanted**: If you can test builds on Linux, please share your feedback on [GitHub Issues](https://github.com/Leadaxe/singbox-launcher/issues)!
+Detailed instructions and troubleshooting: [docs/BUILD_LINUX.md](docs/BUILD_LINUX.md).
+
+**Help Wanted**: If you can test on Linux (e.g. Ubuntu 22.04/24.04, Debian), please share feedback on [GitHub Issues](https://github.com/Leadaxe/singbox-launcher/issues)!
 
 ## 🤝 Contributing
 
