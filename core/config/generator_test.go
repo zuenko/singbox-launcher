@@ -1,7 +1,10 @@
 package config
 
 import (
+	"strings"
 	"testing"
+
+	"singbox-launcher/core/config/subscription"
 )
 
 // TestOutboundInfo_ThreePassAlgorithm tests the three-pass algorithm for handling dynamic addOutbounds
@@ -266,4 +269,33 @@ func TestOutboundInfo_ThreePassAlgorithm(t *testing.T) {
 			t.Errorf("A: expected outboundCount 2, got %d", aInfo.outboundCount)
 		}
 	})
+}
+
+// Sing-box rejects Xray-only flow xtls-rprx-vision-udp443; buildOutbound maps it to vision + xudp.
+// GenerateNodeJSON must emit the converted flow from node.Outbound, not the original node.Flow (used for skip filters).
+func TestGenerateNodeJSON_VLESS_XtlsVisionUDP443(t *testing.T) {
+	uri := "vless://729764b1-149c-49f2-b170-322544df7b5b@144.31.130.245:443?encryption=none&flow=xtls-rprx-vision-udp443&sni=144.31.130.245&fp=chrome#Cyprus"
+	node, err := subscription.ParseNode(uri, nil)
+	if err != nil {
+		t.Fatalf("ParseNode: %v", err)
+	}
+	if node == nil {
+		t.Fatal("ParseNode returned nil")
+	}
+	if node.Flow != "xtls-rprx-vision-udp443" {
+		t.Fatalf("node.Flow should stay original for filters, got %q", node.Flow)
+	}
+	jsonStr, err := GenerateNodeJSON(node)
+	if err != nil {
+		t.Fatalf("GenerateNodeJSON: %v", err)
+	}
+	if !strings.Contains(jsonStr, `"flow":"xtls-rprx-vision"`) {
+		t.Fatalf("expected sing-box flow in JSON:\n%s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"packet_encoding":"xudp"`) {
+		t.Fatalf("expected packet_encoding in JSON:\n%s", jsonStr)
+	}
+	if strings.Contains(jsonStr, "xtls-rprx-vision-udp443") {
+		t.Fatalf("must not emit unsupported Xray flow in JSON:\n%s", jsonStr)
+	}
 }

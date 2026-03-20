@@ -84,8 +84,14 @@ func GenerateNodeJSON(node *ParsedNode) (string, error) {
 	// 3. server
 	parts = append(parts, fmt.Sprintf(`"server":%q`, node.Server))
 
-	// 4. server_port
-	parts = append(parts, fmt.Sprintf(`"server_port":%d`, node.Port))
+	// 4. server_port (prefer outbound map: buildOutbound may adjust port, e.g. vision-udp443 → 443)
+	serverPort := node.Port
+	if node.Outbound != nil {
+		if sp, ok := node.Outbound["server_port"].(int); ok && sp > 0 {
+			serverPort = sp
+		}
+	}
+	parts = append(parts, fmt.Sprintf(`"server_port":%d`, serverPort))
 
 	// 5. uuid (for vless/vmess) or password (for trojan) or method/password (for ss)
 	if node.Scheme == "vless" || node.Scheme == "vmess" {
@@ -193,9 +199,21 @@ func GenerateNodeJSON(node *ParsedNode) (string, error) {
 		}
 	}
 
-	// 6. flow (if present)
-	if node.Flow != "" {
-		parts = append(parts, fmt.Sprintf(`"flow":%q`, node.Flow))
+	// 6. flow (if present) — use node.Outbound["flow"] when set so Xray-only values like
+	// xtls-rprx-vision-udp443 stay in node.Flow for filters but sing-box gets xtls-rprx-vision
+	flowOut := node.Flow
+	if node.Outbound != nil {
+		if f, ok := node.Outbound["flow"].(string); ok && f != "" {
+			flowOut = f
+		}
+	}
+	if flowOut != "" {
+		parts = append(parts, fmt.Sprintf(`"flow":%q`, flowOut))
+	}
+	if node.Scheme == "vless" && node.Outbound != nil {
+		if pe, ok := node.Outbound["packet_encoding"].(string); ok && pe != "" {
+			parts = append(parts, fmt.Sprintf(`"packet_encoding":%q`, pe))
+		}
 	}
 
 	// 7. tls (if present) - with correct field order
