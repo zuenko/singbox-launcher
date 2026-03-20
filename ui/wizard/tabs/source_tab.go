@@ -41,6 +41,10 @@ import (
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
 )
 
+// scrollbarGutterWidth is reserved space to the right of scrollable content so the
+// native scrollbar strip does not overlap buttons or text (same idea as outbounds list).
+const scrollbarGutterWidth = 10
+
 // CreateSourcesTab creates the Sources tab UI (URLs, URL status and preview).
 func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObject {
 	guiState := presenter.GUIState()
@@ -82,8 +86,11 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	})
 
 	// Limit width and height of URL input field (3 lines)
-	// Wrap MultiLineEntry in Scroll container to show scrollbars
-	urlEntryScroll := container.NewScroll(guiState.SourceURLEntry)
+	// Wrap MultiLineEntry in Scroll container to show scrollbars; right gutter for scrollbar strip
+	urlURIGutter := canvas.NewRectangle(color.Transparent)
+	urlURIGutter.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
+	urlEntryScrollInner := container.NewBorder(nil, nil, nil, urlURIGutter, guiState.SourceURLEntry)
+	urlEntryScroll := container.NewScroll(urlEntryScrollInner)
 	urlEntryScroll.Direction = container.ScrollBoth
 	// Create dummy Rectangle to set size (height 3 lines, width limited)
 	urlEntrySizeRect := canvas.NewRectangle(color.Transparent)
@@ -127,7 +134,9 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 		sourcesBox.Objects = sourcesBox.Objects[:0]
 		m := presenter.Model()
 		if m.ParserConfig == nil || len(m.ParserConfig.ParserConfig.Proxies) == 0 {
-			sourcesBox.Add(widget.NewLabel(locale.T("wizard.source.no_sources")))
+			emptyGutter := canvas.NewRectangle(color.Transparent)
+			emptyGutter.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
+			sourcesBox.Add(container.NewHBox(widget.NewLabel(locale.T("wizard.source.no_sources")), layout.NewSpacer(), emptyGutter))
 			sourcesBox.Refresh()
 			return
 		}
@@ -258,12 +267,15 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 				}
 			})
 
+			rowGutter := canvas.NewRectangle(color.Transparent)
+			rowGutter.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
 			row := container.NewHBox(
 				sourceButton,
 				layout.NewSpacer(),
 				prefixEntry,
 				viewBtn,
 				delBtn,
+				rowGutter,
 			)
 			sourcesBox.Add(row)
 			}(i)
@@ -293,9 +305,8 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	)
 	previewScroll := container.NewScroll(previewList)
 	previewScroll.SetMinSize(fyne.NewSize(0, 180))
-	// 10px strip to the right of the list (scrollbar area)
 	previewScrollStrip := canvas.NewRectangle(color.Transparent)
-	previewScrollStrip.SetMinSize(fyne.NewSize(10, 0))
+	previewScrollStrip.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
 
 	refreshPreview := func() {
 		m := presenter.Model()
@@ -334,8 +345,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 
 	previewRefreshBtn := widget.NewButton(locale.T("wizard.source.button_refresh"), refreshPreview)
 	previewStatusRow := container.NewHBox(previewStatusLabel, layout.NewSpacer(), previewRefreshBtn)
-	// List full width, 20px strip on the right
-	previewListRow := container.NewBorder(nil, nil, nil, nil, previewScroll)
+	previewListRow := container.NewBorder(nil, nil, nil, previewScrollStrip, previewScroll)
 	previewBox := container.NewVBox(
 		previewStatusRow,
 		previewListRow,
@@ -353,8 +363,12 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 		widget.NewSeparator(),
 	)
 
+	tabScrollGutter := canvas.NewRectangle(color.Transparent)
+	tabScrollGutter.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
+	contentWithScrollGutter := container.NewBorder(nil, nil, nil, tabScrollGutter, content)
+
 	// Add scroll for long content
-	scrollContainer := container.NewScroll(content)
+	scrollContainer := container.NewScroll(contentWithScrollGutter)
 	scrollContainer.SetMinSize(fyne.NewSize(0, 620))
 
 	return scrollContainer
