@@ -71,24 +71,36 @@
     "dns": {
       "servers": [
         {
+          "type": "local",
+          "tag": "local_dns_resolver"
+        },
+        {
+          "type": "udp",
+          "tag": "cloudflare_udp",
+          "server": "1.1.1.1",
+          "server_port": 53
+        },
+        {
           "type": "udp",
           "tag": "direct_dns_resolver",
-          "server": "1.1.1.1",
+          "server": "8.8.8.8",
           "server_port": 53
         },
         {
           "type": "https",
           "tag": "google_doh",
-          "server": "8.8.8.8",
+          "server": "dns.google",
           "server_port": 443,
-          "path": "/dns-query"
+          "path": "/dns-query",
+          "domain_resolver": "direct_dns_resolver"
         },
         {
           "type": "https",
           "tag": "google_doh_vpn",
-          "server": "8.8.8.8",
+          "server": "dns.google",
           "server_port": 443,
           "path": "/dns-query",
+          "domain_resolver": "direct_dns_resolver",
           "detour": "proxy-out"
         },
         {
