@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/platform"
+	"singbox-launcher/internal/textnorm"
 
 	"github.com/muhammadmuzzammil1998/jsonc"
 )
@@ -268,9 +270,24 @@ func TestAPIConnection(baseURL, token string) error {
 
 // ProxyInfo holds the proxy name and traffic usage.
 type ProxyInfo struct {
-	Name    string
-	Traffic [2]int64 // [up, down]
-	Delay   int64    // Last known delay in ms
+	// Name is the exact tag from the Clash API (used for /proxies/... requests).
+	Name string
+	// DisplayName is normalized for UI (UTF-8 repair, angle quotes → " > "). Empty means callers may fall back to Name.
+	DisplayName string
+	Traffic     [2]int64 // [up, down]
+	Delay       int64    // Last known delay in ms
+}
+
+// DisplayOrName returns DisplayName when set, otherwise a normalized form of Name for UI.
+func (p ProxyInfo) DisplayOrName() string {
+	if p.DisplayName != "" {
+		return p.DisplayName
+	}
+	d := textnorm.NormalizeProxyDisplay(p.Name)
+	if d == "" {
+		return p.Name
+	}
+	return d
 }
 
 // GetProxiesInGroup retrieves proxies from a group, their traffic stats, and last delay from the Clash API. Returns ErrPlatformInterrupt when the system is sleeping or context is cancelled.
@@ -381,7 +398,11 @@ func GetProxiesInGroup(baseURL, token, groupName string) ([]ProxyInfo, string, e
 		if !ok {
 			continue
 		}
-		pi := ProxyInfo{Name: name}
+		disp := textnorm.NormalizeProxyDisplay(name)
+		if disp == "" {
+			disp = name
+		}
+		pi := ProxyInfo{Name: name, DisplayName: disp}
 		if node, ok := proxiesMap[name].(map[string]interface{}); ok {
 			// Парсим трафик (остается на случай, если он появится)
 			if f, ok := node["up"].(float64); ok {
@@ -415,16 +436,19 @@ func SwitchProxy(baseURL, token, group, proxy string) error {
 	if err != nil {
 		return err
 	}
-	payloadStr := fmt.Sprintf("{\"name\":\"%s\"}", proxy)
-	logMessage := fmt.Sprintf("[%s] PUT /proxies/%s request started with payload: %s\n", time.Now().Format("2006-01-02 15:04:05"), group, payloadStr)
+	payloadBytes, err := json.Marshal(map[string]string{"name": proxy})
+	if err != nil {
+		return fmt.Errorf("failed to marshal switch payload: %w", err)
+	}
+	logMessage := fmt.Sprintf("[%s] PUT /proxies/%s request started with payload: %s\n", time.Now().Format("2006-01-02 15:04:05"), group, string(payloadBytes))
 	writeLog(debuglog.LevelVerbose, "%s", logMessage)
 
-	url := fmt.Sprintf("%s/proxies/%s", baseURL, group)
-	payload := strings.NewReader(payloadStr)
+	reqURL := fmt.Sprintf("%s/proxies/%s", baseURL, url.PathEscape(group))
+	payload := strings.NewReader(string(payloadBytes))
 
 	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(httpRequestTimeoutSeconds)*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, "PUT", url, payload)
+	req, err := http.NewRequestWithContext(reqCtx, "PUT", reqURL, payload)
 	if err != nil {
 		writeLog(debuglog.LevelInfo, "[%s] Error creating switch request for %s/%s: %v\n", time.Now().Format("2006-01-02 15:04:05"), group, proxy, err)
 		return fmt.Errorf("failed to create switch request: %w", err)
@@ -473,10 +497,11 @@ func GetDelay(baseURL, token, proxyName string) (int64, error) {
 	logMessage := fmt.Sprintf("[%s] GET /proxies/%s/delay request started.\n", time.Now().Format("2006-01-02 15:04:05"), proxyName)
 	writeLog(debuglog.LevelVerbose, "%s", logMessage)
 
-	url := fmt.Sprintf("%s/proxies/%s/delay?timeout=5000&url=%s", baseURL, proxyName, GetPingTestURL())
+	encName := url.PathEscape(proxyName)
+	delayURL := fmt.Sprintf("%s/proxies/%s/delay?timeout=5000&url=%s", baseURL, encName, url.QueryEscape(GetPingTestURL()))
 	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(httpRequestTimeoutSeconds)*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(reqCtx, "GET", delayURL, nil)
 	if err != nil {
 		writeLog(debuglog.LevelInfo, "[%s] Error creating delay request for %s: %v\n", time.Now().Format("2006-01-02 15:04:05"), proxyName, err)
 		return 0, fmt.Errorf("failed to create delay request: %w", err)

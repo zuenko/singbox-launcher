@@ -158,7 +158,7 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 					resultLabel := widget.NewLabel(locale.Tf("diag.external_ip_format", ip, connectionInfo))
 					copyButton := widget.NewButton(locale.T("diag.copy_ip"), func() {
 						fyne.CurrentApp().Clipboard().SetContent(ip)
-						ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, locale.T("diag.copied_title"), locale.T("diag.ip_copied"))
+						dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, locale.T("diag.copied_title"), locale.T("diag.ip_copied"))
 					})
 					ShowCustom(ac.UIService.MainWindow, locale.T("diag.stun_result_title"), locale.T("diag.close"), container.NewVBox(resultLabel, copyButton))
 				}

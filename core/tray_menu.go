@@ -97,7 +97,8 @@ func (ac *AppController) buildProxySubmenu(selectedGroup string) *fyne.Menu {
 		for i := range proxies {
 			proxy := proxies[i]
 			pName := proxy.Name
-			menuItem := fyne.NewMenuItem(pName, func() {
+			display := proxy.DisplayOrName()
+			menuItem := fyne.NewMenuItem(display, func() {
 				go func() {
 					err := ac.APIService.SwitchProxy(selectedGroup, pName)
 					fyne.Do(func() {
@@ -111,7 +112,7 @@ func (ac *AppController) buildProxySubmenu(selectedGroup string) *fyne.Menu {
 				}()
 			})
 			if pName == activeProxy {
-				menuItem.Label = "✓ " + pName
+				menuItem.Label = "✓ " + display
 			}
 			items = append(items, menuItem)
 		}

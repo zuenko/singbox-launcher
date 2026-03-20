@@ -8,6 +8,7 @@ import (
 
 	"singbox-launcher/core/config/configtypes"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/textnorm"
 )
 
 // IsSubscriptionURL checks if the input string is a subscription URL (http:// or https://)
@@ -112,6 +113,12 @@ func LoadNodesFromSource(
 					if subLine == "" {
 						continue
 					}
+					// Drop invalid UTF-8 in the line before URI parsing so url.Parse / fragment
+					// handling does not combine with sanitizeForDisplay to produce U+FFFD artifacts.
+					subLine = strings.ToValidUTF8(subLine, "")
+					if subLine == "" {
+						continue
+					}
 					lineCount++
 
 					if nodesFromThisSource >= configtypes.MaxNodesPerSubscription {
@@ -135,6 +142,7 @@ func LoadNodesFromSource(
 					if node != nil {
 						// Apply prefix, postfix, or mask to tag if specified (with variable substitution)
 						node.Tag = applyTagPrefixPostfix(node, proxySource.TagPrefix, proxySource.TagPostfix, proxySource.TagMask, nodesFromThisSource+1)
+						node.Tag = textnorm.NormalizeProxyDisplay(node.Tag)
 						node.Tag = MakeTagUnique(node.Tag, tagCounts, "Parser")
 						nodes = append(nodes, node)
 						nodesFromThisSource++
@@ -158,7 +166,8 @@ func LoadNodesFromSource(
 
 			if nodesFromThisSource < configtypes.MaxNodesPerSubscription {
 				parseStartTime := time.Now()
-				node, err := ParseNode(proxySource.Source, proxySource.Skip)
+				src := strings.ToValidUTF8(strings.TrimSpace(proxySource.Source), "")
+				node, err := ParseNode(src, proxySource.Skip)
 				if err != nil {
 				debuglog.DebugLog("LoadNodesFromSource: Failed to parse direct link (took %v): %v",
 					time.Since(parseStartTime), err)
@@ -166,6 +175,7 @@ func LoadNodesFromSource(
 				} else if node != nil {
 					// Apply prefix, postfix, or mask to tag if specified (with variable substitution)
 					node.Tag = applyTagPrefixPostfix(node, proxySource.TagPrefix, proxySource.TagPostfix, proxySource.TagMask, nodesFromThisSource+1)
+					node.Tag = textnorm.NormalizeProxyDisplay(node.Tag)
 					node.Tag = MakeTagUnique(node.Tag, tagCounts, "Parser")
 					nodes = append(nodes, node)
 					nodesFromThisSource++
@@ -183,6 +193,7 @@ func LoadNodesFromSource(
 		len(proxySource.Connections), subscriptionIndex+1, totalSubscriptions)
 	for connIndex, connection := range proxySource.Connections {
 		connection = strings.TrimSpace(connection)
+		connection = strings.ToValidUTF8(connection, "")
 		if connection == "" {
 			continue
 		}
@@ -216,6 +227,7 @@ func LoadNodesFromSource(
 		if node != nil {
 			// Apply prefix, postfix, or mask to tag if specified (with variable substitution)
 			node.Tag = applyTagPrefixPostfix(node, proxySource.TagPrefix, proxySource.TagPostfix, proxySource.TagMask, nodesFromThisSource+1)
+			node.Tag = textnorm.NormalizeProxyDisplay(node.Tag)
 			node.Tag = MakeTagUnique(node.Tag, tagCounts, "Parser")
 			nodes = append(nodes, node)
 			nodesFromThisSource++

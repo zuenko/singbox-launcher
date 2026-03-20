@@ -9,6 +9,7 @@ import (
 
 	"singbox-launcher/core/config/configtypes"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/textnorm"
 )
 
 // parseWireGuardURI parses wireguard:// URI into ParsedNode with sing-box endpoint in Outbound.
@@ -152,6 +153,7 @@ func parseWireGuardURI(uri string, skipFilters []map[string]string) (*configtype
 		label = decoded
 	}
 	label = sanitizeForDisplay(label)
+	label = textnorm.NormalizeProxyDisplay(label)
 	tag, comment := extractTagAndComment(label)
 	if tag == "" {
 		tag = generateDefaultTag("wireguard", parsedURL.Hostname(), port)

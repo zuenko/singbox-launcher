@@ -2,13 +2,11 @@ package ui
 
 import (
 	"fmt"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
-	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/locale"
 )
 
@@ -47,11 +45,6 @@ func ShowConfirm(window fyne.Window, title, message string, onConfirm func(bool)
 	})
 }
 
-// ShowDownloadFailedManual re-exports internal/dialogs.ShowDownloadFailedManual for UI callers.
-func ShowDownloadFailedManual(window fyne.Window, title, downloadURL, targetDir string) {
-	dialogs.ShowDownloadFailedManual(window, title, downloadURL, targetDir)
-}
-
 // ShowErrorBanner shows an error banner (widget.Entry with error styling)
 // This can be used for inline error display in forms
 func ShowErrorBanner(message string) *widget.Entry {
@@ -60,19 +53,4 @@ func ShowErrorBanner(message string) *widget.Entry {
 	entry.Disable()
 	entry.Wrapping = fyne.TextWrapWord
 	return entry
-}
-
-// ShowAutoHideInfo shows a temporary notification and dialog that auto-hides after 2 seconds
-func ShowAutoHideInfo(app fyne.App, window fyne.Window, title, message string) {
-	// Re-export from internal/dialogs to avoid import cycles
-	// This allows ui package to use the same function
-	app.SendNotification(&fyne.Notification{Title: title, Content: message})
-		fyne.Do(func() {
-			d := dialogs.NewCustom(title, widget.NewLabel(message), nil, "", window)
-			d.Show()
-			go func() {
-				<-time.After(2 * time.Second)
-				fyne.Do(func() { d.Hide() })
-			}()
-		})
 }

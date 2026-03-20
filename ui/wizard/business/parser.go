@@ -19,8 +19,11 @@ package business
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"singbox-launcher/core/config"
 	"singbox-launcher/core/config/subscription"
@@ -354,8 +357,13 @@ func buildProxiesFromInputs(
 			}
 			restoreTagPrefixAndPostfix(&proxySource, item.Subscription, existingProps, fmt.Sprintf("subscription: %s", item.Subscription))
 			if proxySource.TagPrefix == "" {
-				proxySource.TagPrefix = GenerateTagPrefix(nextIndex)
-				debuglog.DebugLog("applyURLToParserConfig: Added default tag_prefix '%s' for subscription: %s", proxySource.TagPrefix, item.Subscription)
+				if p := tagPrefixFromSubscriptionFragment(item.Subscription); p != "" {
+					proxySource.TagPrefix = p
+					debuglog.DebugLog("applyURLToParserConfig: tag_prefix from URL fragment '%s' for subscription: %s", proxySource.TagPrefix, item.Subscription)
+				} else {
+					proxySource.TagPrefix = GenerateTagPrefix(nextIndex)
+					debuglog.DebugLog("applyURLToParserConfig: Added default tag_prefix '%s' for subscription: %s", proxySource.TagPrefix, item.Subscription)
+				}
 			}
 			result = append(result, proxySource)
 			continue
@@ -511,4 +519,58 @@ func SerializeParserConfig(parserConfig *config.ParserConfig) (string, error) {
 // Index is shared across all sources (subscriptions then connection-only blocks).
 func GenerateTagPrefix(index int) string {
 	return fmt.Sprintf("%d:", index)
+}
+
+// tagPrefixFromSubscriptionFragment returns a tag_prefix derived from the URL fragment (part after #),
+// e.g. https://host/sub.json#abvpn → "abvpn:". Empty string if there is no usable fragment.
+func tagPrefixFromSubscriptionFragment(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if !subscription.IsSubscriptionURL(raw) {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	frag := strings.TrimSpace(u.Fragment)
+	if frag == "" {
+		return ""
+	}
+	if dec, err := url.PathUnescape(frag); err == nil {
+		frag = strings.TrimSpace(dec)
+	}
+	frag = sanitizeTagPrefixFromURLFragment(frag)
+	if frag == "" {
+		return ""
+	}
+	if !strings.HasSuffix(frag, ":") {
+		frag += ":"
+	}
+	return frag
+}
+
+const maxURLFragmentTagPrefixRunes = 120
+
+// sanitizeTagPrefixFromURLFragment strips control characters and limits length for a safe tag_prefix.
+func sanitizeTagPrefixFromURLFragment(s string) string {
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(utf8.RuneCountInString(s))
+	n := 0
+	for _, r := range s {
+		if n >= maxURLFragmentTagPrefixRunes {
+			break
+		}
+		if r == '\t' || r == '\n' || r == '\r' {
+			r = ' '
+		}
+		if unicode.IsControl(r) {
+			continue
+		}
+		b.WriteRune(r)
+		n++
+	}
+	return strings.TrimSpace(b.String())
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	config "singbox-launcher/core/config/configtypes"
 )
@@ -128,6 +129,19 @@ func TestParseNode_VLESS(t *testing.T) {
 				// Verify the readable part is preserved
 				if !strings.Contains(node.Label, "MyServer") {
 					t.Errorf("Expected 'MyServer' in sanitized fragment, got %q", node.Label)
+				}
+			},
+		},
+		{
+			name:        "VLESS fragment keeps plus literal (PathUnescape not QueryUnescape)",
+			uri:         "vless://a1b2c3d4-e5f6-7890-abcd-ef1234567890@test.example.com:443?encryption=none&security=none&type=tcp#A+B",
+			expectError: false,
+			checkFields: func(t *testing.T, node *config.ParsedNode) {
+				if node == nil {
+					t.Fatal("Expected node, got nil")
+				}
+				if node.Tag != "A+B" || node.Label != "A+B" {
+					t.Errorf("Expected tag/label A+B (plus not space), got tag=%q label=%q", node.Tag, node.Label)
 				}
 			},
 		},
@@ -539,6 +553,30 @@ func TestParseNode_VLESS_TransportAndTLS(t *testing.T) {
 		}
 	})
 
+	t.Run("WS TLS — Host from sni when host= omitted (abvpn-style)", func(t *testing.T) {
+		uri := "vless://f4294d89-874b-4d9b-ab85-ddbc29bd87e2@alb1.abvpn.ru:443?security=tls&type=ws&fp=firefox&sni=alb1.abvpn.ru&path=/websocket#t"
+		node, err := ParseNode(uri, nil)
+		if err != nil || node == nil {
+			t.Fatalf("ParseNode: err=%v node=%v", err, node)
+		}
+		tr := node.Outbound["transport"].(map[string]interface{})
+		h, _ := tr["headers"].(map[string]string)
+		if h["Host"] != "alb1.abvpn.ru" {
+			t.Fatalf("headers Host want alb1.abvpn.ru got %+v", tr)
+		}
+	})
+
+	t.Run("REALITY TCP without flow — default xtls-rprx-vision", func(t *testing.T) {
+		uri := "vless://f4294d89-874b-4d9b-ab85-ddbc29bd87e2@94.131.13.131:443?security=reality&type=tcp&fp=firefox&sni=www.samsung.com&pbk=TuRCccpqgqNsyTuaICkwLtjidLp_eVRMDxWBC_y2xgI&sid=a887fe19&spx=/#t"
+		node, err := ParseNode(uri, nil)
+		if err != nil || node == nil {
+			t.Fatalf("ParseNode: err=%v node=%v", err, node)
+		}
+		if node.Outbound["flow"] != "xtls-rprx-vision" {
+			t.Fatalf("flow: want xtls-rprx-vision got %v", node.Outbound["flow"])
+		}
+	})
+
 	t.Run("gRPC with serviceName and TLS", func(t *testing.T) {
 		uri := "vless://a0ee37a5-1844-4087-bc5c-1db6f416d38c@example.com:443?encryption=none&type=grpc&serviceName=grpc&sni=example.com&security=tls&fp=chrome#gr"
 		node, err := ParseNode(uri, nil)
@@ -673,6 +711,9 @@ func TestParseNode_VLESS_TransportAndTLS(t *testing.T) {
 		rel := tls["reality"].(map[string]interface{})
 		if rel["public_key"] == nil || rel["short_id"] != "d8e0f4c2" {
 			t.Fatalf("reality: %+v", rel)
+		}
+		if _, has := node.Outbound["flow"]; has {
+			t.Fatal("grpc REALITY must not get default TCP vision flow")
 		}
 	})
 
@@ -1562,4 +1603,20 @@ func TestBuildOutbound_SSH(t *testing.T) {
 			t.Errorf("Expected default user 'root', got '%v'", outbound["user"])
 		}
 	})
+}
+
+// sanitizeForDisplay used to iterate invalid UTF-8 with "for range", which emits U+FFFD
+// and produced visible replacement glyphs in the wizard preview.
+func TestSanitizeForDisplay_stripsInvalidUTF8WithoutFFFD(t *testing.T) {
+	in := "PRO\xc0\xfe\xafЛитва" // lone C0 is invalid UTF-8
+	out := sanitizeForDisplay(in)
+	if strings.ContainsRune(out, '\uFFFD') {
+		t.Fatalf("must not write U+FFFD into label, got %q", out)
+	}
+	if !utf8.ValidString(out) {
+		t.Fatalf("output must be valid UTF-8, got %q", out)
+	}
+	if !strings.Contains(out, "PRO") || !strings.Contains(out, "Литва") {
+		t.Fatalf("expected to keep valid segments, got %q", out)
+	}
 }

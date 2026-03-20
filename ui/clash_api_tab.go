@@ -20,6 +20,7 @@ import (
 	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
+	"singbox-launcher/internal/textnorm"
 )
 
 // Maximum number of concurrent ping requests for "test" button.
@@ -179,7 +180,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				}
 
 				if ac.UIService.ListStatusLabel != nil {
-					ac.UIService.ListStatusLabel.SetText(locale.Tf("servers.status_loaded", group, now))
+					ac.UIService.ListStatusLabel.SetText(locale.Tf("servers.status_loaded", group, textnorm.NormalizeProxyDisplay(now)))
 				}
 
 				// Update tray menu with new proxy list
@@ -316,7 +317,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 							if tb, ok := button.(interface{ SetToolTip(string) }); ok {
 								tb.SetToolTip("")
 							}
-							status.SetText(locale.Tf("servers.status_delay_format", delay, proxyName))
+							status.SetText(locale.Tf("servers.status_delay_format", delay, textnorm.NormalizeProxyDisplay(proxyName)))
 						}
 						ac.SetProxiesList(proxies)
 						break
@@ -370,7 +371,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		}
 		switchButton := content.Objects[3].(*widget.Button)
 
-		nameLabel.SetText(proxyInfo.Name)
+		nameLabel.SetText(proxyInfo.DisplayOrName())
 
 		if proxyInfo.Delay > 0 {
 			pingButton.SetText(locale.Tf("servers.ping_format_ms", proxyInfo.Delay))
@@ -418,7 +419,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 						ac.UIService.ProxiesListWidget.Refresh()
 						pingProxy(proxyNameForCallback, pingButton)
 						if ac.UIService.ListStatusLabel != nil {
-							ac.UIService.ListStatusLabel.SetText(locale.Tf("servers.status_switched", group, proxyNameForCallback))
+							ac.UIService.ListStatusLabel.SetText(locale.Tf("servers.status_switched", group, textnorm.NormalizeProxyDisplay(proxyNameForCallback)))
 						}
 					}
 				})
@@ -436,7 +437,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		ac.SetSelectedIndex(id)
 		proxies := ac.GetProxiesList()
 		if id >= 0 && id < len(proxies) {
-			status.SetText(locale.Tf("servers.status_selected", proxies[id].Name))
+			status.SetText(locale.Tf("servers.status_selected", proxies[id].DisplayOrName()))
 		}
 		proxiesListWidget.Refresh()
 	}
@@ -463,12 +464,12 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		// Сортировка по имени
 		if ascending {
 			sort.Slice(sorted, func(i, j int) bool {
-				return sorted[i].Name < sorted[j].Name
+				return sorted[i].DisplayOrName() < sorted[j].DisplayOrName()
 			})
 			status.SetText(locale.T("servers.status_sorted_name_az"))
 		} else {
 			sort.Slice(sorted, func(i, j int) bool {
-				return sorted[i].Name > sorted[j].Name
+				return sorted[i].DisplayOrName() > sorted[j].DisplayOrName()
 			})
 			status.SetText(locale.T("servers.status_sorted_name_za"))
 		}
@@ -794,7 +795,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				if now == "" {
 					results = append(results, locale.Tf("servers.selector_no_active", sel))
 				} else {
-					results = append(results, locale.Tf("servers.selector_active", sel, now))
+					results = append(results, locale.Tf("servers.selector_active", sel, textnorm.NormalizeProxyDisplay(now)))
 				}
 			}
 
@@ -829,7 +830,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		// Update status to show selected group and last used proxy for the group (if any)
 		lastUsed := ac.GetLastSelectedProxyForGroup(value)
 		if lastUsed != "" {
-			status.SetText(locale.Tf("servers.status_selected_group", value, lastUsed))
+			status.SetText(locale.Tf("servers.status_selected_group", value, textnorm.NormalizeProxyDisplay(lastUsed)))
 		} else {
 			status.SetText(locale.Tf("servers.status_selected_group_only", value))
 		}

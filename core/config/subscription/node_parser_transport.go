@@ -83,7 +83,12 @@ func uriTransportFromQuery(q url.Values) (map[string]interface{}, bool) {
 		if p := queryGetFold(q, "path"); p != "" {
 			t["path"] = p
 		}
-		if host := queryGetFold(q, "host"); host != "" {
+		// Many subscriptions set only sni= for TLS; reverse proxies expect WS Host to match vhost.
+		host := strings.TrimSpace(queryGetFold(q, "host"))
+		if host == "" {
+			host = strings.TrimSpace(queryGetFold(q, "sni"))
+		}
+		if host != "" {
 			t["headers"] = map[string]string{"Host": host}
 		}
 		return t, true

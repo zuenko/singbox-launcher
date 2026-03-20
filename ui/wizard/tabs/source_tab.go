@@ -34,11 +34,13 @@ import (
 	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
+	"singbox-launcher/internal/textnorm"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizarddialogs "singbox-launcher/ui/wizard/dialogs"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 	"singbox-launcher/ui/wizard/outbounds_configurator"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
+	wizardutils "singbox-launcher/ui/wizard/utils"
 )
 
 // scrollbarGutterWidth is reserved space to the right of scrollable content so the
@@ -168,9 +170,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 					}
 				}
 			}
-			if len(label) > 40 {
-				label = label[:37] + "..."
-			}
+			label = wizardutils.TruncateStringEllipsis(label, wizardutils.MaxLabelRunes, "...")
 			shortLabel := label
 
 			fullURL := proxy.Source
@@ -375,25 +375,29 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 }
 
 // nodeDisplayLine returns a short one-line description for a parsed node (for list display).
+// textnorm.NormalizeProxyDisplay repairs UTF-8 and maps ❯/»/› to ASCII " > " for Fyne on macOS.
 func nodeDisplayLine(node *config.ParsedNode) string {
 	if node == nil {
 		return ""
 	}
-	if node.Tag != "" {
-		return node.Tag
-	}
-	if node.Label != "" {
-		return node.Label
-	}
-	if node.Server != "" {
+	var s string
+	switch {
+	case node.Tag != "":
+		s = node.Tag
+	case node.Label != "":
+		s = node.Label
+	case node.Server != "":
 		return fmt.Sprintf("%s:%d", node.Server, node.Port)
+	default:
+		s = node.Scheme
 	}
-	return node.Scheme
+	return textnorm.NormalizeProxyDisplay(s)
 }
 
 // fetchAndParseSource fetches a subscription URL or parses a direct link and returns parsed nodes.
 func fetchAndParseSource(sourceURL string, skip []map[string]string) ([]*config.ParsedNode, error) {
 	sourceURL = strings.TrimSpace(sourceURL)
+	sourceURL = strings.ToValidUTF8(sourceURL, "")
 	if sourceURL == "" {
 		return nil, fmt.Errorf("empty source URL")
 	}
@@ -409,6 +413,10 @@ func fetchAndParseSource(sourceURL string, skip []map[string]string) ([]*config.
 		contentStr = strings.ReplaceAll(contentStr, "\r", "\n")
 		for _, line := range strings.Split(contentStr, "\n") {
 			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			line = strings.ToValidUTF8(line, "")
 			if line == "" {
 				continue
 			}
@@ -451,9 +459,7 @@ func showSourceServersWindow(presenter *wizardpresentation.WizardPresenter, pare
 		return
 	}
 	title := locale.Tf("wizard.source.view_title", sourceLabel)
-	if len(title) > 50 {
-		title = title[:47] + "..."
-	}
+	title = wizardutils.TruncateStringEllipsis(title, wizardutils.MaxLabelRunes, "...")
 	win := app.NewWindow(title)
 	if presenter != nil {
 		presenter.SetViewWindow(win)

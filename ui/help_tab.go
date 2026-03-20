@@ -15,6 +15,7 @@ import (
 	"singbox-launcher/core"
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 )
@@ -33,7 +34,7 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 			processName := platform.GetProcessNameForCheck()
 			_ = platform.KillProcess(processName)
 			fyne.Do(func() {
-				ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow,
+				dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow,
 					locale.T("help.kill_title"), locale.T("help.kill_result"))
 				ac.RunningState.Set(false)
 			})
@@ -150,7 +151,7 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 					if len(locale.RemoteLanguages) > 0 {
 						downloadURL = locale.GetLocaleURL(locale.RemoteLanguages[0])
 					}
-					ShowDownloadFailedManual(
+					dialogs.ShowDownloadFailedManual(
 						ac.UIService.MainWindow,
 						locale.T("help.download_locales_failed"),
 						downloadURL,

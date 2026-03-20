@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"singbox-launcher/core/config/configtypes"
+	"singbox-launcher/internal/textnorm"
 )
 
 // parseVMessJSON parses VMess configuration from decoded JSON.
@@ -50,6 +51,8 @@ func parseVMessJSON(vmessConfig map[string]interface{}, skipFilters []map[string
 	}
 
 	if ps, ok := vmessConfig["ps"].(string); ok && ps != "" {
+		ps = sanitizeForDisplay(ps)
+		ps = textnorm.NormalizeProxyDisplay(ps)
 		node.Label = ps
 		node.Tag, node.Comment = extractTagAndComment(ps)
 		node.Tag = normalizeFlagTag(node.Tag)

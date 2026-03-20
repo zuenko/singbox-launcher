@@ -114,3 +114,49 @@ vmess://base64`
 		t.Errorf("Expected 2 connections, got %d", len(connections))
 	}
 }
+
+func TestTagPrefixFromSubscriptionFragment(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want string
+	}{
+		{"https://xray.example/v/126.json#abvpn", "abvpn:"},
+		{"https://xray.example/v/126.json#my%20label", "my label:"},
+		{"https://xray.example/v/126.json", ""},
+		{"https://xray.example/v/126.json#", ""},
+		{"https://xray.example/v/126.json#%09trim%09", "trim:"},
+		{"vless://uuid@host:443#nope", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			got := tagPrefixFromSubscriptionFragment(tt.raw)
+			if got != tt.want {
+				t.Errorf("tagPrefixFromSubscriptionFragment(%q) = %q, want %q", tt.raw, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildProxiesFromInputs_TagPrefixFromURLFragment(t *testing.T) {
+	empty := &existingProperties{
+		OutboundsMap:  make(map[string][]config.OutboundConfig),
+		TagPrefixMap:  make(map[string]string),
+		TagPostfixMap: make(map[string]string),
+	}
+	sub := "https://host/sub.json#abvpn"
+	items := []proxyInput{{Subscription: sub}}
+	got := buildProxiesFromInputs(items, empty, nil, 1)
+	if len(got) != 1 || got[0].TagPrefix != "abvpn:" {
+		t.Fatalf("got %+v", got)
+	}
+	// Saved tag_prefix wins over fragment
+	withMap := &existingProperties{
+		OutboundsMap:  make(map[string][]config.OutboundConfig),
+		TagPrefixMap:  map[string]string{sub: "saved:"},
+		TagPostfixMap: make(map[string]string),
+	}
+	got2 := buildProxiesFromInputs(items, withMap, nil, 1)
+	if len(got2) != 1 || got2[0].TagPrefix != "saved:" {
+		t.Fatalf("expected saved prefix, got %+v", got2)
+	}
+}

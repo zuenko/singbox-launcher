@@ -232,14 +232,12 @@ singbox-launcher/
 │   ├── help_tab.go             # Вкладка помощи
 │   │   │   - CreateHelpTab()                           # Создание вкладки помощи
 │   │   │
-│   ├── dialogs.go              # Общие диалоги (реэкспорт из internal/dialogs)
+│   ├── dialogs.go              # Общие диалоги (fyne.Do + стандартный dialog)
 │   │   │   - ShowError()                                # Показать ошибку
 │   │   │   - ShowErrorText()                            # Показать текст ошибки
 │   │   │   - ShowInfo()                                 # Показать информацию
 │   │   │   - ShowConfirm()                              # Показать подтверждение
-│   │   │   - ShowAutoHideInfo()                         # Автоскрываемая информация
-│   │   │   - ShowDownloadFailedManual()                 # Диалог «загрузка не удалась — скачайте вручную» (ссылка, копирование, Open folder)
-│   │   │   - ShowCustom() / NewCustom()                  # Кастомный диалог (через internal/dialogs)
+│   │   │   - ShowCustom()                               # Кастомный диалог
 │   │   │
 │   ├── error_banner.go         # Баннеры ошибок
 │   │   │   - NewErrorBanner()                           # Создание баннера ошибки
@@ -469,11 +467,15 @@ singbox-launcher/
 │       │   - LoadClashAPIConfig()                              # Загрузка конфигурации API
 │       │   - TestAPIConnection()                              # Тестирование соединения
 │       │   - GetProxiesInGroup()                              # Получение прокси в группе
-│       │   - SwitchProxy()                                    # Переключение прокси
-│       │   - GetDelay()                                       # Получение задержки
-│       │   - ProxyInfo struct                                 # Информация о прокси
+│       │   - SwitchProxy()                                    # Переключение прокси (PathEscape группы; json.Marshal name)
+│       │   - GetDelay()                                       # Задержка: PathEscape имени прокси; QueryEscape url=
+│       │   - ProxyInfo (Name — сырой тег из API для delay/switch; DisplayName — textnorm для UI)
+│       │   - ProxyInfo.DisplayOrName()                        # UI: DisplayName или нормализованный Name
 │       │
 ├── internal/                   # Внутренние пакеты
+│   ├── textnorm/               # Нормализация UTF-8 и символов в тегах подписок / Clash (❯ → >)
+│   │   │   - NormalizeProxyDisplay()
+│   │   │
 │   ├── constants/              # Константы приложения
 │   │   │   - ConfigFileName                    # Имя файла конфигурации
 │   │   │   - различные константы приложения
@@ -493,7 +495,8 @@ singbox-launcher/
 │   │   │
 │   ├── dialogs/                # Диалоги (без зависимости от ui)
 │   │   │   - NewCustom()                                # Кастомный диалог: mainContent (центр), buttons (низ), Border; ESC закрывает
-│   │   │   - ShowDownloadFailedManual()                 # Единый диалог при ошибке загрузки (sing-box, wintun, шаблон, SRS): короткое сообщение, ссылка «Open download page» + кнопка копирования URL, «Open folder», «Close»
+│   │   │   - ShowDownloadFailedManual()                 # Единый диалог при ошибке загрузки (sing-box, wintun, шаблон, SRS, локали): короткое сообщение, ссылка «Open download page» + кнопка копирования URL, «Open folder», «Close»
+│   │   │   - ShowAutoHideInfo()                         # Уведомление + диалог на ~2 с (core, визард, вкладки)
 │   │   │   - ShowError() / ShowErrorText()              # Показать ошибку (используются из ui/dialogs)
 │   │   │
 │   └── platform/              # Платформо-зависимый код
@@ -618,16 +621,21 @@ singbox-launcher/
 - `block_extractor.go`:
   - `ExtractParserConfigBlock()` - извлечение блока из JSON
 
-**subscription/** - Работа с подписками
+**subscription/** - Работа с подписками (см. SPECS/023-F-C-SUBSCRIPTION_TRANSPORT_VLESS_TROJAN)
 - `source_loader.go`:
   - `LoadNodesFromSource()` - загрузка узлов из источника
   - `applyTagPrefixPostfix()` - применение префикса/постфикса к тегам
   - `replaceTagVariables()` - замена переменных в тегах
+  - после префикса: **`textnorm.NormalizeProxyDisplay` на тег, затем `MakeTagUnique`** (уникальность по нормализованным строкам)
   - `MakeTagUnique()` - обеспечение уникальности тегов
   - `IsSubscriptionURL()` - проверка URL подписки
   - `MaxNodesPerSubscription` const - лимит узлов
+- `node_parser_transport.go`:
+  - `uriTransportFromQuery()` — VLESS/Trojan: ws/http/grpc/xhttp→httpupgrade; **ws: `headers.Host` из `host` или `sni`**
+  - `vlessTLSFromNode()`, `trojanTLSFromNode()` — TLS / Reality по query
 - `node_parser.go`:
-  - `ParseNode()` - парсинг URI узла прокси
+  - `ParseNode()` - парсинг URI узла прокси; **VLESS:** REALITY без транспорта и без `flow` → `flow: xtls-rprx-vision`; лейбл после sanitize — **textnorm**; **VMess ws:** Host из `host` или `sni`
+  - `buildOutbound()` — сборка outbound-мапы для sing-box
   - `IsDirectLink()` - проверка прямого линка
 - `decoder.go`:
   - `DecodeSubscriptionContent()` - декодирование подписки (base64, yaml)
@@ -688,7 +696,8 @@ singbox-launcher/
 - `onLoadAndRefreshProxies()` - загрузка и обновление прокси
 - `onTestAPIConnection()` - тестирование соединения с API
 - `onResetAPIState()` - сброс состояния API
-- `pingProxy()` - пинг прокси
+- `pingProxy()` - пинг прокси (**имя — `ProxyInfo.Name`**, не DisplayName; путь кодируется в `api.GetDelay`)
+- Список прокси: **`DisplayOrName()`** для подписей; сортировка по отображаемому имени
 
 #### Wizard (`ui/wizard/`)
 

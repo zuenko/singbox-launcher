@@ -20,7 +20,9 @@ import (
 	"singbox-launcher/core/config"
 	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
+	"singbox-launcher/internal/textnorm"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
+	wizardutils "singbox-launcher/ui/wizard/utils"
 )
 
 // ShowEditDialog opens a separate window to add or edit an outbound. existing may be nil for add.
@@ -83,9 +85,7 @@ func ShowEditDialog(
 		if label == "" {
 			label = locale.T("wizard.outbound.label_source") + strconv.Itoa(i+1)
 		}
-		if len(label) > 35 {
-			label = label[:32] + "..."
-		}
+		label = wizardutils.TruncateStringEllipsis(label, wizardutils.MaxLabelRunes, "...")
 		scopeOptions = append(scopeOptions, locale.T("wizard.outbound.scope_source")+label)
 	}
 	scopeSelect := widget.NewSelect(scopeOptions, nil)
@@ -441,9 +441,7 @@ func ShowEditDialog(
 				if label == "" {
 					label = locale.T("wizard.outbound.label_source") + fmt.Sprintf("%d", si+1)
 				}
-				if len(label) > 40 {
-					label = label[:37] + "..."
-				}
+				label = wizardutils.TruncateStringEllipsis(label, wizardutils.MaxLabelRunes, "...")
 				for _, n := range nodes {
 					sourceLabels[n] = label
 				}
@@ -473,6 +471,7 @@ func ShowEditDialog(
 					text = node.Scheme
 				}
 			}
+			text = textnorm.NormalizeProxyDisplay(text)
 			text = fmt.Sprintf("%s — %s", text, src)
 			if isDefault {
 				text = "[default] " + text

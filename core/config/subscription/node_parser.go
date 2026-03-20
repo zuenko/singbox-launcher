@@ -15,6 +15,7 @@ import (
 
 	"singbox-launcher/core/config/configtypes"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/textnorm"
 )
 
 // IsDirectLink checks if the input string is a direct proxy link (vless://, vmess://, wireguard://, etc.)
@@ -225,9 +226,10 @@ func ParseNode(uri string, skipFilters []map[string]string) (*configtypes.Parsed
 
 	// Extract fragment (label)
 	node.Label = parsedURL.Fragment
-	// URL decode and validate UTF-8
+	// URL decode and validate UTF-8. Use PathUnescape (not QueryUnescape): in fragments '+' is literal;
+	// QueryUnescape would turn '+' into space and corrupt names like "A+B".
 	if node.Label != "" {
-		if decoded, err := url.QueryUnescape(node.Label); err == nil {
+		if decoded, err := url.PathUnescape(node.Label); err == nil {
 			node.Label = decoded
 		}
 
@@ -243,10 +245,6 @@ func ParseNode(uri string, skipFilters []map[string]string) (*configtypes.Parsed
 			node.Label = fixed
 		}
 
-		// Sanitize control characters (NUL and other C0 controls) which may
-		// cause GUI toolkits or serializers to misbehave. Remove runes < 0x20
-		// (except common whitespace) and delete DEL (0x7F).
-		node.Label = sanitizeForDisplay(node.Label)
 	}
 
 	// For some formats, label might be in path or userinfo
@@ -259,6 +257,9 @@ func ParseNode(uri string, skipFilters []map[string]string) (*configtypes.Parsed
 			node.Label = parsedURL.User.Username()
 		}
 	}
+
+	node.Label = sanitizeForDisplay(node.Label)
+	node.Label = textnorm.NormalizeProxyDisplay(node.Label)
 
 	// Extract tag and comment from label
 	node.Tag, node.Comment = extractTagAndComment(node.Label)
@@ -362,7 +363,15 @@ func validateAndFixUTF8Bytes(b []byte) (string, bool) {
 // and other consumers (notably NUL). It removes runes in the C0 control
 // range (U+0000..U+001F) and DEL (U+007F). Keeps common whitespace
 // characters (tab, newline, carriage return) if present.
+//
+// Invalid UTF-8 is repaired first: ranging over a broken string makes Go emit
+// U+FFFD per bad subsequence, which then gets written into the label and shows
+// as replacement glyphs in the UI. ToValidUTF8 drops invalid byte runs before the loop.
 func sanitizeForDisplay(s string) string {
+	if s == "" {
+		return s
+	}
+	s = strings.ToValidUTF8(s, "")
 	if s == "" {
 		return s
 	}
@@ -495,6 +504,10 @@ func buildOutbound(node *configtypes.ParsedNode) map[string]interface{} {
 
 	if node.Scheme == "vless" {
 		outbound["uuid"] = node.UUID
+		transport, hasTransport := uriTransportFromQuery(node.Query)
+		if hasTransport {
+			outbound["transport"] = transport
+		}
 		if node.Flow != "" {
 			// Convert xtls-rprx-vision-udp443 to compatible format
 			if node.Flow == "xtls-rprx-vision-udp443" {
@@ -504,13 +517,12 @@ func buildOutbound(node *configtypes.ParsedNode) map[string]interface{} {
 			} else {
 				outbound["flow"] = node.Flow
 			}
+		} else if strings.TrimSpace(queryGetFold(node.Query, "pbk")) != "" && !hasTransport {
+			// REALITY over plain TCP: URI often omits flow=; sing-box accepts xtls-rprx-vision (skip for ws/grpc/xhttp/…).
+			outbound["flow"] = "xtls-rprx-vision"
 		}
 		if pe := strings.TrimSpace(queryGetFold(node.Query, "packetEncoding")); pe != "" {
 			outbound["packet_encoding"] = pe
-		}
-
-		if t, ok := uriTransportFromQuery(node.Query); ok {
-			outbound["transport"] = t
 		}
 
 		if tlsData, ok := vlessTLSFromNode(node); ok {
@@ -549,7 +561,11 @@ func buildOutbound(node *configtypes.ParsedNode) map[string]interface{} {
 			}
 
 			if network == "ws" {
-				if host := node.Query.Get("host"); host != "" {
+				host := queryGetFold(node.Query, "host")
+				if host == "" {
+					host = queryGetFold(node.Query, "sni")
+				}
+				if host != "" {
 					transport["headers"] = map[string]string{"Host": host}
 				}
 			}

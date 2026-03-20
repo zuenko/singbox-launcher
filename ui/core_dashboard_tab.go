@@ -746,7 +746,7 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 				}
 				binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
 				debuglog.DebugLog("core_dashboard: showing download failed manual (template, NewRequest error)")
-				ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
+				dialogs.ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
 			})
 			return
 		}
@@ -764,7 +764,7 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 				}
 				binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
 				debuglog.DebugLog("core_dashboard: showing download failed manual (template, Do error)")
-				ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
+				dialogs.ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
 			})
 			return
 		}
@@ -775,7 +775,7 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 				}
 				binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
 				debuglog.DebugLog("core_dashboard: showing download failed manual (template, status not OK)")
-				ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
+				dialogs.ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
 			})
 			return
 		}
@@ -787,7 +787,7 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 				}
 				binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
 				debuglog.DebugLog("core_dashboard: showing download failed manual (template, ReadAll error)")
-				ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
+				dialogs.ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
 			})
 			return
 		}
@@ -800,7 +800,7 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 				}
 				binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
 				debuglog.DebugLog("core_dashboard: showing download failed manual (template, MkdirAll error)")
-				ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
+				dialogs.ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
 			})
 			return
 		}
@@ -811,7 +811,7 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 				}
 				binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
 				debuglog.DebugLog("core_dashboard: showing download failed manual (template, WriteFile error)")
-				ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
+				dialogs.ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Config template download failed", configTemplateURL, binDir)
 			})
 			return
 		}
@@ -896,7 +896,7 @@ func (tab *CoreDashboardTab) startDownloadWithVersion(targetVersion string) {
 					tab.setSingboxState("", locale.T("core.button_download"), -1)
 					binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
 					debuglog.DebugLog("core_dashboard: showing download failed manual (sing-box)")
-					ShowDownloadFailedManual(tab.controller.GetMainWindow(), "sing-box download failed", constants.SingboxReleasesURL, binDir)
+					dialogs.ShowDownloadFailedManual(tab.controller.GetMainWindow(), "sing-box download failed", constants.SingboxReleasesURL, binDir)
 				}
 			})
 		}
@@ -1070,7 +1070,7 @@ func (tab *CoreDashboardTab) handleWintunDownload() {
 					tab.setWintunState("", locale.T("core.button_download"), -1)
 					binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
 					debuglog.DebugLog("core_dashboard: showing download failed manual (wintun)")
-					ShowDownloadFailedManual(tab.controller.GetMainWindow(), "wintun.dll download failed", constants.WintunHomeURL, binDir)
+					dialogs.ShowDownloadFailedManual(tab.controller.GetMainWindow(), "wintun.dll download failed", constants.WintunHomeURL, binDir)
 				}
 			})
 		}

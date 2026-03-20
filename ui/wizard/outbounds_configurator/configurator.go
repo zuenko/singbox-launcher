@@ -18,6 +18,7 @@ import (
 	"singbox-launcher/core/config"
 	"singbox-launcher/internal/locale"
 	wizardmodels "singbox-launcher/ui/wizard/models"
+	wizardutils "singbox-launcher/ui/wizard/utils"
 )
 
 // OutboundEditPresenter is used to register the Edit/Add window with the wizard overlay (single instance, focus redirect).
@@ -47,9 +48,7 @@ func collectRows(pc *config.ParserConfig) []outboundRow {
 		if label == "" {
 			label = locale.T("wizard.outbound.label_source") + strconv.Itoa(si+1)
 		}
-		if len(label) > 40 {
-			label = label[:37] + "..."
-		}
+		label = wizardutils.TruncateStringEllipsis(label, wizardutils.MaxLabelRunes, "...")
 		for i := range proxy.Outbounds {
 			rows = append(rows, outboundRow{
 				IsGlobal:     false,
@@ -173,10 +172,8 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 			r := r
 			rowIdx := rowIdx
 			label := r.Outbound.Tag + " (" + r.Outbound.Type + ") — " + r.SourceLabel
-			const maxLabelLen = 56
-			if len(label) > maxLabelLen {
-				label = label[:maxLabelLen-3] + "..."
-			}
+			label = strings.ToValidUTF8(label, "")
+			label = wizardutils.TruncateStringEllipsis(label, wizardutils.MaxLabelRunes, "...")
 			canUp := rowIdx > 0 && sameScope(rows[rowIdx], rows[rowIdx-1])
 			canDown := rowIdx < len(rows)-1 && sameScope(rows[rowIdx], rows[rowIdx+1])
 
