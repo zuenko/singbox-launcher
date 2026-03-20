@@ -28,6 +28,8 @@
 
 - **macOS build script:** `build_darwin.sh` supports `-i` (if the app already exists in `/Applications`, only the executable is updated so `Contents/MacOS/bin/` and logs are kept; otherwise full `.app` copy; then removes the built `.app` from the project directory), `arm64` for a fast Apple Silicon–only build, and `-h` / `--help` (parsed before `go mod tidy`). README documents the options.
 
+- **Wizard template — DNS:** The default `bin/wizard_template.json` DNS section was reworked: `local` resolver, separate UDP servers (e.g. Cloudflare 1.1.1.1 and a Google UDP bootstrap for DoH), Google DoH endpoints use host `dns.google` with `domain_resolver`, and `dns.final` targets the system local resolver. Legacy `bin/config_template.json` and `bin/config_template_macos.json` were removed from the repo. **Recommendation:** delete or reset your saved wizard/parser template in the app data directory so the next run picks up the bundled template and new DNS defaults (otherwise an old copy keeps the previous DNS block).
+
 ### Technical / Internal
 
 - **Clash API:** `GET /proxies/{name}/delay` and `PUT /proxies/{group}` now **percent-encode** proxy/group names (spaces, `>`, Unicode, etc.); delay `url` query uses `QueryEscape`. Switch payload uses `json.Marshal` for `name`. Fixes 404 «Resource not found» when pinging tags like `abvpn:… > …`.
@@ -63,6 +65,8 @@
 - **Визард — вкладка Sources:** у прокручиваемых блоков (поле URL, список источников, превью серверов, общий скролл вкладки) справа зарезервировано место под полосу прокрутки, чтобы она не наезжала на текст и кнопки.
 
 - **Сборка macOS:** в `build_darwin.sh` флаг `-i` при уже установленном приложении обновляет только исполняемый файл (сохраняются `Contents/MacOS/bin/` и логи), при первой установке копируется весь `.app`, после успеха удаляется собранный `.app` из каталога проекта; режим `arm64`; `-h` / `--help` до `go mod tidy`. В README описаны опции.
+
+- **Шаблон визарда — DNS:** в дефолтном `bin/wizard_template.json` сильно переработана секция DNS: локальный резолвер, отдельные UDP-серверы (в т.ч. Cloudflare 1.1.1.1 и UDP-bootstrap под Google DoH), для Google DoH указан хост `dns.google` с `domain_resolver`, `dns.final` ведёт на системный локальный DNS. Из репозитория убраны устаревшие `bin/config_template.json` и `bin/config_template_macos.json`. **Рекомендация:** удалить или сбросить сохранённый шаблон визарда/парсера в каталоге данных приложения, чтобы при следующем запуске подтянулся встроенный шаблон и новые настройки DNS (иначе останется старая копия с прежней DNS-секцией).
 
 ### Техническое / Внутреннее
 
