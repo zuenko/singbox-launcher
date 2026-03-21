@@ -1243,8 +1243,8 @@ func TestParseNode_SOCKS5(t *testing.T) {
 			uri:         "socks5://myuser:mypass@proxy.example.com:1080#Office SOCKS5",
 			expectError: false,
 			checkFields: func(t *testing.T, node *config.ParsedNode) {
-				if node.Scheme != "socks" {
-					t.Errorf("Expected scheme 'socks', got '%s'", node.Scheme)
+				if node.Scheme != "socks5" {
+					t.Errorf("Expected scheme 'socks5', got '%s'", node.Scheme)
 				}
 				if node.Server != "proxy.example.com" {
 					t.Errorf("Expected server 'proxy.example.com', got '%s'", node.Server)
@@ -1268,8 +1268,8 @@ func TestParseNode_SOCKS5(t *testing.T) {
 			uri:         "socks5://proxy.example.com:1080",
 			expectError: false,
 			checkFields: func(t *testing.T, node *config.ParsedNode) {
-				if node.Scheme != "socks" {
-					t.Errorf("Expected scheme 'socks', got '%s'", node.Scheme)
+				if node.Scheme != "socks5" {
+					t.Errorf("Expected scheme 'socks5', got '%s'", node.Scheme)
 				}
 				if node.Server != "proxy.example.com" {
 					t.Errorf("Expected server 'proxy.example.com', got '%s'", node.Server)
@@ -1280,8 +1280,8 @@ func TestParseNode_SOCKS5(t *testing.T) {
 				if node.Query.Get("password") != "" {
 					t.Errorf("Expected empty password, got '%s'", node.Query.Get("password"))
 				}
-				if node.Tag != "socks-proxy.example.com-1080" {
-					t.Errorf("Expected default tag 'socks-proxy.example.com-1080', got '%s'", node.Tag)
+				if node.Tag != "socks5-proxy.example.com-1080" {
+					t.Errorf("Expected default tag 'socks5-proxy.example.com-1080', got '%s'", node.Tag)
 				}
 			},
 		},
@@ -1349,6 +1349,9 @@ func TestParseNode_SOCKS5(t *testing.T) {
 
 			if outboundType, ok := node.Outbound["type"].(string); !ok || outboundType != "socks" {
 				t.Errorf("Expected outbound type 'socks', got '%v'", node.Outbound["type"])
+			}
+			if ver, ok := node.Outbound["version"].(string); !ok || ver != "5" {
+				t.Errorf("Expected outbound version '5', got '%v'", node.Outbound["version"])
 			}
 			if server, ok := node.Outbound["server"].(string); !ok || server != node.Server {
 				t.Errorf("Expected outbound server '%s', got '%v'", node.Server, node.Outbound["server"])

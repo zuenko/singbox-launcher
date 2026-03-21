@@ -606,7 +606,7 @@ ssh://root:password@192.168.1.1:22?private_key_path=/path/to/key&host_key=ecdsa-
 
 ### SOCKS5 (`socks5://` или `socks://`)
 
-Формат: `socks5://[user:password@]host[:port]#tag` или `socks://...` (синоним). Результат — outbound типа `socks` в sing-box.
+Формат: `socks5://[user:password@]host[:port]#tag` или `socks://...` (короткая форма). В сгенерированном конфиге sing-box — outbound **`type`: `socks`** с **`version`: `5`** (отдельного типа `socks5` в sing-box нет). В фильтрах парсера поле **`scheme`**: для ссылок `socks5://` — **`socks5`**, для `socks://` — **`socks`**.
 
 **Структура:**
 - `user:password` — опциональная авторизация (логин и пароль прокси)

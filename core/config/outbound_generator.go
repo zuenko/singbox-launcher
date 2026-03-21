@@ -110,7 +110,7 @@ func appendOutboundTransportParts(parts []string, outbound map[string]interface{
 }
 
 // GenerateNodeJSON returns a single JSON object string for one proxy node (sing-box outbound).
-// Field order and presence follow sing-box expectations. Supports: vless, vmess, trojan, shadowsocks, hysteria2, ssh.
+// Field order and presence follow sing-box expectations. Supports: vless, vmess, trojan, shadowsocks, hysteria2, socks.
 // Includes optional TLS (including reality), transport (ws/http/grpc), and protocol-specific options.
 // Returned string ends with a trailing comma and may include a leading comment line (node label) for readability.
 func GenerateNodeJSON(node *ParsedNode) (string, error) {
@@ -120,9 +120,11 @@ func GenerateNodeJSON(node *ParsedNode) (string, error) {
 	// 1. tag
 	parts = append(parts, fmt.Sprintf(`"tag":%q`, node.Tag))
 
-	// 2. type
+	// 2. type (sing-box uses "socks" + version for SOCKS5 URIs, not a separate socks5 type)
 	if node.Scheme == "ss" {
 		parts = append(parts, fmt.Sprintf(`"type":%q`, "shadowsocks"))
+	} else if node.Scheme == "socks" || node.Scheme == "socks5" {
+		parts = append(parts, fmt.Sprintf(`"type":%q`, "socks"))
 	} else {
 		parts = append(parts, fmt.Sprintf(`"type":%q`, node.Scheme))
 	}
@@ -211,6 +213,24 @@ func GenerateNodeJSON(node *ParsedNode) (string, error) {
 			passwordJSON, err := json.Marshal(password)
 			if err != nil {
 				return "", fmt.Errorf("failed to marshal shadowsocks password: %w", err)
+			}
+			parts = append(parts, fmt.Sprintf(`"password":%s`, string(passwordJSON)))
+		}
+	} else if (node.Scheme == "socks" || node.Scheme == "socks5") && node.Outbound != nil {
+		if ver, ok := node.Outbound["version"].(string); ok && ver != "" {
+			parts = append(parts, fmt.Sprintf(`"version":%q`, ver))
+		}
+		if username, ok := node.Outbound["username"].(string); ok && username != "" {
+			usernameJSON, err := json.Marshal(username)
+			if err != nil {
+				return "", fmt.Errorf("failed to marshal socks username: %w", err)
+			}
+			parts = append(parts, fmt.Sprintf(`"username":%s`, string(usernameJSON)))
+		}
+		if password, ok := node.Outbound["password"].(string); ok && password != "" {
+			passwordJSON, err := json.Marshal(password)
+			if err != nil {
+				return "", fmt.Errorf("failed to marshal socks password: %w", err)
 			}
 			parts = append(parts, fmt.Sprintf(`"password":%s`, string(passwordJSON)))
 		}

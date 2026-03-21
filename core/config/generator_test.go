@@ -318,3 +318,34 @@ func TestGenerateNodeJSON_VLESS_WSTransportNoTLS(t *testing.T) {
 		t.Fatalf("unexpected tls for security=none:\n%s", jsonStr)
 	}
 }
+
+// GenerateNodeJSON must emit username and password for SOCKS5 (from node.Outbound / URI userinfo).
+func TestGenerateNodeJSON_SOCKS5_WithAuth(t *testing.T) {
+	uri := "socks5://myuser:mypass@proxy.example.com:1080#Office"
+	node, err := subscription.ParseNode(uri, nil)
+	if err != nil || node == nil {
+		t.Fatalf("ParseNode: %v", err)
+	}
+	jsonStr, err := GenerateNodeJSON(node)
+	if err != nil {
+		t.Fatalf("GenerateNodeJSON: %v", err)
+	}
+	if !strings.Contains(jsonStr, `"type":"socks"`) {
+		t.Fatalf("expected socks type in JSON:\n%s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"version":"5"`) {
+		t.Fatalf("expected SOCKS version 5 in JSON:\n%s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"server":"proxy.example.com"`) {
+		t.Fatalf("expected server in JSON:\n%s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"server_port":1080`) {
+		t.Fatalf("expected server_port in JSON:\n%s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"username":"myuser"`) {
+		t.Fatalf("expected username in JSON:\n%s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"password":"mypass"`) {
+		t.Fatalf("expected password in JSON:\n%s", jsonStr)
+	}
+}

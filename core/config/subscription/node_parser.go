@@ -147,9 +147,12 @@ func ParseNode(uri string, skipFilters []map[string]string) (*configtypes.Parsed
 		scheme = "ssh"
 		defaultPort = 22 // Default port for SSH
 
-	case strings.HasPrefix(uri, "socks5://"), strings.HasPrefix(uri, "socks://"):
+	case strings.HasPrefix(uri, "socks5://"):
+		scheme = "socks5"
+		defaultPort = 1080
+	case strings.HasPrefix(uri, "socks://"):
 		scheme = "socks"
-		defaultPort = 1080 // Default port for SOCKS5
+		defaultPort = 1080
 
 	case strings.HasPrefix(uri, "wireguard://"):
 		return parseWireGuardURI(uri, skipFilters)
@@ -173,8 +176,8 @@ func ParseNode(uri string, skipFilters []map[string]string) (*configtypes.Parsed
 			return nil, fmt.Errorf("invalid %s URI: missing userinfo (UUID/password/user)", scheme)
 		}
 	}
-	// Validate SOCKS: hostname required, user/password optional
-	if scheme == "socks" && parsedURL.Hostname() == "" {
+	// Validate SOCKS / SOCKS5: hostname required, user/password optional
+	if (scheme == "socks" || scheme == "socks5") && parsedURL.Hostname() == "" {
 		return nil, fmt.Errorf("invalid socks URI: missing hostname")
 	}
 
@@ -213,7 +216,7 @@ func ParseNode(uri string, skipFilters []map[string]string) (*configtypes.Parsed
 			node.UUID = decoded
 		}
 		// Extract password for SSH, Trojan and SOCKS (user:password@server)
-		if scheme == "ssh" || scheme == "trojan" || scheme == "socks" {
+		if scheme == "ssh" || scheme == "trojan" || scheme == "socks" || scheme == "socks5" {
 			if password, hasPassword := parsedURL.User.Password(); hasPassword {
 				if decodedPassword, err := url.QueryUnescape(password); err == nil {
 					node.Query.Set("password", decodedPassword)
@@ -493,9 +496,12 @@ func shouldSkipNode(node *configtypes.ParsedNode, skipFilters []map[string]strin
 func buildOutbound(node *configtypes.ParsedNode) map[string]interface{} {
 	outbound := make(map[string]interface{})
 	outbound["tag"] = node.Tag
-	// Use "shadowsocks" instead of "ss" for sing-box
+	// Use "shadowsocks" instead of "ss" for sing-box; "socks" outbound for socks5:// and socks:// URIs
 	if node.Scheme == "ss" {
 		outbound["type"] = "shadowsocks"
+	} else if node.Scheme == "socks" || node.Scheme == "socks5" {
+		outbound["type"] = "socks"
+		outbound["version"] = "5"
 	} else {
 		outbound["type"] = node.Scheme
 	}
@@ -625,7 +631,7 @@ func buildOutbound(node *configtypes.ParsedNode) map[string]interface{} {
 		buildHysteria2Outbound(node, outbound)
 	} else if node.Scheme == "ssh" {
 		buildSSHOutbound(node, outbound)
-	} else if node.Scheme == "socks" {
+	} else if node.Scheme == "socks" || node.Scheme == "socks5" {
 		if node.UUID != "" {
 			outbound["username"] = node.UUID
 		}
