@@ -81,6 +81,16 @@
           "server_port": 53
         },
         {
+          "type": "https",
+          "tag": "cloudflare_doh",
+          "server": "1.1.1.1",
+          "server_port": 443,
+          "path": "/dns-query",
+          "tls": {
+            "server_name": "cloudflare-dns.com"
+          }
+        },
+        {
           "type": "udp",
           "tag": "direct_dns_resolver",
           "server": "8.8.8.8",
@@ -132,7 +142,8 @@
         { "rule_set": "ru-domains", "server": "yandex_dns_vpn" },
         { "rule_set": "ru-domains", "server": "yandex_dns_direct" },
         { "server": "google_doh" },
-        { "server": "google_doh_vpn" }
+        { "server": "google_doh_vpn" },
+        { "server": "cloudflare_doh" }
       ],
       "final": "direct_dns_resolver",
       "strategy": "ipv4_only",

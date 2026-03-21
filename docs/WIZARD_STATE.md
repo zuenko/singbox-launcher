@@ -23,8 +23,25 @@
 | `updated_at` | string | RFC3339 (обязательное) |
 | `parser_config` | object | Конфигурация парсера (proxies, outbounds, parser) |
 | `config_params` | array | Параметры конфигурации (route.final и др.) |
+| `dns` | object | Состояние вкладки DNS визарда (опционально; см. ниже) |
 | `selectable_rule_states` | array | Состояния правил из шаблона (label, enabled, selected_outbound) |
 | `custom_rules` | array | Пользовательские правила (полная структура) |
+
+## dns (объект в state.json)
+
+Корневой ключ **`dns`** — снимок настроек DNS визарда для последующей генерации `config.dns`. Это **не** дословная копия всего блока sing-box: в state добавлено поле **`rules_text`** для многострочного редактора правил.
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `servers` | array | Список DNS-серверов в формате sing-box (`dns.servers`). |
+| `rules_text` | string | Текст правил DNS из UI (построчный формат визарда; комментарии `#…` и пустые строки сохраняются). |
+| `final` | string | Тег сервера для `dns.final`. |
+| `strategy` | string | Опционально (`ipv4_only`, …). |
+| `independent_cache` | bool | Опционально. |
+
+Поле **`route.default_domain_resolver`** в state **не** входит в объект `dns`: оно хранится в **`config_params`** как `{ "name": "route.default_domain_resolver", "value": "<tag>" }` (по тому же принципу, что и `route.final`).
+
+Если ключа `dns` нет (старые файлы или визард ещё не сохранял вкладку DNS), при загрузке значения берутся из эффективного шаблона. Спецификация фичи: **SPECS/024-F-N-WIZARD_DNS_SECTION/SPEC.md**.
 
 ## custom_rules (PersistedCustomRule)
 
