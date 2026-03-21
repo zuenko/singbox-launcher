@@ -124,8 +124,8 @@ func LoadNodesFromSource(
 					if nodesFromThisSource >= configtypes.MaxNodesPerSubscription {
 						skippedDueToLimit++
 						if skippedDueToLimit == 1 {
-						debuglog.DebugLog("LoadNodesFromSource: Reached limit of %d nodes for subscription %d/%d",
-							configtypes.MaxNodesPerSubscription, subscriptionIndex+1, totalSubscriptions)
+							debuglog.DebugLog("LoadNodesFromSource: Reached limit of %d nodes for subscription %d/%d",
+								configtypes.MaxNodesPerSubscription, subscriptionIndex+1, totalSubscriptions)
 						}
 						continue
 					}
@@ -133,9 +133,9 @@ func LoadNodesFromSource(
 					nodeStartTime := time.Now()
 					node, err := ParseNode(subLine, proxySource.Skip)
 					if err != nil {
-					debuglog.DebugLog("LoadNodesFromSource: Failed to parse node %d from subscription %d/%d (took %v): %v",
-						lineCount, subscriptionIndex+1, totalSubscriptions, time.Since(nodeStartTime), err)
-					debuglog.WarnLog("Parser: Failed to parse node from subscription %s: %v", proxySource.Source, err)
+						debuglog.DebugLog("LoadNodesFromSource: Failed to parse node %d from subscription %d/%d (took %v): %v",
+							lineCount, subscriptionIndex+1, totalSubscriptions, time.Since(nodeStartTime), err)
+						debuglog.WarnLog("Parser: Failed to parse node from subscription %s: %v", proxySource.Source, err)
 						continue
 					}
 
@@ -147,18 +147,18 @@ func LoadNodesFromSource(
 						nodes = append(nodes, node)
 						nodesFromThisSource++
 						if nodesFromThisSource%50 == 0 {
-						debuglog.DebugLog("LoadNodesFromSource: Parsed %d nodes from subscription %d/%d (elapsed: %v)",
-							nodesFromThisSource, subscriptionIndex+1, totalSubscriptions, time.Since(parseStartTime))
+							debuglog.DebugLog("LoadNodesFromSource: Parsed %d nodes from subscription %d/%d (elapsed: %v)",
+								nodesFromThisSource, subscriptionIndex+1, totalSubscriptions, time.Since(parseStartTime))
 						}
 					}
 				}
-			debuglog.DebugLog("LoadNodesFromSource: Parsed subscription %d/%d: %d nodes in %v (processed %d lines)",
-				subscriptionIndex+1, totalSubscriptions, nodesFromThisSource, time.Since(parseStartTime), lineCount)
+				debuglog.DebugLog("LoadNodesFromSource: Parsed subscription %d/%d: %d nodes in %v (processed %d lines)",
+					subscriptionIndex+1, totalSubscriptions, nodesFromThisSource, time.Since(parseStartTime), lineCount)
 			}
 		} else if IsDirectLink(proxySource.Source) {
 			// Legacy format: direct link in Source
-		debuglog.DebugLog("LoadNodesFromSource: Processing direct link in Source field for %d/%d",
-			subscriptionIndex+1, totalSubscriptions)
+			debuglog.DebugLog("LoadNodesFromSource: Processing direct link in Source field for %d/%d",
+				subscriptionIndex+1, totalSubscriptions)
 			if progressCallback != nil {
 				progressCallback(20+float64(subscriptionIndex)*50.0/float64(totalSubscriptions),
 					fmt.Sprintf("Parsing direct link %d/%d", subscriptionIndex+1, totalSubscriptions))
@@ -169,9 +169,9 @@ func LoadNodesFromSource(
 				src := strings.ToValidUTF8(strings.TrimSpace(proxySource.Source), "")
 				node, err := ParseNode(src, proxySource.Skip)
 				if err != nil {
-				debuglog.DebugLog("LoadNodesFromSource: Failed to parse direct link (took %v): %v",
-					time.Since(parseStartTime), err)
-				debuglog.WarnLog("Parser: Failed to parse direct link: %v", err)
+					debuglog.DebugLog("LoadNodesFromSource: Failed to parse direct link (took %v): %v",
+						time.Since(parseStartTime), err)
+					debuglog.WarnLog("Parser: Failed to parse direct link: %v", err)
 				} else if node != nil {
 					// Apply prefix, postfix, or mask to tag if specified (with variable substitution)
 					node.Tag = applyTagPrefixPostfix(node, proxySource.TagPrefix, proxySource.TagPostfix, proxySource.TagMask, nodesFromThisSource+1)
@@ -199,9 +199,9 @@ func LoadNodesFromSource(
 		}
 
 		if !IsDirectLink(connection) {
-		debuglog.DebugLog("LoadNodesFromSource: Invalid direct link format in connections %d/%d: %s",
-			connIndex+1, len(proxySource.Connections), connection)
-		debuglog.WarnLog("Parser: Invalid direct link format in connections: %s", connection)
+			debuglog.DebugLog("LoadNodesFromSource: Invalid direct link format in connections %d/%d: %s",
+				connIndex+1, len(proxySource.Connections), connection)
+			debuglog.WarnLog("Parser: Invalid direct link format in connections: %s", connection)
 			continue
 		}
 
@@ -218,9 +218,9 @@ func LoadNodesFromSource(
 		parseStartTime := time.Now()
 		node, err := ParseNode(connection, proxySource.Skip)
 		if err != nil {
-		debuglog.DebugLog("LoadNodesFromSource: Failed to parse connection %d/%d (took %v): %v",
-			connIndex+1, len(proxySource.Connections), time.Since(parseStartTime), err)
-		debuglog.WarnLog("Parser: Failed to parse direct link from connections: %v", err)
+			debuglog.DebugLog("LoadNodesFromSource: Failed to parse connection %d/%d (took %v): %v",
+				connIndex+1, len(proxySource.Connections), time.Since(parseStartTime), err)
+			debuglog.WarnLog("Parser: Failed to parse direct link from connections: %v", err)
 			continue
 		}
 

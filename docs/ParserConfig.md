@@ -6,6 +6,8 @@
 
 ## Share URI из outbound и WireGuard endpoint (обратно к ссылке)
 
+Спецификация фичи (ПКМ на вкладке Servers, контекстное меню, детали реализации): **`SPECS/025-F-C-SERVERS_CONTEXT_MENU_SHARE_URI/`** (SPEC, PLAN, IMPLEMENTATION_REPORT).
+
 Парсер переводит **строку подписки** (`ParseNode` → `buildOutbound` или для WireGuard — объект в `endpoints[]`) в JSON sing-box. Обратная операция — **сборка share URI из уже записанного outbound или WireGuard endpoint** в `config.json`, чтобы делиться ссылкой без хранения исходной строки подписки.
 
 ### Принцип и соответствие форматам

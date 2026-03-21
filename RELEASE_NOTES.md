@@ -16,7 +16,13 @@
   VLESS / Trojan / VMess: транспорты и TLS из URI; для Xray `xtls-rprx-vision-udp443` в сгенерированном JSON — vision и при необходимости `packet_encoding`. SOCKS5: `socks5://` и `socks://` → в конфиге `type: socks`, `version: "5"`, при наличии в URI — `username` / `password`. Подписка: `tag_prefix` из `#fragment` в URL. UTF-8 (обрезка по рунам), нормализация тегов вроде `❯` → ` > `.
 
 - **Clash API**  
-  Percent-encode имён прокси/групп в delay и switch (исправление 404 на сложных тегах). Вкладка **Servers:** ПКМ — строка с типом из API и **«Копировать ссылку»**; share URI из outbound или WireGuard в `endpoints[]` (см. **docs/ParserConfig.md**).
+  Percent-encode имён прокси/групп в delay и switch (исправление 404 на сложных тегах).
+
+- **Вкладка Servers — ПКМ и share-ссылка**  
+  Правый клик по **строке** списка (обёртка **`SecondaryTapWrap`**): первая строка меню — тип из **`GET /proxies`** (`ProxyInfo.ClashType`, в нижнем регистре, или «тип неизвестен»); вторая — **«Копировать ссылку»** — сборка URI из **`config.json`** без повторной загрузки подписок: сначала **`outbounds[]`** по тегу, иначе **WireGuard** в **`endpoints[]`** (`ShareProxyURIForOutboundTag`, один разбор JSON на действие). Поддерживаемые протоколы кодировщика — как в **docs/ParserConfig.md** (раздел Share URI). Неподдерживаемые outbounds — локализованное сообщение (`ErrShareURINotSupported`). Подробная спецификация и отчёт: **[SPECS/025-F-C-SERVERS_CONTEXT_MENU_SHARE_URI/](SPECS/025-F-C-SERVERS_CONTEXT_MENU_SHARE_URI/)** (SPEC / PLAN / TASKS / **IMPLEMENTATION_REPORT**).
+
+- **Настройки лаунчера (`bin/settings.json`)**  
+  Опционально **`ping_test_url`** (URL для query `url` в Clash delay) и **`ping_test_all_concurrency`** (параллелизм массового пинга на Servers); читаются при старте в **`main.go`**.
 
 - **Сборка**  
   Linux: проверка зависимостей, [docs/BUILD_LINUX.md](docs/BUILD_LINUX.md), опциональный Docker. macOS: `build_darwin.sh` (`-i`, `arm64`, справка).
@@ -25,14 +31,16 @@
   Переработан блок DNS в `bin/wizard_template.json`; рекомендуется сбросить сохранённый шаблон в каталоге данных приложения.
 
 - **Внутреннее**  
-  `MergeGUIToModel`, виджет `NewCheckWithContent`, обновления документации и локалей.
+  `MergeGUIToModel`, `NewCheckWithContent`, `NewSecondaryTapWrap`, `ShareURIFromOutbound` / `outbound_share`, обновления документации и локалей.
 
 ### Draft highlights (EN)
 
 - **Wizard & UI:** Scrollbar gutters; Rules / Sources / DNS UX; DNS tab with JSON `dns.rules`, `dns_options` in state, enabled servers, tooltips, faster DNS-related updates.
 - **Unsaved changes:** Quieter tab sync; Outbounds list correctly marks config dirty after edits.
 - **Parser:** VLESS/Trojan/VMess transports & TLS from URI; vision-udp443 → sing-box–compatible JSON; SOCKS5 with credentials and `version: "5"`; subscription `#fragment` → `tag_prefix`; UTF-8 and tag normalization.
-- **Clash API:** Encoded proxy/group names in API paths. **Servers** tab: right-click row → first line shows proxy **`type`** (plain text), then **Copy link**; share URI from outbound or WireGuard `endpoints[]` in `config.json` (see **docs/ParserConfig.md**).
+- **Clash API:** Encoded proxy/group names in API paths.
+- **Servers tab — context menu & share link:** Right-click the **proxy row** (`SecondaryTapWrap`): first menu line is Clash **`type`** (lowercase, from `ProxyInfo.ClashType`) or a localized unknown label; second line **Copy link** builds a subscription-style URI from **`config.json`** (`outbounds[]`, else WireGuard `endpoints[]`) in one JSON parse per action (`ShareProxyURIForOutboundTag`, `subscription.ShareURIFromOutbound` / `ShareURIFromWireGuardEndpoint`). See **docs/ParserConfig.md** (Share URI) and full spec **[SPECS/025-F-C-SERVERS_CONTEXT_MENU_SHARE_URI/](SPECS/025-F-C-SERVERS_CONTEXT_MENU_SHARE_URI/)**.
+- **Launcher settings:** Optional **`ping_test_url`** and **`ping_test_all_concurrency`** in **`bin/settings.json`** (applied at startup from **`main.go`**).
 - **Build:** Linux dependency checks + docs + optional Docker; macOS script options (`-i`, `arm64`).
 - **Template:** Wizard DNS defaults reworked — see full draft.
 

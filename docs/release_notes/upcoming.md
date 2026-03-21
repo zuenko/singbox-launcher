@@ -42,9 +42,13 @@
 
 - **Clash API:** `GET /proxies/{name}/delay` and `PUT /proxies/{group}` now **percent-encode** proxy/group names (spaces, `>`, Unicode, etc.); delay `url` query uses `QueryEscape`. Switch payload uses `json.Marshal` for `name`. Fixes 404 «Resource not found» when pinging tags like `abvpn:… > …`.
 
+- **Servers — share URI & menu (internals):** `GET /proxies` fills **`ProxyInfo.ClashType`**; first context-menu line uses **`ProxyInfo.ContextMenuTypeLine`**. Row-level ПКМ via **`internal/fynewidget.NewSecondaryTapWrap`**; **`serversProxyContextMenu`** / **`serversRunCopyShareURIToClipboard`** in **`ui/clash_api_tab.go`**. Reverse encoding: **`subscription.ShareURIFromOutbound`**, **`ShareURIFromWireGuardEndpoint`**, **`config.ShareProxyURIForOutboundTag`** (**one** parse of `config.json` root per **Copy link**). Tests: **`share_uri_encode_test.go`**, **`outbound_share_test.go`**, **`api/proxyinfo_test.go`**.
+
+- **Launcher `settings.json`:** optional **`ping_test_url`** (override URL for Clash delay query `url`) and **`ping_test_all_concurrency`** (parallel delay requests for batch ping on Servers); applied at startup from **`main.go`** via **`api.SetPingTestURL`** / **`SetPingTestAllConcurrency`**. **`locale.SaveSettings`** uses **`platform.DefaultFileMode`**.
+
 - **UI:** `ShowDownloadFailedManual` and `ShowAutoHideInfo` are no longer re-exported from `ui/dialogs.go`; call sites in package `ui` use `internal/dialogs` directly (same behavior).
 
-- **Docs:** `docs/ParserConfig.md` — VLESS/Trojan URI: expanded query parameters and link to `SPECS/023-…/SUBSCRIPTION_PARAMS_REPORT.md` (sing-box field reference); wizard auto `tag_prefix` from subscription URL `#fragment`.
+- **Docs:** `docs/ParserConfig.md` — **Share URI** (outbound + WireGuard `endpoints[]` → subscription-style link); VLESS/Trojan URI: expanded query parameters and link to `SPECS/023-…/SUBSCRIPTION_PARAMS_REPORT.md` (sing-box field reference); wizard auto `tag_prefix` from subscription URL `#fragment`. **`docs/ARCHITECTURE.md`**, **`docs/TEST_README.md`**, **`README.md`**, **`RELEASE_NOTES.md`** updated for share link flow.
 
 - **Wizard template — `dns_options`:** The loader keeps raw `dns_options` on `TemplateData`. On first DNS init, the wizard reads `servers` (strips wizard-only `description` / `enabled`), `rules`, `dns.final` or `final`, `strategy`, `independent_cache`, and prepends a `local` server from `config.dns` when missing. `DefaultDomainResolver` is taken from `default_domain_resolver` or `route.default_domain_resolver` inside `dns_options`.
 
@@ -102,9 +106,13 @@
 
 - **Clash API:** для `GET /proxies/{name}/delay` и `PUT /proxies/{group}` имена прокси/группы **кодируются** (`PathEscape`), параметр `url` в delay — `QueryEscape`; тело переключения — `json.Marshal` для поля `name`. Устраняет 404 при пинге тегов с пробелами и `>` (например abvpn после нормализации).
 
+- **Servers — share URI и меню (внутреннее):** ответ **`GET /proxies`** заполняет **`ProxyInfo.ClashType`**; первая строка контекстного меню — **`ProxyInfo.ContextMenuTypeLine`**. ПКМ по строке — **`internal/fynewidget.NewSecondaryTapWrap`**; **`serversProxyContextMenu`** / **`serversRunCopyShareURIToClipboard`** в **`ui/clash_api_tab.go`**. Обратное кодирование ссылки: **`subscription.ShareURIFromOutbound`**, **`ShareURIFromWireGuardEndpoint`**, **`config.ShareProxyURIForOutboundTag`** (**один** разбор корня `config.json` на одно копирование). Тесты: **`share_uri_encode_test.go`**, **`outbound_share_test.go`**, **`api/proxyinfo_test.go`**.
+
+- **`bin/settings.json`:** необязательные **`ping_test_url`** (подмена URL для query `url` в delay) и **`ping_test_all_concurrency`** (параллелизм массового пинга на вкладке Servers); применяются при старте из **`main.go`** через **`api.SetPingTestURL`** / **`SetPingTestAllConcurrency`**. **`locale.SaveSettings`** пишет файл с **`platform.DefaultFileMode`**.
+
 - **UI:** `ShowDownloadFailedManual` и `ShowAutoHideInfo` больше не реэкспортируются из `ui/dialogs.go`; вызовы в пакете `ui` идут в `internal/dialogs` напрямую (поведение то же).
 
-- **Документация:** `docs/ParserConfig.md` — VLESS/Trojan URI: расширен список query-параметров и ссылка на `SPECS/023-…/SUBSCRIPTION_PARAMS_REPORT.md` (справочник полей sing-box); описан автоматический `tag_prefix` из `#` во вводе визарда.
+- **Документация:** `docs/ParserConfig.md` — раздел **Share URI** (outbound + WireGuard **`endpoints[]`** → ссылка как в подписке); VLESS/Trojan URI: расширен список query-параметров и ссылка на `SPECS/023-…/SUBSCRIPTION_PARAMS_REPORT.md`; автоматический `tag_prefix` из `#` во вводе визарда. Обновлены **`docs/ARCHITECTURE.md`**, **`docs/TEST_README.md`**, **`README.md`**, **`RELEASE_NOTES.md`** под сценарий копирования ссылки.
 
 - **Шаблон визарда — `dns_options`:** загрузчик сохраняет сырой `dns_options` в `TemplateData`. При первичной инициализации DNS визард читает `servers` (убирает только визардные `description` / `enabled`), `rules`, `dns.final` или `final`, `strategy`, `independent_cache` и при необходимости добавляет `local` из `config.dns`. `DefaultDomainResolver` — из `default_domain_resolver` или `route.default_domain_resolver` внутри `dns_options`.
 
