@@ -93,4 +93,12 @@ type GUIState struct {
 	UpdatingOutboundOptions bool
 	// DNSSelectsProgrammatic: SetSelected в refreshDNSSelectsFromModel — не писать модель из OnChanged селектов.
 	DNSSelectsProgrammatic bool
+
+	// WizardWidgetsReady: после завершения applyWizardWidgetsFromModel (первый кадр SyncModelToGUI).
+	// До этого MergeGUIToModel не трогает модель; SyncGUIToModel всё ещё может применяться (сохранение) с ветками «keep model» для пустых виджетов.
+	WizardWidgetsReady bool
+
+	// SourceURLsProgrammatic / DNSRulesProgrammatic: SetText из модели — не считать за правку пользователя.
+	SourceURLsProgrammatic bool
+	DNSRulesProgrammatic   bool
 }

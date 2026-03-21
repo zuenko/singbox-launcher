@@ -295,7 +295,8 @@ singbox-launcher/
 │       │   │   │
 │       │   ├── presenter_sync.go # Синхронизация модели и GUI
 │       │   │   │   - SyncModelToGUI()                   # Синхронизация модели → GUI
-│       │   │   │   - SyncGUIToModel()                   # Синхронизация GUI → модели
+│       │   │   │   - SyncGUIToModel()                   # GUI → модель + hasChanges при отличиях
+│       │   │   │   - MergeGUIToModel()                  # GUI → модель без hasChanges (табы, parse, закрытие)
 │       │   │   │
 │       │   ├── presenter_async.go # Асинхронные операции
 │       │   │   │   - TriggerParseForPreview()           # Парсинг для preview

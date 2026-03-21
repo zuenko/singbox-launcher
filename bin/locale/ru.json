@@ -188,6 +188,7 @@
   "servers.dialog_ping_settings_title": "Настройки пинг-теста",
   "servers.ping_label_url": "URL пинг-теста",
   "servers.ping_label_custom_url": "Свой URL:",
+  "servers.ping_label_parallel": "Параллельных запросов (массовый ping):",
   "servers.ping_placeholder_url": "https://example.com/generate_204",
   "servers.ping_option_custom": "Свой",
   "servers.ping_button_save": "Сохранить",

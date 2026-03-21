@@ -178,6 +178,7 @@
     "servers.dialog_ping_settings_title":  "Ping test settings",
     "servers.ping_label_url":  "Ping test URL",
     "servers.ping_label_custom_url":  "Custom URL:",
+    "servers.ping_label_parallel":  "Parallel requests (ping all):",
     "servers.ping_placeholder_url":  "https://example.com/generate_204",
     "servers.ping_option_custom":  "Custom",
     "servers.ping_button_save":  "Save",

@@ -188,6 +188,7 @@
   "servers.dialog_ping_settings_title": "Ping 测试设置",
   "servers.ping_label_url": "Ping 测试 URL",
   "servers.ping_label_custom_url": "自定义 URL：",
+  "servers.ping_label_parallel": "并行请求（全部 ping）：",
   "servers.ping_placeholder_url": "https://example.com/generate_204",
   "servers.ping_option_custom": "自定义",
   "servers.ping_button_save": "保存",

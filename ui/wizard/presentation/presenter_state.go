@@ -36,7 +36,7 @@ import (
 
 // HasUnsavedChanges проверяет наличие несохранённых изменений.
 // hasChanges отслеживается как поле структуры WizardPresenter.
-// Устанавливается в true при изменении данных через SyncGUIToModel (если данные реально изменились).
+// Устанавливается в true через MarkAsChanged из табов и через SyncGUIToModel при расхождении виджетов с моделью (MergeGUIToModel флаг не трогает).
 // Сбрасывается в false при сохранении состояния или загрузке нового состояния.
 func (p *WizardPresenter) HasUnsavedChanges() bool {
 	return p.hasChanges

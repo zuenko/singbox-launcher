@@ -38,7 +38,7 @@ func (p *WizardPresenter) TriggerParseForPreview() {
 	if p.guiState.SourceURLEntry == nil || p.guiState.ParserConfigEntry == nil {
 		return
 	}
-	p.SyncGUIToModel()
+	p.MergeGUIToModel()
 	// Only ParserConfig is required; SourceURLs is not used (sources come from ParserConfig.Proxies).
 	if strings.TrimSpace(p.model.ParserConfigJSON) == "" {
 		return

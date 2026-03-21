@@ -188,6 +188,7 @@
   "servers.dialog_ping_settings_title": "Ajustes de test de ping",
   "servers.ping_label_url": "URL de test de ping",
   "servers.ping_label_custom_url": "URL personalizada:",
+  "servers.ping_label_parallel": "Solicitudes paralelas (ping a todos):",
   "servers.ping_placeholder_url": "https://example.com/generate_204",
   "servers.ping_option_custom": "Personalizada",
   "servers.ping_button_save": "Guardar",

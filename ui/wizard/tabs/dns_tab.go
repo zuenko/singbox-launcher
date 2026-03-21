@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -39,6 +40,53 @@ func tooltipForDNSServerCheck(locked bool) string {
 		return "wizard.dns.tooltip_server_locked"
 	}
 	return "wizard.dns.tooltip_server_enabled"
+}
+
+// dnsRowSummary — подпись сервера в списке DNS; клик по тексту и свободной части центральной ячейки строки
+// переключает галочку «включён» (как клик по самой галочке). Скелетные заблокированные строки не реагируют.
+type dnsRowSummary struct {
+	widget.BaseWidget
+
+	label *ttwidget.Label
+	check *widget.Check
+}
+
+func newDNSRowSummary(sum string, enCheck *widget.Check, desc string) *dnsRowSummary {
+	l := ttwidget.NewLabel(sum)
+	l.Wrapping = fyne.TextTruncate
+	if d := strings.TrimSpace(desc); d != "" {
+		l.SetToolTip(d)
+	}
+	s := &dnsRowSummary{label: l, check: enCheck}
+	s.ExtendBaseWidget(s)
+	return s
+}
+
+func (s *dnsRowSummary) MinSize() fyne.Size {
+	if s.label == nil {
+		return fyne.NewSize(0, 0)
+	}
+	return s.label.MinSize()
+}
+
+func (s *dnsRowSummary) Tapped(*fyne.PointEvent) {
+	if s.check == nil || s.check.Disabled() {
+		return
+	}
+	s.check.SetChecked(!s.check.Checked)
+}
+
+func (s *dnsRowSummary) TappedSecondary(e *fyne.PointEvent) { s.Tapped(e) }
+
+func (s *dnsRowSummary) Cursor() desktop.Cursor {
+	if s.check != nil && !s.check.Disabled() {
+		return desktop.PointerCursor
+	}
+	return desktop.DefaultCursor
+}
+
+func (s *dnsRowSummary) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(s.label)
 }
 
 // CreateDNSTab builds the DNS tab: servers list, strategy + cache, rules, then final + default resolver on one row.
@@ -85,13 +133,6 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 				if obj != nil {
 					desc = strings.TrimSpace(dnsJSONStringField(obj, "description"))
 				}
-				// ttwidget.Label — SetToolTip; обычный widget.Label тултип не показывает.
-				label := ttwidget.NewLabel(sum)
-				label.Wrapping = fyne.TextTruncate
-				if desc != "" {
-					label.SetToolTip(desc)
-				}
-
 				locked := wizardbusiness.DNSTagLocked(m, tag)
 
 				// Не вызывать SyncModelToGUI здесь — он пересобирает весь список и все вкладки; только обновить селекты.
@@ -126,8 +167,9 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 				rowGutter := canvas.NewRectangle(color.Transparent)
 				rowGutter.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
 				right := container.NewHBox(editBtn, delBtn, rowGutter)
-				// Border: check left, label center (gets width for TextTruncate), buttons right — avoids zero-width label in HBox-only row.
-				row := container.NewBorder(nil, nil, enCheck, right, label)
+				summary := newDNSRowSummary(sum, enCheck, desc)
+				// Border: check left, summary center (tap = toggle enabled), buttons right — avoids zero-width label in HBox-only row.
+				row := container.NewBorder(nil, nil, enCheck, right, summary)
 				serversBox.Add(row)
 			}(i)
 		}
@@ -187,6 +229,9 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 	guiState.DNSRulesEntry.SetPlaceHolder(locale.T("wizard.dns.placeholder_rules"))
 	guiState.DNSRulesEntry.Wrapping = fyne.TextWrapOff
 	guiState.DNSRulesEntry.OnChanged = func(string) {
+		if guiState.DNSRulesProgrammatic {
+			return
+		}
 		presenter.Model().TemplatePreviewNeedsUpdate = true
 		presenter.MarkAsChanged()
 	}
@@ -217,8 +262,8 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 	})
 	strategyLabel := widget.NewLabel(locale.T("wizard.dns.label_strategy"))
 
-	independentCacheLabel := widget.NewLabel(locale.T("wizard.dns.label_independent_cache"))
-	guiState.DNSIndependentCacheCheck = widget.NewCheck("", func(checked bool) {
+	// Один виджет Check: галочка и подпись вместе; клик по подписи переключает состояние (как в стандартном Fyne).
+	guiState.DNSIndependentCacheCheck = widget.NewCheck(locale.T("wizard.dns.label_independent_cache"), func(checked bool) {
 		if guiState.DNSSelectsProgrammatic {
 			return
 		}
@@ -240,7 +285,7 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 		}
 	})
 	independentCacheHelp.Importance = widget.LowImportance
-	independentCacheRow := container.NewHBox(independentCacheLabel, independentCacheHelp, guiState.DNSIndependentCacheCheck)
+	independentCacheRow := container.NewHBox(guiState.DNSIndependentCacheCheck, independentCacheHelp)
 
 	strategyAndCacheRow := container.NewHBox(
 		strategyLabel,

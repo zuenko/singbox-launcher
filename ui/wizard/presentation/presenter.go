@@ -5,7 +5,7 @@
 // WizardPresenter:
 //   - Реализует UIUpdater для обновления GUI из бизнес-логики
 //   - Хранит модель (WizardModel) и GUI-состояние (GUIState)
-//   - Синхронизирует данные между моделью и GUI (SyncModelToGUI, SyncGUIToModel)
+//   - Синхронизирует данные между моделью и GUI (SyncModelToGUI, SyncGUIToModel, MergeGUIToModel)
 //   - Управляет открытыми диалогами (OpenRuleDialogs)
 //   - Координирует вызовы бизнес-логики и обновление GUI
 //

@@ -61,17 +61,22 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	guiState.SourceURLEntry.Wrapping = fyne.TextWrapOff
 	// No automatic application: URLs are applied only when the user clicks Add.
 	guiState.SourceURLEntry.OnChanged = func(value string) {
+		if guiState.SourceURLsProgrammatic {
+			return
+		}
 		presenter.Model().PreviewNeedsParse = true
+		presenter.MarkAsChanged()
 	}
 
 	hintLabel := widget.NewLabel(locale.T("wizard.source.hint"))
 	hintLabel.Wrapping = fyne.TextWrapWord
 
 	addURLButton := widget.NewButton(locale.T("wizard.source.button_add"), func() {
-		presenter.SyncGUIToModel()
+		presenter.MergeGUIToModel()
 		trimmed := strings.TrimSpace(guiState.SourceURLEntry.Text)
 		if err := wizardbusiness.AppendURLsToParserConfig(presenter, trimmed); err != nil {
 			debuglog.ErrorLog("source_tab: Add URL error: %v", err)
+			return
 		}
 		m := presenter.Model()
 		m.PreviewNeedsParse = true
@@ -80,8 +85,11 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 		if guiState.RefreshSourcesList != nil {
 			guiState.RefreshSourcesList()
 		}
+		presenter.MarkAsChanged()
 		// Clear the URL field after adding so the user can enter the next URL
+		guiState.SourceURLsProgrammatic = true
 		guiState.SourceURLEntry.SetText("")
+		guiState.SourceURLsProgrammatic = false
 	})
 
 	getFreeVPNButton := widget.NewButton(locale.T("wizard.source.button_get_free"), func() {
@@ -569,7 +577,8 @@ func CreateOutboundsAndParserConfigTab(presenter *wizardpresentation.WizardPrese
 		model := presenter.Model()
 		model.PreviewNeedsParse = true
 		// Sync GUI to model to update ParserConfigJSON before refreshing outbound options
-		presenter.SyncGUIToModel()
+		presenter.MergeGUIToModel()
+		presenter.MarkAsChanged()
 		presenter.RefreshOutboundOptions()
 		// Preview status will be updated when switching to Preview tab
 	}
@@ -629,6 +638,9 @@ func CreateOutboundsAndParserConfigTab(presenter *wizardpresentation.WizardPrese
 		if guiState.RefreshSourcesList != nil {
 			guiState.RefreshSourcesList()
 		}
+		// SetText runs under ParserConfigUpdating, so ParserConfigEntry.OnChanged skips MarkAsChanged;
+		// outbounds list actions (Edit/Add/Delete, ↑/↓) must mark dirty explicitly.
+		presenter.MarkAsChanged()
 	}
 
 	configuratorContent := outbounds_configurator.NewConfiguratorContent(guiState.Window, presenter, onConfiguratorApply)

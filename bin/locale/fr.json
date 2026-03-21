@@ -149,6 +149,7 @@
   "servers.ping_button_save": "Enregistrer",
   "servers.ping_format_ms": "%d ms",
   "servers.ping_label_custom_url": "URL personnalisée :",
+  "servers.ping_label_parallel": "Requêtes parallèles (ping tout) :",
   "servers.ping_label_url": "URL du test de ping",
   "servers.ping_option_custom": "Personnalisée",
   "servers.ping_placeholder_url": "https://example.com/generate_204",

@@ -102,6 +102,28 @@ var (
 // It is process-wide and can be overridden at runtime from the UI.
 var pingTestURL = PingTestEndpointGoogle.URL
 
+// pingTestAllConcurrency is the worker count for bulk "ping all" on the Servers tab (1, 5, 10, or 20).
+var pingTestAllConcurrency = 20
+
+func normalizePingTestAllConcurrency(n int) int {
+	switch n {
+	case 1, 5, 10, 20:
+		return n
+	default:
+		return 20
+	}
+}
+
+// GetPingTestAllConcurrency returns the number of parallel delay requests for ping-all (always 1, 5, 10, or 20).
+func GetPingTestAllConcurrency() int {
+	return pingTestAllConcurrency
+}
+
+// SetPingTestAllConcurrency sets parallel workers for ping-all; invalid values become 20.
+func SetPingTestAllConcurrency(n int) {
+	pingTestAllConcurrency = normalizePingTestAllConcurrency(n)
+}
+
 // GetPingTestURL returns the current endpoint used for delay checks.
 func GetPingTestURL() string {
 	return pingTestURL

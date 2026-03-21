@@ -18,3 +18,19 @@ func TestProxyNamePathEscape_noRawSpaces(t *testing.T) {
 		t.Fatalf("PathUnescape: err=%v dec=%q want %q", err, dec, name)
 	}
 }
+
+func TestPingTestAllConcurrency_allowedValues(t *testing.T) {
+	prev := pingTestAllConcurrency
+	t.Cleanup(func() { pingTestAllConcurrency = prev })
+
+	for _, want := range []int{1, 5, 10, 20} {
+		SetPingTestAllConcurrency(want)
+		if got := GetPingTestAllConcurrency(); got != want {
+			t.Fatalf("Set %d: got %d", want, got)
+		}
+	}
+	SetPingTestAllConcurrency(7)
+	if got := GetPingTestAllConcurrency(); got != 20 {
+		t.Fatalf("invalid value: want 20, got %d", got)
+	}
+}

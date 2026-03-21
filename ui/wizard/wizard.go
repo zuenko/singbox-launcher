@@ -409,8 +409,8 @@ func setupTabChangeHandler(presenter *wizardpresentation.WizardPresenter, guiSta
 
 	// Update buttons when switching tabs
 	tabs.OnChanged = func(item *container.TabItem) {
-		// Sync GUI to model before switching
-		presenter.SyncGUIToModel()
+		// Sync GUI to model before switching (без MarkAsChanged — иначе ложный «есть несохранённые» при переключении табов)
+		presenter.MergeGUIToModel()
 
 		// Update current tab index
 		var newIndex int
@@ -588,6 +588,9 @@ func handleSaveAsButton(presenter *wizardpresentation.WizardPresenter, wizardWin
 // handleCloseButton обрабатывает закрытие визарда с проверкой изменений.
 func handleCloseButton(presenter *wizardpresentation.WizardPresenter, guiState *wizardpresentation.GUIState, wizardWindow fyne.Window) {
 	debuglog.InfoLog("handleCloseButton: called")
+
+	// Слить GUI→модель без MarkAsChanged: иначе ложное «есть изменения» из-за расхождений виджет/модель при закрытии
+	presenter.MergeGUIToModel()
 
 	// Cancel save operation if in progress
 	if guiState.SaveInProgress {

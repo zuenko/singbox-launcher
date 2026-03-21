@@ -3,6 +3,7 @@ package ui
 import (
 	"image/color"
 	"sort"
+	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -23,16 +24,11 @@ import (
 	"singbox-launcher/internal/textnorm"
 )
 
-// Maximum number of concurrent ping requests for "test" button.
-const pingAllConcurrency = 20
+// serversListRowScrollbarGutterWidth — отступ справа внутри каждой строки списка прокси (после кнопок),
+// чтобы полоса прокрутки списка не наезжала на Ping / Switch (а не поле снаружи скролла).
+const serversListRowScrollbarGutterWidth = 10
 
-// serversTabScrollbarGutterWidth reserves space to the right of scrollable content so the
-// native scrollbar strip does not overlap list rows or status text (same idea as wizard Sources/Rules).
-const serversTabScrollbarGutterWidth = 10
-
-// serversScrollGutterWidth reserves space to the right of scrollable content so the
-// native scrollbar strip does not overlap list rows or status text (same idea as wizard tabs).
-const serversScrollGutterWidth = 10
+var pingAllConcurrencyOptions = []string{"1", "5", "10", "20", "50", "100"}
 
 // reorderWithPinned moves special proxies to the top of the list while
 // preserving relative order of the rest:
@@ -347,11 +343,15 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		pingButton := ttwidget.NewButton(locale.T("servers.button_ping"), nil)
 		switchButton := widget.NewButton("▶️", nil)
 
+		rowGutter := canvas.NewRectangle(color.Transparent)
+		rowGutter.SetMinSize(fyne.NewSize(serversListRowScrollbarGutterWidth, 0))
+
 		content := container.NewHBox(
 			nameLabel,
 			layout.NewSpacer(),
 			pingButton,
 			switchButton,
+			rowGutter,
 		)
 
 		paddedContent := container.NewPadded(content)
@@ -579,7 +579,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			done := make(chan struct{})
 			total := len(proxies)
 			completed := 0
-			concurrency := pingAllConcurrency
+			concurrency := api.GetPingTestAllConcurrency()
 			if concurrency <= 0 {
 				concurrency = 1
 			}
@@ -639,10 +639,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	}
 
 	// --- Сборка всего контента ---
-	listScrollGutter := canvas.NewRectangle(color.Transparent)
-	listScrollGutter.SetMinSize(fyne.NewSize(serversTabScrollbarGutterWidth, 0))
-	proxiesListWithGutter := container.NewBorder(nil, nil, nil, listScrollGutter, proxiesListWidget)
-	scrollContainer := container.NewScroll(proxiesListWithGutter)
+	scrollContainer := container.NewScroll(proxiesListWidget)
 	scrollContainer.SetMinSize(fyne.NewSize(0, 300))
 
 	// Кнопка сортировки по алфавиту (слева)
@@ -711,11 +708,20 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			urlEntry.Disable()
 		}
 
+		parallelSelect := widget.NewSelect(pingAllConcurrencyOptions, nil)
+		parallelSelect.SetSelected(strconv.Itoa(api.GetPingTestAllConcurrency()))
+
+		parallelRow := container.NewHBox(
+			widget.NewLabel(locale.T("servers.ping_label_parallel")),
+			parallelSelect,
+		)
+
 		content := container.NewVBox(
 			widget.NewLabel(locale.T("servers.ping_label_url")),
 			radio,
 			widget.NewLabel(locale.T("servers.ping_label_custom_url")),
 			urlEntry,
+			parallelRow,
 			widget.NewLabel(" "),
 		)
 
@@ -740,6 +746,8 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			}
 
 			api.SetPingTestURL(newURL)
+			n, _ := strconv.Atoi(parallelSelect.Selected)
+			api.SetPingTestAllConcurrency(n)
 			status.SetText(locale.Tf("servers.status_ping_url_updated", newURL))
 		}, ac.UIService.MainWindow)
 
@@ -871,10 +879,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 	// Обертываем status label в контейнер с горизонтальной прокруткой
 	// Scroll контейнер ограничит ширину label и добавит прокрутку при необходимости
-	statusScrollGutter := canvas.NewRectangle(color.Transparent)
-	statusScrollGutter.SetMinSize(fyne.NewSize(serversTabScrollbarGutterWidth, 0))
-	statusWithGutter := container.NewBorder(nil, nil, nil, statusScrollGutter, status)
-	statusScroll := container.NewScroll(statusWithGutter)
+	statusScroll := container.NewScroll(status)
 	statusScroll.Direction = container.ScrollBoth
 	// Ограничиваем только высоту, ширина будет ограничена родительским Border контейнером
 	statusScroll.SetMinSize(fyne.NewSize(0, status.MinSize().Height))
