@@ -78,6 +78,11 @@ func (p *WizardPresenter) validateSaveInput() bool {
 		dialog.ShowError(errors.New(locale.T("wizard.save.error_config_empty")), p.guiState.Window)
 		return false
 	}
+	if err := wizardbusiness.ValidateDNSModel(p.model); err != nil {
+		debuglog.WarnLog("SaveConfig: DNS validation failed: %v", err)
+		dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.dns.error_validation"), err), p.guiState.Window)
+		return false
+	}
 	var pc config.ParserConfig
 	if err := json.Unmarshal([]byte(p.model.ParserConfigJSON), &pc); err != nil {
 		debuglog.WarnLog("SaveConfig: ParserConfig JSON invalid: %v", err)

@@ -3,9 +3,10 @@
 // Файл loader.go загружает единый шаблон конфигурации (wizard_template.json) и преобразует
 // его в TemplateData для использования визардом.
 //
-// Шаблон содержит 4 секции:
+// Шаблон содержит секции:
 //   - parser_config — конфигурация парсера подписок (JSON-объект)
 //   - config — основной конфиг sing-box (после применения params)
+//   - dns_options (опционально) — дефолты вкладки DNS во визарде (не sing-box)
 //   - selectable_rules — правила маршрутизации для визарда (с platforms и rule_set)
 //   - params — платформозависимые параметры (применяются по runtime.GOOS)
 //
@@ -13,7 +14,7 @@
 //  1. Чтение и валидацию JSON файла шаблона
 //  2. Применение params для текущей платформы (replace/prepend/append)
 //  3. Фильтрацию selectable_rules по platforms
-//  4. Извлечение defaultFinal из config.route.final
+//  4. Извлечение defaultFinal из config.route.final; default_domain_resolver из dns_options (default_domain_resolver или route.default_domain_resolver) или config.route
 //  5. Парсинг config в упорядоченные секции для генератора
 //
 // Используется в:
@@ -63,6 +64,12 @@ type TemplateData struct {
 
 	// DefaultFinal — outbound по умолчанию из config.route.final.
 	DefaultFinal string
+
+	// DefaultDomainResolver — тег для route.default_domain_resolver: сначала из dns_options, иначе из config.route (после apply params).
+	DefaultDomainResolver string
+
+	// DNSOptionsRaw — секция dns_options из шаблона (не sing-box); визард читает отсюда список DNS-серверов и правила при наличии.
+	DNSOptionsRaw json.RawMessage `json:"-"`
 }
 
 // TemplateSelectableRule — правило маршрутизации, управляемое пользователем в визарде.
@@ -147,8 +154,9 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 	var root struct {
 		ParserConfig    json.RawMessage      `json:"parser_config"`
 		Config          json.RawMessage      `json:"config"`
+		DNSOptions      json.RawMessage      `json:"dns_options,omitempty"`
 		SelectableRules []jsonSelectableRule `json:"selectable_rules"`
-		Params          []TemplateParam       `json:"params"`
+		Params          []TemplateParam      `json:"params"`
 	}
 	if err := json.Unmarshal(raw, &root); err != nil {
 		return nil, fmt.Errorf("invalid JSON in %s: %w", TemplateFileName, err)
@@ -187,9 +195,14 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 	}
 	debuglog.DebugLog("TemplateLoader: секции конфига: %v", configOrder)
 
-	// 4. Извлечение defaultFinal из route
+	// 4. Извлечение defaultFinal; default_domain_resolver — dns_options, затем route
 	defaultFinal := extractDefaultFinal(configSections)
+	defaultDomainResolver := extractDefaultDomainResolverFromDNSOptions(root.DNSOptions)
+	if defaultDomainResolver == "" {
+		defaultDomainResolver = extractDefaultDomainResolver(configSections)
+	}
 	debuglog.DebugLog("TemplateLoader: defaultFinal: %s", defaultFinal)
+	debuglog.DebugLog("TemplateLoader: defaultDomainResolver: %s", defaultDomainResolver)
 
 	// 5. Фильтрация selectable_rules по платформе и преобразование
 	platform := runtime.GOOS
@@ -197,13 +210,15 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 	debuglog.InfoLog("TemplateLoader: загружено %d selectable rules для платформы %s", len(selectableRules), platform)
 
 	return &TemplateData{
-		ParserConfig:    parserConfigStr,
-		Config:          configSections,
-		ConfigOrder:     configOrder,
-		RawConfig:       rawConfig,
-		Params:          root.Params,
-		SelectableRules: selectableRules,
-		DefaultFinal:    defaultFinal,
+		ParserConfig:            parserConfigStr,
+		Config:                  configSections,
+		ConfigOrder:             configOrder,
+		RawConfig:               rawConfig,
+		Params:                  root.Params,
+		SelectableRules:         selectableRules,
+		DefaultFinal:            defaultFinal,
+		DefaultDomainResolver:   defaultDomainResolver,
+		DNSOptionsRaw:           root.DNSOptions,
 	}, nil
 }
 
@@ -476,6 +491,52 @@ func extractDefaultFinal(sections map[string]json.RawMessage) string {
 		}
 	}
 	return ""
+}
+
+// extractDefaultDomainResolverFromDNSOptions reads dns_options (wizard-only): default_domain_resolver или route.default_domain_resolver.
+func extractDefaultDomainResolverFromDNSOptions(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		debuglog.DebugLog("TemplateLoader: dns_options parse: %v", err)
+		return ""
+	}
+	for _, key := range []string{"default_domain_resolver", "route.default_domain_resolver"} {
+		if v, ok := m[key]; ok && len(v) > 0 {
+			var s string
+			if json.Unmarshal(v, &s) != nil {
+				continue
+			}
+			if t := strings.TrimSpace(s); t != "" {
+				return t
+			}
+		}
+	}
+	return ""
+}
+
+// extractDefaultDomainResolver reads route.default_domain_resolver from config sections (after params).
+func extractDefaultDomainResolver(sections map[string]json.RawMessage) string {
+	raw, ok := sections["route"]
+	if !ok || len(raw) == 0 {
+		return ""
+	}
+	var route map[string]interface{}
+	if err := json.Unmarshal(raw, &route); err != nil {
+		return ""
+	}
+	v, ok := route["default_domain_resolver"]
+	if !ok || v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	default:
+		return strings.TrimSpace(fmt.Sprint(t))
+	}
 }
 
 // stripUTF8BOM удаляет UTF-8 BOM (EF BB BF) в начале файла, если присутствует.

@@ -74,6 +74,14 @@ type GUIState struct {
 	// Optional refresh for Sources list (set by CreateSourcesTab); called from SyncModelToGUI.
 	RefreshSourcesList func()
 
+	// DNS tab
+	DNSRulesEntry              *widget.Entry
+	DNSFinalSelect             *widget.Select
+	DNSDefaultResolverSelect   *widget.Select
+	DNSStrategySelect        *widget.Select
+	DNSIndependentCacheCheck *widget.Check
+	RefreshDNSList             func()
+
 	// Last valid ParserConfig JSON for revert on validation error (e.g. on tab switch from Outbounds tab).
 	LastValidParserConfigJSON string
 
@@ -81,4 +89,6 @@ type GUIState struct {
 	SaveInProgress           bool
 	ParserConfigUpdating    bool
 	UpdatingOutboundOptions bool
+	// DNSSelectsProgrammatic: SetSelected в refreshDNSSelectsFromModel — не писать модель из OnChanged селектов.
+	DNSSelectsProgrammatic bool
 }

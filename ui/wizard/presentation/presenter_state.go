@@ -20,9 +20,11 @@
 package presentation
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"singbox-launcher/core"
@@ -88,7 +90,28 @@ func (p *WizardPresenter) CreateStateFromModel(comment, id string) *wizardmodels
 		state.CustomRules = append(state.CustomRules, persisted)
 	}
 
+	dnsState := &wizardmodels.PersistedDNSState{
+		Servers:          append([]json.RawMessage(nil), p.model.DNSServers...),
+		Rules:            wizardbusiness.PersistedDNSRulesForState(p.model.DNSRulesText),
+		Final:            p.model.DNSFinal,
+		Strategy:         p.model.DNSStrategy,
+		IndependentCache: copyBoolPtrForState(p.model.DNSIndependentCache),
+		ResolverUnset:    p.model.DefaultDomainResolverUnset,
+	}
+	if !p.model.DefaultDomainResolverUnset && strings.TrimSpace(p.model.DefaultDomainResolver) != "" {
+		dnsState.DefaultDomainResolver = strings.TrimSpace(p.model.DefaultDomainResolver)
+	}
+	state.DNSOptions = dnsState
+
 	return state
+}
+
+func copyBoolPtrForState(p *bool) *bool {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
 }
 
 // extractConfigParams извлекает параметры конфигурации из модели.
@@ -117,15 +140,15 @@ func (p *WizardPresenter) extractConfigParams() []wizardmodels.ConfigParam {
 		params = append(params, wizardmodels.ConfigParam{Name: "enable_tun_macos", Value: v})
 	}
 
+	// route.default_domain_resolver не дублируем в config_params — только dns_options в state.json (см. docs/WIZARD_STATE.md).
+
 	return params
 }
 
 // SaveCurrentState сохраняет текущее состояние в state.json.
 func (p *WizardPresenter) SaveCurrentState() error {
 	debuglog.InfoLog("SaveCurrentState: called")
-	// Синхронизируем GUI в модель перед сохранением
-	p.SyncGUIToModel()
-
+	// CreateStateFromModel вызывает SyncGUIToModel — не дублировать.
 	state := p.CreateStateFromModel("", "")
 	stateStore := p.getStateStore()
 
@@ -190,6 +213,9 @@ func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) err
 
 	// Восстановление config_params (шаг 4)
 	p.restoreConfigParams(stateFile.ConfigParams)
+
+	// Восстановление DNS вкладки (шаг 4b)
+	p.restoreDNS(stateFile)
 
 	// Восстановление SelectableRuleStates (шаг 5)
 	p.restoreSelectableRuleStates(stateFile.SelectableRuleStates)
@@ -296,6 +322,26 @@ func (p *WizardPresenter) restoreConfigParams(configParams []wizardmodels.Config
 	if v := p.findConfigParamValue(configParams, "enable_tun_macos"); v != "" {
 		p.model.EnableTunForMacOS = v == "true"
 	}
+
+	// Резолвер по умолчанию — только из dns_options (+ миграция из config_params в restoreDNS для старых файлов).
+}
+
+// restoreDNS loads dns_options from state (if any) and merges with the current wizard_template.json.
+func (p *WizardPresenter) restoreDNS(sf *wizardmodels.WizardStateFile) {
+	if sf == nil {
+		return
+	}
+	if sf.DNSOptions != nil {
+		wizardbusiness.LoadPersistedWizardDNS(p.model, sf.DNSOptions)
+	}
+	// Старые state.json: до отказа от дублирования тег лежал только в config_params.
+	if !p.model.DefaultDomainResolverUnset && strings.TrimSpace(p.model.DefaultDomainResolver) == "" {
+		if dr := p.findConfigParamValue(sf.ConfigParams, "route.default_domain_resolver"); dr != "" {
+			p.model.DefaultDomainResolver = dr
+			p.model.DefaultDomainResolverUnset = false
+		}
+	}
+	wizardbusiness.ApplyWizardDNSTemplate(p.model)
 }
 
 // findConfigParamValue ищет значение параметра по имени.
@@ -318,12 +364,7 @@ func (p *WizardPresenter) getDefaultFinalOutbound() string {
 }
 
 // GetStateStore создает новый StateStore для работы с состояниями.
-// Публичный метод для использования в диалогах и других компонентах.
-//
-// Примечание: FileServiceAdapter определён в business/file_service_adapter.go (без build tag).
-// но это не проблема, так как весь визард компилируется с cgo.
 func (p *WizardPresenter) GetStateStore() *wizardbusiness.StateStore {
-	// FileServiceAdapter в business/file_service_adapter.go (без cgo tag)
 	ac := core.GetController()
 	fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: ac.FileService}
 	return wizardbusiness.NewStateStore(fileServiceAdapter)

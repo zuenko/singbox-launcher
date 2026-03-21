@@ -120,6 +120,8 @@ func buildConfigSections(model *wizardmodels.WizardModel, forPreview bool, timin
 			formatted, err = buildOutboundsSection(model, raw, forPreview, timing)
 		case "endpoints":
 			formatted, err = buildEndpointsSection(model, raw, forPreview, timing)
+		case "dns":
+			formatted, err = buildDNSSection(model, raw, timing)
 		case "route":
 			formatted, err = buildRouteSection(model, raw, timing)
 		default:
@@ -250,12 +252,29 @@ func buildEndpointsSection(model *wizardmodels.WizardModel, templateEndpoints js
 	return builder.String(), nil
 }
 
+// buildDNSSection merges wizard DNS model into the template dns section.
+func buildDNSSection(model *wizardmodels.WizardModel, templateDNS json.RawMessage, timing *debuglog.TimingContext) (string, error) {
+	start := time.Now()
+	defer func() { timing.LogTiming("build dns", time.Since(start)) }()
+
+	merged, err := MergeDNSSection(templateDNS, model)
+	if err != nil {
+		return "", fmt.Errorf("dns merge failed: %w", err)
+	}
+	formatted, err := FormatSectionJSON(merged, 2)
+	if err != nil {
+		return string(merged), nil
+	}
+	return formatted, nil
+}
+
 // buildRouteSection строит секцию route с объединением правил и rule_set.
 func buildRouteSection(model *wizardmodels.WizardModel, raw json.RawMessage, timing *debuglog.TimingContext) (string, error) {
 	start := time.Now()
 	defer func() { timing.LogTiming("build route", time.Since(start)) }()
 
-	merged, err := MergeRouteSection(raw, model.SelectableRuleStates, model.CustomRules, model.SelectedFinalOutbound, model.ExecDir)
+	merged, err := MergeRouteSection(raw, model.SelectableRuleStates, model.CustomRules, model.SelectedFinalOutbound, model.ExecDir,
+		model.DefaultDomainResolver, model.DefaultDomainResolverUnset)
 	if err != nil {
 		return "", fmt.Errorf("route merge failed: %w", err)
 	}
@@ -270,7 +289,7 @@ func buildRouteSection(model *wizardmodels.WizardModel, raw json.RawMessage, tim
 // MergeRouteSection объединяет selectable rules, custom rules и rule_set в секцию route.
 // execDir — директория исполняемого файла; для SRS rule-set при наличии локального файла
 // подставляется type: local, path (для шаблонных правил и пользовательских SRS).
-func MergeRouteSection(raw json.RawMessage, states []*wizardmodels.RuleState, customRules []*wizardmodels.RuleState, finalOutbound string, execDir string) (json.RawMessage, error) {
+func MergeRouteSection(raw json.RawMessage, states []*wizardmodels.RuleState, customRules []*wizardmodels.RuleState, finalOutbound string, execDir string, defaultDomainResolver string, omitDefaultDomainResolver bool) (json.RawMessage, error) {
 	var route map[string]interface{}
 	if err := json.Unmarshal(raw, &route); err != nil {
 		return nil, err
@@ -356,6 +375,12 @@ func MergeRouteSection(raw json.RawMessage, states []*wizardmodels.RuleState, cu
 	}
 	if finalOutbound != "" {
 		route["final"] = finalOutbound
+	}
+
+	if omitDefaultDomainResolver {
+		delete(route, "default_domain_resolver")
+	} else if strings.TrimSpace(defaultDomainResolver) != "" {
+		route["default_domain_resolver"] = strings.TrimSpace(defaultDomainResolver)
 	}
 
 	return json.Marshal(route)

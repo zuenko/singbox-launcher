@@ -221,6 +221,7 @@ func convertGetFreeDataToStateFile(getFreeData *GetFreeData) (*wizardmodels.Wiza
 		getFreeData.ConfigParams,
 		selectableRuleStates,
 		getFreeData.CustomRules,
+		nil,
 	)
 }
 

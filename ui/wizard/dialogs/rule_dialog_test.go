@@ -28,7 +28,7 @@ func TestSimplePatternToRegex(t *testing.T) {
 			t.Errorf("SimplePatternToRegex(%q) produced invalid regex %q: %v", tt.pattern, got, err)
 		}
 	}
-	// Empty pattern should produce invalid regex and error
+	// Empty pattern is rejected (regexp.Compile("") would succeed otherwise)
 	_, err := SimplePatternToRegex("")
 	if err == nil {
 		t.Error("SimplePatternToRegex(\"\") should return error")

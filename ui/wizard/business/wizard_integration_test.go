@@ -55,6 +55,7 @@ func TestDefaultWizardFlow_NextNextFinish(t *testing.T) {
 	}
 
 	EnsureFinalSelected(model, options)
+	ApplyWizardDNSTemplate(model)
 
 	// Generate preview config (page 3 of wizard)
 	previewText, err := BuildTemplateConfig(model, true)
@@ -135,6 +136,7 @@ func TestWizardFlowWithCustomRules(t *testing.T) {
 	model.CustomRules = append(model.CustomRules, customRule)
 
 	EnsureFinalSelected(model, options)
+	ApplyWizardDNSTemplate(model)
 
 	// Generate config
 	configText, err := BuildTemplateConfig(model, false)

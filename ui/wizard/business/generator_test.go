@@ -55,7 +55,7 @@ func TestMergeRouteSection(t *testing.T) {
 		},
 	}
 
-	result, err := MergeRouteSection(rawRoute, selectableRules, customRules, "final-out", "")
+	result, err := MergeRouteSection(rawRoute, selectableRules, customRules, "final-out", "", "", false)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestMergeRouteSection_RejectAction(t *testing.T) {
 		},
 	}
 
-	result, err := MergeRouteSection(rawRoute, selectableRules, nil, "", "")
+	result, err := MergeRouteSection(rawRoute, selectableRules, nil, "", "", "", false)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestMergeRouteSection_DisabledRules(t *testing.T) {
 		},
 	}
 
-	result, err := MergeRouteSection(rawRoute, selectableRules, nil, "", "")
+	result, err := MergeRouteSection(rawRoute, selectableRules, nil, "", "", "", false)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -279,5 +279,35 @@ func TestIndentMultiline(t *testing.T) {
 				t.Errorf("Expected %q, got %q", tt.expected, result)
 			}
 		})
+	}
+}
+
+func TestMergeRouteSection_DefaultDomainResolver(t *testing.T) {
+	raw := json.RawMessage(`{"rules":[],"final":"direct-out","default_domain_resolver":"old"}`)
+	out, err := MergeRouteSection(raw, nil, nil, "", "", "new_tag", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var route map[string]interface{}
+	if err := json.Unmarshal(out, &route); err != nil {
+		t.Fatal(err)
+	}
+	if route["default_domain_resolver"] != "new_tag" {
+		t.Fatalf("expected new_tag, got %v", route["default_domain_resolver"])
+	}
+}
+
+func TestMergeRouteSection_OmitDefaultDomainResolver(t *testing.T) {
+	raw := json.RawMessage(`{"rules":[],"final":"direct-out","default_domain_resolver":"old"}`)
+	out, err := MergeRouteSection(raw, nil, nil, "", "", "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var route map[string]interface{}
+	if err := json.Unmarshal(out, &route); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := route["default_domain_resolver"]; ok {
+		t.Fatal("expected default_domain_resolver removed")
 	}
 }

@@ -103,6 +103,27 @@ func (p *WizardPresenter) UpdateUI(fn func()) {
 	SafeFyneDo(p.guiState.Window, fn)
 }
 
+// DialogParent returns the wizard window, or any open app window, for modal dialogs (e.g. DNS editor when guiState.Window is not set yet).
+func (p *WizardPresenter) DialogParent() fyne.Window {
+	if p.guiState != nil && p.guiState.Window != nil {
+		return p.guiState.Window
+	}
+	app := fyne.CurrentApp()
+	if app == nil {
+		return nil
+	}
+	d := app.Driver()
+	if d == nil {
+		return nil
+	}
+	for _, w := range d.AllWindows() {
+		if w != nil && w.Canvas() != nil {
+			return w
+		}
+	}
+	return nil
+}
+
 // Child windows contract: see docs/WIZARD_CHILD_WINDOWS.md (register on open, unregister on close, UpdateChildOverlay, single instance for View/Edit).
 
 // OpenViewWindow returns the open View (source servers) window if any.

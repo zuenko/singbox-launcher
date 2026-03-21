@@ -771,7 +771,7 @@ singbox-launcher/
   - `HasUnsavedChanges()` - проверка наличия несохранённых изменений
   - `MarkAsChanged()` - установка флага изменений
   - `MarkAsSaved()` - сброс флага изменений
-  - **Хранение и загрузка state:** состояние хранится в `bin/wizard_states/state.json` (текущее) и в `bin/wizard_states/<id>.json` (именованные). При сохранении презентер вызывает `CreateStateFromModel()`, затем state_store записывает файл. При загрузке state_store читает файл, вызывается `LoadState()`: миграции (MigrateCustomRules, MigrateSelectableRuleStates), восстановление custom_rules через `ToRuleState()` (тип при отсутствии/старом формате выводится из rule через DetermineRuleType; params и rule_set восстанавливаются в модель). Формат полей и логика — **docs/WIZARD_STATE.md**.
+  - **Хранение и загрузка state:** состояние хранится в `bin/wizard_states/state.json` (текущее) и в `bin/wizard_states/<id>.json` (именованные). При сохранении презентер вызывает `CreateStateFromModel()` (внутри — `SyncGUIToModel`), затем state_store записывает файл. При загрузке state_store читает файл, вызывается `LoadState()`: миграции (MigrateCustomRules, MigrateSelectableRuleStates), восстановление custom_rules через `ToRuleState()` (тип при отсутствии/старом формате выводится из rule через DetermineRuleType; params и rule_set восстанавливаются в модель), восстановление DNS (`restoreDNS`: **`dns_options`** (правила — JSON-массив **`rules`**), при необходимости миграция старого **`route.default_domain_resolver`** из `config_params`, затем **`wizardbusiness.ApplyWizardDNSTemplate`**). Резолвер по умолчанию в state — только в **`dns_options`**, не в `config_params`. Полный порядок чтения шаблона и state (включая смену снимка по Read) — **docs/WIZARD_STATE.md** (разделы **«Резюме по блокам (чтение)»** и **«Поток чтения»**); DNS — там же (**«Поток DNS»**, **`dns_options`**).
 - `presenter_rules.go`:
   - `RefreshRulesTab()` - обновление содержимого таба Rules (принимает функцию создания вкладки)
   - `RefreshRulesTabAfterLoadState()` - пересоздание вкладки Rules после LoadState (использует сохранённую функцию через DI)
@@ -1176,9 +1176,11 @@ UI (core_dashboard_tab.go)
       ├─> wizard/models: NewWizardModel()
       ├─> wizard/presentation: NewGUIState(), NewWizardPresenter()
       ├─> wizard/template/loader.go: LoadTemplateData()  # единый JSON-шаблон
-      ├─> wizard/tabs/source_tab.go: CreateSourceTab(presenter)
-      ├─> wizard/tabs/rules_tab.go: CreateRulesTab(presenter)
-      ├─> wizard/tabs/preview_tab.go: CreatePreviewTab(presenter)
+      ├─> wizard/tabs/source_tab.go: CreateSourcesTab, CreateOutboundsAndParserConfigTab
+      ├─> wizard/tabs/dns_tab.go: CreateDNSTab (модель ↔ UI; частичное обновление: RefreshDNSDependentSelectsOnly / RefreshDNSListAndSelects)
+      ├─> wizard/business/wizard_dns.go: ApplyWizardDNSTemplate — слияние шаблона и модели DNS
+      ├─> wizard/tabs/rules_tab.go: CreateRulesTab
+      ├─> wizard/tabs/preview_tab.go: CreatePreviewTab
       │
       ├─> wizard/business/loader.go: LoadConfigFromFile()
       ├─> wizard/presentation/presenter_state.go: LoadState()

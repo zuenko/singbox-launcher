@@ -203,6 +203,11 @@ func initializeWizardContent(presenter *wizardpresentation.WizardPresenter, guiS
 	// Initialize template state
 	presenter.InitializeTemplateState()
 
+	// DNS: LoadState already ran restoreDNS (merge + fill). Opening without state.json never calls it — build from template once.
+	if len(model.DNSServers) == 0 {
+		wizardbusiness.ApplyWizardDNSTemplate(model)
+	}
+
 	// Create tabs
 	tabs, rulesTabItem, previewTabItem := createWizardTabs(presenter, guiState)
 
@@ -235,8 +240,10 @@ func createWizardTabs(presenter *wizardpresentation.WizardPresenter, guiState *w
 	sourcesTabItem := container.NewTabItem(locale.T("wizard.tab_sources"), sourcesTab)
 	outboundsTab := wizardtabs.CreateOutboundsAndParserConfigTab(presenter)
 	outboundsTabItem := container.NewTabItem(locale.T("wizard.tab_outbounds"), outboundsTab)
+	dnsTab := wizardtabs.CreateDNSTab(presenter)
+	dnsTabItem := container.NewTabItem(locale.T("wizard.tab_dns"), dnsTab)
 
-	tabs := container.NewAppTabs(sourcesTabItem, outboundsTabItem)
+	tabs := container.NewAppTabs(sourcesTabItem, outboundsTabItem, dnsTabItem)
 	guiState.Tabs = tabs
 
 	// Overlay that redirects clicks to open rule dialog when present

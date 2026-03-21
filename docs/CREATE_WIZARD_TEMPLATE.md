@@ -192,7 +192,7 @@ Copy this skeleton and customize it:
 
 ## Understanding the Template Structure
 
-The unified template consists of four main sections:
+The unified template consists of five main sections:
 
 ### 1. `parser_config` Section
 
@@ -267,10 +267,33 @@ The unified template consists of four main sections:
 - `endpoints`: (Optional.) Empty array `[]` by default. WireGuard nodes from sources are written between `/** @ParserSTART_E */` and `/** @ParserEND_E */`. Requires sing-box 1.11+. See [ParserConfig.md](ParserConfig.md) for `wireguard://` links.
 - `route.rules`: Contains only basic universal rules (hijack-dns, ip_is_private, local). User-selectable rules are defined in `selectable_rules`
 - `route.rule_set`: Contains only shared rule sets used by multiple rules or DNS rules. Rule sets specific to individual selectable rules are defined within those rules
+- `route.default_domain_resolver`: Tag of a DNS server from `config.dns.servers` used to resolve domain names inside the route engine. The wizard’s DNS tab also reads the default from **`dns_options`** (below) when present.
 
 ---
 
-### 3. `selectable_rules` Section
+### 3. `dns_options` Section
+
+**Purpose**: Wizard-only defaults for the DNS tab that are **not** passed to sing-box as a separate object. Values here seed the UI and `state.json`; the generated `config.json` still uses `config.route` / `config.dns` as built by the wizard.
+
+**Structure**:
+```json
+{
+  "dns_options": {
+    "strategy": "prefer_ipv4",
+    "default_domain_resolver": "direct_dns_resolver"
+  }
+}
+```
+
+**Fields**:
+- `strategy` (optional, string): Wizard DNS tab **strategy** (`dns.strategy` in sing-box: e.g. `prefer_ipv4`, `ipv4_only`, …). When the model’s strategy is still empty after load, the wizard fills it as: base from **`config.dns.strategy`**, then override with **`dns_options.strategy`** if set (template `dns_options` wins over the skeleton). Keep both in sync unless you intentionally differ.
+- `default_domain_resolver` (optional, string): Tag of a server listed in `config.dns.servers`. If set, it takes **precedence** over `config.route.default_domain_resolver` for the wizard default. Keep both in sync with the same tag unless you intentionally differ.
+
+**Storage**: The DNS tab snapshot in `state.json` lives under root **`dns_options`**: **`servers`**, **`rules`** (JSON array, same objects as sing-box `dns.rules`; the wizard editor uses multiline text, which is parsed into this array on save), **`final`**, **`strategy`**, **`independent_cache`**, **`default_domain_resolver`** / **`default_domain_resolver_unset`**. The **`rules_text`** field is not used. See **docs/WIZARD_STATE.md**.
+
+---
+
+### 4. `selectable_rules` Section
 
 **Purpose**: Defines user-manageable routing rules that appear as checkboxes in the wizard.
 
@@ -362,7 +385,7 @@ The unified template consists of four main sections:
 
 ---
 
-### 4. `params` Section
+### 5. `params` Section
 
 **Purpose**: Defines platform-specific configuration overrides applied to `config` during template loading.
 
@@ -1270,8 +1293,9 @@ cat config_template.json | jq . > /dev/null
 The wizard preserves your section order. Organize logically:
 1. `parser_config` - Parser configuration
 2. `config` - Main sing-box configuration
-3. `selectable_rules` - User-selectable rules
-4. `params` - Platform-specific parameters
+3. `dns_options` - Wizard defaults for DNS tab (`default_domain_resolver`, optional)
+4. `selectable_rules` - User-selectable rules
+5. `params` - Platform-specific parameters
 
 ### 7. Use `rule_set` Wisely
 
@@ -1338,7 +1362,7 @@ Put `config_template.json` in the `bin/` folder next to the executable.
 - Ensure file is in `bin/` folder
 - Validate JSON syntax (use `jq` or online validator)
 - Check for trailing commas or syntax errors
-- Ensure all required sections (`parser_config`, `config`, `selectable_rules`, `params`) are present
+- Ensure all required sections (`parser_config`, `config`, `selectable_rules`, `params`) are present; optional `dns_options` is recommended if you use the wizard DNS tab (`default_domain_resolver`)
 
 ### Generated Outbounds Not Appearing
 

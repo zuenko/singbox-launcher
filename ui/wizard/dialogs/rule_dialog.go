@@ -15,6 +15,7 @@
 package dialogs
 
 import (
+	"errors"
 	"regexp"
 	"strings"
 )
@@ -74,7 +75,11 @@ func ParseLines(text string, preserveOriginal bool) []string {
 
 // SimplePatternToRegex converts a simple pattern (with * as wildcard) to a valid regex string.
 // * is replaced by (.*); other regex metacharacters are escaped.
+// An empty pattern returns an error (unlike regexp.Compile(""), which succeeds).
 func SimplePatternToRegex(pattern string) (string, error) {
+	if pattern == "" {
+		return "", errors.New("empty pattern")
+	}
 	var b strings.Builder
 	for _, r := range pattern {
 		if r == '*' {

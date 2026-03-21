@@ -18,6 +18,8 @@
 package models
 
 import (
+	"encoding/json"
+
 	"singbox-launcher/core/config"
 	wizardtemplate "singbox-launcher/ui/wizard/template"
 )
@@ -78,6 +80,17 @@ type WizardModel struct {
 
 	// ExecDir — директория исполняемого файла (для путей к SRS и т.д.)
 	ExecDir string
+
+	// DNS tab (sing-box config.dns + route.default_domain_resolver)
+	DNSServers                 []json.RawMessage
+	// DNSLockedTags — теги из config.dns.servers шаблона: строки не удаляются и не редактируются (json не сериализуется).
+	DNSLockedTags              map[string]struct{} `json:"-"`
+	DNSRulesText               string
+	DNSFinal                   string
+	DNSStrategy                string
+	DNSIndependentCache        *bool
+	DefaultDomainResolver      string
+	DefaultDomainResolverUnset bool // user chose "not set"; omit route.default_domain_resolver in output
 }
 
 // NewWizardModel создает новую модель визарда с начальными значениями.

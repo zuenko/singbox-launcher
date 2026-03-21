@@ -8,6 +8,7 @@
 //   - ConfigParams — параметры конфигурации (route.final и др.)
 //   - SelectableRuleStates — упрощённые состояния правил из шаблона (только label, enabled, selected_outbound)
 //   - CustomRules — пользовательские правила (полная структура)
+//   - DNSOptions — вкладка DNS визарда в JSON под ключом dns_options
 //
 // Selectable rules хранят только выбор пользователя — определение правила берётся из шаблона.
 // Custom rules хранят полную структуру, т.к. они не привязаны к шаблону.
@@ -58,6 +59,8 @@ type WizardStateFile struct {
 	ConfigParams         []ConfigParam                  `json:"config_params"`
 	SelectableRuleStates []PersistedSelectableRuleState `json:"selectable_rule_states"`
 	CustomRules          []PersistedCustomRule          `json:"custom_rules"`
+	// DNSOptions — снимок вкладки DNS визарда; в JSON ключ dns_options (как в wizard_template.json).
+	DNSOptions *PersistedDNSState `json:"dns_options,omitempty"`
 }
 
 // ConfigParam представляет параметр конфигурации.
@@ -192,6 +195,7 @@ func NewWizardStateFile(
 	configParams []ConfigParam,
 	selectableRuleStates []PersistedSelectableRuleState,
 	customRules []PersistedCustomRule,
+	dnsOptions *PersistedDNSState,
 ) (*WizardStateFile, error) {
 	// Парсим parser_config в map для обработки
 	var parserConfigData map[string]interface{}
@@ -236,6 +240,7 @@ func NewWizardStateFile(
 		ConfigParams:         configParams,
 		SelectableRuleStates: selectableRuleStates,
 		CustomRules:          customRules,
+		DNSOptions:           dnsOptions,
 		CreatedAt:            now,
 		UpdatedAt:            now,
 	}, nil
@@ -411,6 +416,7 @@ func (wsf *WizardStateFile) UnmarshalJSON(data []byte) error {
 		// raw messages для миграции
 		SelectableRuleStates json.RawMessage `json:"selectable_rule_states"`
 		CustomRules          json.RawMessage `json:"custom_rules"`
+		DNSOptions *PersistedDNSState `json:"dns_options"`
 	}
 
 	var basic BasicFields
@@ -422,6 +428,7 @@ func (wsf *WizardStateFile) UnmarshalJSON(data []byte) error {
 	wsf.ID = basic.ID
 	wsf.Comment = basic.Comment
 	wsf.ConfigParams = basic.ConfigParams
+	wsf.DNSOptions = basic.DNSOptions
 
 	// Парсим время
 	if basic.CreatedAt != "" {
