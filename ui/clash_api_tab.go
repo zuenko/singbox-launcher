@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 
@@ -130,6 +131,9 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		suppressSelectCallback bool
 		applySavedSort         func() // Объявляем переменную заранее, значение будет присвоено позже
 		pingAllGeneration      uint64 // инкремент при новом «ping all» — устаревшие воркеры не трогают UI
+		lastSelectedProxyName  string // для выделения строки при фильтре списка (индекс ≠ индекс в полном списке)
+		hidePingErrors         bool   // скрывать в списке прокси с Delay == -1 (ошибка пинга)
+		reconcileListSelection func()
 	)
 
 	// --- Логика обновления и сброса ---
@@ -194,6 +198,9 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 				if ac.UIService.ProxiesListWidget != nil {
 					ac.UIService.ProxiesListWidget.Refresh()
+				}
+				if reconcileListSelection != nil {
+					reconcileListSelection()
 				}
 
 				if ac.UIService.ListStatusLabel != nil {
@@ -292,6 +299,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		ac.SetProxiesList([]api.ProxyInfo{})
 		ac.SetActiveProxyName("")
 		ac.SetSelectedIndex(-1)
+		lastSelectedProxyName = ""
 		fyne.Do(func() {
 			if ac.UIService.ApiStatusLabel != nil {
 				ac.UIService.ApiStatusLabel.SetText(locale.T("servers.status_not_running"))
@@ -355,8 +363,26 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 						break
 					}
 				}
+				if reconcileListSelection != nil {
+					reconcileListSelection()
+				}
 			})
 		}()
+	}
+
+	// Срез для отображения в списке (полный или без прокси с ошибкой пинга).
+	proxiesForListView := func() []api.ProxyInfo {
+		all := ac.GetProxiesList()
+		if !hidePingErrors {
+			return all
+		}
+		out := make([]api.ProxyInfo, 0, len(all))
+		for i := range all {
+			if all[i].Delay != -1 {
+				out = append(out, all[i])
+			}
+		}
+		return out
 	}
 
 	// --- Создание виджета списка ---
@@ -388,7 +414,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	}
 
 	updateItem := func(id int, o fyne.CanvasObject) {
-		proxies := ac.GetProxiesList()
+		proxies := proxiesForListView()
 		if id < 0 || id >= len(proxies) {
 			return
 		}
@@ -441,6 +467,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				pl.Select(rowID)
 			}
 			ac.SetSelectedIndex(rowID)
+			lastSelectedProxyName = proxyInfo.Name
 			status.SetText(locale.Tf("servers.status_selected", proxyInfo.DisplayOrName()))
 
 			win := ac.UIService.MainWindow
@@ -484,18 +511,55 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 	var proxiesListWidget *widget.List
 	proxiesListWidget = widget.NewList(
-		func() int { return len(ac.GetProxiesList()) },
+		func() int { return len(proxiesForListView()) },
 		createItem,
 		updateItem,
 	)
 
 	proxiesListWidget.OnSelected = func(id int) {
 		ac.SetSelectedIndex(id)
-		proxies := ac.GetProxiesList()
+		proxies := proxiesForListView()
 		if id >= 0 && id < len(proxies) {
+			lastSelectedProxyName = proxies[id].Name
 			status.SetText(locale.Tf("servers.status_selected", proxies[id].DisplayOrName()))
+		} else {
+			lastSelectedProxyName = ""
 		}
 		proxiesListWidget.Refresh()
+	}
+
+	reconcileListSelection = func() {
+		if proxiesListWidget == nil {
+			return
+		}
+		disp := proxiesForListView()
+		all := ac.GetProxiesList()
+		newIdx := -1
+		if lastSelectedProxyName != "" {
+			inFull := false
+			for i := range all {
+				if all[i].Name == lastSelectedProxyName {
+					inFull = true
+					break
+				}
+			}
+			if !inFull {
+				lastSelectedProxyName = ""
+			} else {
+				for i := range disp {
+					if disp[i].Name == lastSelectedProxyName {
+						newIdx = i
+						break
+					}
+				}
+			}
+		}
+		ac.SetSelectedIndex(newIdx)
+		if newIdx >= 0 {
+			proxiesListWidget.Select(newIdx)
+		} else {
+			proxiesListWidget.UnselectAll()
+		}
 	}
 
 	ac.UIService.ProxiesListWidget = proxiesListWidget
@@ -535,6 +599,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		if ac.UIService.ProxiesListWidget != nil {
 			ac.UIService.ProxiesListWidget.Refresh()
 		}
+		reconcileListSelection()
 	}
 
 	// Функция сортировки по задержке с указанным направлением
@@ -584,6 +649,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		if ac.UIService.ProxiesListWidget != nil {
 			ac.UIService.ProxiesListWidget.Refresh()
 		}
+		reconcileListSelection()
 	}
 
 	// Функция для применения сохраненной сортировки (присваиваем значение переменной, объявленной ранее)
@@ -664,6 +730,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 						if ac.UIService.ProxiesListWidget != nil {
 							ac.UIService.ProxiesListWidget.Refresh()
 						}
+						reconcileListSelection()
 						completed++
 						status.SetText(locale.Tf("servers.status_pinging_progress", completed, total))
 					})
@@ -727,6 +794,40 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			sortByDelayButton.SetText("↓")
 		}
 	})
+
+	filterPingErrorsButton := ttwidget.NewButtonWithIcon("", theme.VisibilityOffIcon(), nil)
+	filterPingErrorsButton.Importance = widget.LowImportance
+	updatePingErrorsFilterButton := func() {
+		if hidePingErrors {
+			filterPingErrorsButton.SetIcon(theme.VisibilityIcon())
+			filterPingErrorsButton.SetText("")
+			filterPingErrorsButton.SetToolTip(locale.T("servers.tooltip_show_ping_errors"))
+		} else {
+			filterPingErrorsButton.SetIcon(theme.VisibilityOffIcon())
+			filterPingErrorsButton.SetText("")
+			filterPingErrorsButton.SetToolTip(locale.T("servers.tooltip_hide_ping_errors"))
+		}
+	}
+	updatePingErrorsFilterButton()
+	setListFilterStatus := func() {
+		all := ac.GetProxiesList()
+		total := len(all)
+		avail := 0
+		for i := range all {
+			if all[i].Delay != -1 {
+				avail++
+			}
+		}
+		status.SetText(locale.Tf("servers.status_list_counts", total, avail))
+	}
+	filterPingErrorsButton.OnTapped = func() {
+		hidePingErrors = !hidePingErrors
+		updatePingErrorsFilterButton()
+		reconcileListSelection()
+		proxiesListWidget.Refresh()
+		setListFilterStatus()
+	}
+
 	pingAllButton := widget.NewButton(locale.T("servers.button_test"), pingAllProxies)
 
 	// Настройки Ping test (endpoint для delay).
@@ -837,6 +938,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		sortByNameButton,
 		sortNameLabel,
 		layout.NewSpacer(),
+		filterPingErrorsButton,
 		sortByDelayButton,
 		pingAllButton,
 		pingSettingsButton,
