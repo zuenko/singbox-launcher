@@ -53,6 +53,8 @@
 - **TestLoadConfigFromFile** (`loader_test.go`) - загрузка конфигурации из файла
 - **TestDefaultWizardFlow_NextNextFinish** (`wizard_integration_test.go`) - интеграционный тест полного wizard flow
 - **TestWizardFlowWithCustomRules** (`wizard_integration_test.go`) - wizard flow с кастомными правилами
+- **`parser_stale_test.go`** — смена **`ParserConfigJSON`** во время мок-генерации outbounds: результаты не применяются; без смены — применяются
+- **`TestGetAvailableOutbounds_MemoJSONPath`** (`outbound_test.go`) — мемо по JSON и сброс через **`InvalidatePreviewCache`**
 
 ### 5. Интеграционные тесты (`core/integration_test.go`)
 

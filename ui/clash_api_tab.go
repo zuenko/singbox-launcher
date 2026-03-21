@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -128,6 +129,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		groupSelect            *widget.Select
 		suppressSelectCallback bool
 		applySavedSort         func() // Объявляем переменную заранее, значение будет присвоено позже
+		pingAllGeneration      uint64 // инкремент при новом «ping all» — устаревшие воркеры не трогают UI
 	)
 
 	// --- Логика обновления и сброса ---
@@ -615,6 +617,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		status.SetText(locale.Tf("servers.status_pinging", len(proxies)))
 
 		go func() {
+			gen := atomic.AddUint64(&pingAllGeneration, 1)
 			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
 
 			type pingJob struct {
@@ -637,6 +640,9 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				for job := range jobs {
 					delay, err := api.GetDelay(baseURL, token, job.Name)
 					fyne.Do(func() {
+						if atomic.LoadUint64(&pingAllGeneration) != gen {
+							return
+						}
 						updatedProxies := ac.GetProxiesList()
 						for j := range updatedProxies {
 							if updatedProxies[j].Name == job.Name {
@@ -679,6 +685,9 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			}
 
 			fyne.Do(func() {
+				if atomic.LoadUint64(&pingAllGeneration) != gen {
+					return
+				}
 				status.SetText(locale.Tf("servers.status_ping_completed", len(proxies)))
 			})
 		}()

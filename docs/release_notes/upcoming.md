@@ -58,7 +58,13 @@
 
 - **Wizard — Outbounds tab responsiveness:** While typing **ParserConfig JSON** or **tag prefix**, **`RefreshOutboundOptions`** is **debounced** (~**300 ms**) so each keystroke no longer runs **`json.Unmarshal`** (inside **`GetAvailableOutbounds`**) and a full refresh of every rules/Final **Select**; immediate refresh still runs after **Apply** in the configurator, **Del** source, tab switch to **Rules**, parse completion, etc. Pending debounce is **cancelled** when the wizard window closes.
 
-- **Wizard — parse vs edit race:** After **`GenerateOutboundsFromParserConfig`**, **`ParseAndPreview`** compares the current **`model.ParserConfigJSON`** to the snapshot taken at parse start; if the user changed the Outbounds JSON while generation was running (Entry **`OnChanged`** → **`MergeGUIToModel`**), the stale outbound results are **discarded**, generated slices cleared, **`PreviewNeedsParse`** set so **Save** (or the next parse) rebuilds from the current config — avoids writing **config.json** with markers from one revision and outbounds from another.
+- **Wizard — parse vs edit race:** After **`GenerateOutboundsFromParserConfig`**, **`ParseAndPreview`** compares the current **`model.ParserConfigJSON`** to the snapshot taken at parse start; if the user changed the Outbounds JSON while generation was running (Entry **`OnChanged`** → **`MergeGUIToModel`**), the stale outbound results are **discarded**, generated slices cleared, **`PreviewNeedsParse`** set so **Save** (or the next parse) rebuilds from the current config — avoids writing **config.json** with markers from one revision and outbounds from another. Unit tests: **`parser_stale_test.go`**.
+
+- **Wizard — Save vs UI after long parse:** **`executeSaveOperation`** calls **`MergeGUIToModelFromMainThread`** after **`ensureOutboundsParsed`** so the model matches widgets if the user edited during wait/parse.
+
+- **Wizard — `GetAvailableOutbounds` memo:** When **`model.ParserConfig` is nil**, repeated calls with the same trimmed **`ParserConfigJSON`** reuse a cached tag list; **`InvalidatePreviewCache`** clears it.
+
+- **Servers tab — ping all:** A new **batch** increments a generation counter; **delay** callbacks from an **older** batch no longer update the proxy list or status text (avoids UI fighting when the user starts **Test all** again while a previous run is still finishing).
 
 - **Clash API:** `GET /proxies/{name}/delay` and `PUT /proxies/{group}` now **percent-encode** proxy/group names (spaces, `>`, Unicode, etc.); delay `url` query uses `QueryEscape`. Switch payload uses `json.Marshal` for `name`. Fixes 404 «Resource not found» when pinging tags like `abvpn:… > …`.
 
@@ -142,7 +148,13 @@
 
 - **Визард — отзывчивость вкладки Outbounds:** при наборе **JSON ParserConfig** или **префикса тега** вызов **`RefreshOutboundOptions`** **откладывается** (~**300 ms**), чтобы не выполнять на каждый символ **`json.Unmarshal`** (в **`GetAvailableOutbounds`**) и полный проход по **Select** правил/Final; мгновенное обновление по-прежнему после **Apply** конфигуратора, **Del** источника, перехода на **Rules**, завершения парсинга и т.д. При закрытии окна визарда отложенный таймер **отменяется**.
 
-- **Визард — гонка парсинга и правок:** после **`GenerateOutboundsFromParserConfig`** **`ParseAndPreview`** сравнивает текущий **`model.ParserConfigJSON`** со снимком на старте парсинга; если пользователь менял JSON на вкладке Outbounds во время генерации (**`OnChanged`** → **`MergeGUIToModel`**), результаты парсинга **отбрасываются**, слайсы outbounds очищаются, **`PreviewNeedsParse`** — чтобы **Save** или следующий парсинг пересобрали данные по актуальному конфигу и не записали в **config.json** маркеры одной ревизии и outbounds другой.
+- **Визард — гонка парсинга и правок:** после **`GenerateOutboundsFromParserConfig`** **`ParseAndPreview`** сравнивает текущий **`model.ParserConfigJSON`** со снимком на старте парсинга; если пользователь менял JSON на вкладке Outbounds во время генерации (**`OnChanged`** → **`MergeGUIToModel`**), результаты парсинга **отбрасываются**, слайсы outbounds очищаются, **`PreviewNeedsParse`** — чтобы **Save** или следующий парсинг пересобрали данные по актуальному конфигу и не записали в **config.json** маркеры одной ревизии и outbounds другой. Юнит-тесты: **`parser_stale_test.go`**.
+
+- **Визард — Save после долгого парсинга:** в **`executeSaveOperation`** после **`ensureOutboundsParsed`** вызывается **`MergeGUIToModelFromMainThread`**, чтобы модель совпала с виджетами, если пользователь правил поля во время ожидания.
+
+- **Визард — мемо `GetAvailableOutbounds`:** при **`ParserConfig == nil`** повторные вызовы с тем же trimmed **`ParserConfigJSON`** используют кэш тегов; сброс в **`InvalidatePreviewCache`**.
+
+- **Вкладка Servers — массовый ping:** новый запуск увеличивает счётчик поколения; ответы **старого** запуска больше **не** обновляют список и статус (меньше гонок UI при повторном **Test all**).
 
 - **Clash API:** для `GET /proxies/{name}/delay` и `PUT /proxies/{group}` имена прокси/группы **кодируются** (`PathEscape`), параметр `url` в delay — `QueryEscape`; тело переключения — `json.Marshal` для поля `name`. Устраняет 404 при пинге тегов с пробелами и `>` (например abvpn после нормализации).
 

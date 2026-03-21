@@ -729,6 +729,7 @@ singbox-launcher/
 - `onTestAPIConnection()` - тестирование соединения с API
 - `onResetAPIState()` - сброс состояния API
 - `pingProxy()` - пинг прокси (**имя — `ProxyInfo.Name`**, не DisplayName; путь кодируется в `api.GetDelay`)
+- Массовый пинг (**Test all**): счётчик **`pingAllGeneration`** (`sync/atomic`); при повторном запуске ответы предыдущего запуска **не** обновляют список и статус (меньше гонок UI и «откатов» прогресса)
 - Список прокси: **`DisplayOrName()`** для подписей; сортировка по отображаемому имени
 - Контекстное меню (ПКМ): строка списка обёрнута в `internal/fynewidget.NewSecondaryTapWrap`; `serversProxyContextMenu` / `serversRunCopyShareURIToClipboard`; сверху `ProxyInfo.ContextMenuTypeLine`, затем **Copy link** → `ShareProxyURIForOutboundTag` (outbound или WireGuard в `endpoints[]`); `subscription.ErrShareURINotSupported` → локализованное сообщение пользователю
 
@@ -747,7 +748,7 @@ singbox-launcher/
 
 **models/** - Модели данных (без GUI зависимостей)
 - `wizard_model.go`:
-  - `WizardModel` struct - модель данных визарда (ParserConfig, SourceURLs, GeneratedOutbounds, TemplateData, Rules и т.д.)
+  - `WizardModel` struct - модель данных визарда (ParserConfig, SourceURLs, GeneratedOutbounds, TemplateData, Rules и т.д.); in-memory мемо **`AvailableOutboundsMemo*`** для **`business.GetAvailableOutbounds`** при работе только от JSON (сброс в **`InvalidatePreviewCache`**)
   - `NewWizardModel()` - создание новой модели
 - `rule_state.go`:
   - `RuleState` struct - состояние правила маршрутизации (Rule, Enabled, SelectedOutbound)
@@ -792,7 +793,7 @@ singbox-launcher/
 - `presenter_save.go`:
   - `SaveConfig()` - сохранение конфигурации с прогресс-баром и проверками (основная функция)
   - `validateSaveInput()`, `checkSaveOperationState()` - проверки перед сохранением
-  - `executeSaveOperation()` - выполнение сохранения в горутине: `ensureOutboundsParsed` (ожидание/парсинг outbounds), сборка конфига, валидация по временному файлу (config-check.json) и запись config.json, state.json, диалог; перезапуск sing-box не выполняется; по завершении в фоне вызывается `core.RunParserProcess()` (обновление конфига из подписок)
+  - `executeSaveOperation()` - выполнение сохранения в горутине: `ensureOutboundsParsed` (ожидание/парсинг outbounds), затем **`MergeGUIToModelFromMainThread`** (актуализация модели с виджетов после долгого ожидания), сборка конфига, валидация по временному файлу (config-check.json) и запись config.json, state.json, диалог; перезапуск sing-box не выполняется; по завершении в фоне вызывается `core.RunParserProcess()` (обновление конфига из подписок)
   - `finalizeSaveOperation()` - завершение операции и восстановление UI
   - `buildConfigForSave()` - построение конфигурации из шаблона и модели
   - `saveConfigFile()` - валидация sing-box check по временному файлу (config-check.json) и при успехе запись в config.json с бэкапом (вызов SaveConfigWithBackup)
@@ -1237,6 +1238,7 @@ UI (core_dashboard_tab.go)
       │   ├─> validateSaveInput() / checkSaveOperationState()
       │   ├─> executeSaveOperation()
       │   │   ├─> ensureOutboundsParsed()
+      │   │   ├─> MergeGUIToModelFromMainThread()
       │   │   ├─> buildConfigForSave()
       │   │   │   └─> wizard/business/create_config.go: BuildTemplateConfig()
       │   │   ├─> saveConfigFile()

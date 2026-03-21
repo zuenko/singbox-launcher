@@ -35,6 +35,10 @@ package presentation
     ParserConfigUpdating, DNSSelectsProgrammatic, UpdatingOutboundOptions,
     SourceURLsProgrammatic, DNSRulesProgrammatic — OnChanged/селекты не должны звать MarkAsChanged.
 
+  • Поле ParserConfig (multi-line JSON): OnChanged вызывает MergeGUIToModel на каждый символ — намеренно
+    (актуальный ParserConfigJSON и hasChanges для Save/табов). Тяжёлая работа вынесена в debounce
+    RefreshOutboundOptions и мемо GetAvailableOutbounds по JSON (см. presenter_methods, business/outbound).
+
   • Пустой текст/выбор у Select до отрисовки: в syncGUIToModel специальные ветки «keep model»,
     см. dnsSelectReadLooksStale / dnsSelectOptionsMissingModelTag; Entry / strategy / Final outbound —
     internal/wizardsync (GuiTextAwaitingProgrammaticFill, FinalOutboundSelectReadLooksStale), юнит-тесты без Fyne.
@@ -242,6 +246,21 @@ func (p *WizardPresenter) SyncGUIToModel() {
 // но служебные расхождения виджет/модель не помечались как несохранённые.
 func (p *WizardPresenter) MergeGUIToModel() {
 	p.syncGUIToModel(false)
+}
+
+// MergeGUIToModelFromMainThread выполняет слияние GUI→модель без MarkAsChanged в потоке Fyne и ждёт завершения.
+// Нужна из горутины Save после ensureOutboundsParsed: за время ожидания/парсинга пользователь мог править поля.
+func (p *WizardPresenter) MergeGUIToModelFromMainThread() {
+	if p.guiState == nil || p.guiState.Window == nil {
+		p.MergeGUIToModel()
+		return
+	}
+	done := make(chan struct{})
+	p.UpdateUI(func() {
+		p.syncGUIToModel(false)
+		close(done)
+	})
+	<-done
 }
 
 func (p *WizardPresenter) syncGUIToModel(markDirty bool) {

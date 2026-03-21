@@ -78,6 +78,10 @@ type WizardModel struct {
 	PreviewNodes         []*config.ParsedNode
 	PreviewNodesBySource map[int][]*config.ParsedNode
 
+	// Мемо для GetAvailableOutbounds при чтении только из ParserConfigJSON (ParserConfig == nil); сброс в InvalidatePreviewCache.
+	AvailableOutboundsMemoKey  string   `json:"-"`
+	AvailableOutboundsMemoTags []string `json:"-"`
+
 	// ExecDir — директория исполняемого файла (для путей к SRS и т.д.)
 	ExecDir string
 

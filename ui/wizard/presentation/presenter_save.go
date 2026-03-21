@@ -125,6 +125,9 @@ func (p *WizardPresenter) executeSaveOperation() {
 		return
 	}
 
+	// После долгого ensureOutboundsParsed снова сливаем виджеты в модель на UI-потоке (правки во время ожидания).
+	p.MergeGUIToModelFromMainThread()
+
 	// Step 1: Build config from current model (0.2-0.4)
 	configText, err := p.buildConfigForSave()
 	if err != nil {

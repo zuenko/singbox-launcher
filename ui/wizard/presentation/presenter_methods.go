@@ -102,6 +102,12 @@ func (p *WizardPresenter) CancelDebouncedOutboundRefresh() {
 
 // ScheduleRefreshOutboundOptionsDebounced планирует RefreshOutboundOptions после паузы ввода.
 // При наборе ParserConfig или tag prefix на каждый символ иначе вызываются json.Unmarshal (в GetAvailableOutbounds) и обход всех RuleOutboundSelect — сильно тормозит UI.
+//
+// Контракт вызовов RefreshOutboundOptions (немедленно):
+//   - смена вкладки на Rules (wizard.go), завершение ParseAndPreview, Save после парсинга, LoadState;
+//   - Apply конфигуратора, Del источника, правки prefix (после debounce — через таймер);
+//   - presenter_sync после успешного применения ParserConfig из Entry.
+// Debounce только для потокового ввода в multi-line JSON и prefix Entry (source_tab).
 func (p *WizardPresenter) ScheduleRefreshOutboundOptionsDebounced() {
 	p.outboundOptionsDebounceMu.Lock()
 	if p.outboundOptionsDebounceTimer != nil {
