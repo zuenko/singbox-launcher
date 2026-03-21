@@ -765,8 +765,8 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	scrollContainer.SetMinSize(fyne.NewSize(0, 300))
 
 	// Кнопка сортировки по алфавиту (слева)
-	var sortByNameButton *widget.Button
-	sortByNameButton = widget.NewButton("↑", func() {
+	var sortByNameButton *ttwidget.Button
+	sortByNameButton = ttwidget.NewButton("↑", func() {
 		// Применяем сортировку с текущим направлением (сохранит его в savedSortNameAscending)
 		sortByName(sortNameAscending)
 		// Переключаем направление для следующего раза
@@ -778,11 +778,12 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			sortByNameButton.SetText("↓")
 		}
 	})
+	sortByNameButton.SetToolTip(locale.T("servers.tooltip_sort_by_name"))
 	sortNameLabel := widget.NewLabel(locale.T("servers.label_sort_by_name"))
 
 	// Кнопки пинга и сортировки по задержке (справа)
-	var sortByDelayButton *widget.Button
-	sortByDelayButton = widget.NewButton("↑", func() {
+	var sortByDelayButton *ttwidget.Button
+	sortByDelayButton = ttwidget.NewButton("↑", func() {
 		// Применяем сортировку с текущим направлением (сохранит его в savedSortDelayAscending)
 		sortByDelay(sortDelayAscending)
 		// Переключаем направление для следующего раза
@@ -794,9 +795,10 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			sortByDelayButton.SetText("↓")
 		}
 	})
+	sortByDelayButton.SetToolTip(locale.T("servers.tooltip_sort_by_delay"))
 
 	filterPingErrorsButton := ttwidget.NewButtonWithIcon("", theme.VisibilityOffIcon(), nil)
-	filterPingErrorsButton.Importance = widget.LowImportance
+	// Default (medium) importance — same gray style as sort arrows and Test in this row.
 	updatePingErrorsFilterButton := func() {
 		if hidePingErrors {
 			filterPingErrorsButton.SetIcon(theme.VisibilityIcon())
@@ -828,10 +830,11 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		setListFilterStatus()
 	}
 
-	pingAllButton := widget.NewButton(locale.T("servers.button_test"), pingAllProxies)
+	pingAllButton := ttwidget.NewButton(locale.T("servers.button_test"), pingAllProxies)
+	pingAllButton.SetToolTip(locale.T("servers.tooltip_ping_all"))
 
 	// Настройки Ping test (endpoint для delay).
-	pingSettingsButton := widget.NewButton("⚙", func() {
+	pingSettingsButton := ttwidget.NewButton("⚙", func() {
 		currentURL := api.GetPingTestURL()
 
 		// Predefined endpoints with titles from api package.
@@ -932,6 +935,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 		d.Show()
 	})
+	pingSettingsButton.SetToolTip(locale.T("servers.tooltip_ping_settings"))
 
 	// Группа кнопок: слева сортировка, справа пинг, настройки и сортировка по задержке
 	buttonsRow := container.NewHBox(
