@@ -152,6 +152,11 @@ singbox-launcher/
 │       │   │   - readConfigFile()                   # Чтение config.json
 │       │   │   - cleanJSONC()                       # Очистка JSONC
 │       │   │
+│       ├── outbound_share.go   # Share URI из записанного config.json
+│       │   │   - GetOutboundMapByTag()                # outbound из outbounds[] по tag
+│       │   │   - GetEndpointMapByTag()                # endpoint из endpoints[] по tag (WireGuard)
+│       │   │   - ShareProxyURIForOutboundTag()        # outbound, иначе WG endpoint → share URI
+│       │   │
 │       ├── outbound_generator.go  # Генерация outbounds и endpoints (ноды + селекторы)
 │       │   │   - GenerateNodeJSON() / GenerateEndpointJSON()  # Генерация JSON узла (outbound или WireGuard endpoint)
 │       │   │   - GenerateSelectorWithFilteredAddOutbounds() # Генерация селектора с фильтрацией
@@ -193,6 +198,14 @@ singbox-launcher/
 │           │   │   - IsDirectLink()                             # Проверка прямого линка
 │           │   │   - buildOutbound()                            # Диспетчер построения outbound по протоколу
 │           │   │
+│           ├── share_uri_encode.go      # Обратная операция: outbound / WG endpoint → share URI
+│           │   │   - ShareURIFromOutbound()                     # vless/…/ssh; wireguard → ShareURIFromWireGuardEndpoint
+│           │   │   - ShareURIFromWireGuardEndpoint()            # wireguard:// из endpoints[] (один peer)
+│           │   │   - ErrShareURINotSupported                    # селекторы, multi-peer WG и пр.
+│           │   │
+│           ├── node_parser_transport.go # VLESS/Trojan: transport и TLS из URI query
+│           │   │   - uriTransportFromQuery() / vlessTLSFromNode() / trojanTLSFromNode()  # зеркало для encode
+│           │   │
 │           ├── node_parser_vmess.go     # VMess протокол
 │           ├── node_parser_wireguard.go # WireGuard протокол
 │           ├── node_parser_hysteria2.go # Hysteria2 протокол
@@ -219,12 +232,13 @@ singbox-launcher/
 │   │   │   - updateWintunStatus()                      # Обновление wintun.dll
 │   │   │   - updateConfigInfo()                        # Обновление конфигурации
 │   │   │
-│   ├── clash_api_tab.go        # Вкладка Clash API
+│   ├── clash_api_tab.go        # Вкладка Clash API (Servers)
 │   │   │   - CreateClashAPITab()                      # Создание вкладки
 │   │   │   - onLoadAndRefreshProxies()                # Загрузка прокси
 │   │   │   - onTestAPIConnection()                    # Тестирование API
 │   │   │   - onResetAPIState()                        # Сброс состояния API
 │   │   │   - pingProxy()                              # Пинг прокси
+│   │   │   - ПКМ по строке: `fynewidget.SecondaryTapWrap`, `serversProxyContextMenu` → `ProxyInfo.ContextMenuTypeLine` + Copy link → `ShareProxyURIForOutboundTag`
 │   │   │
 │   ├── diagnostics_tab.go      # Вкладка диагностики
 │   │   │   - CreateDiagnosticsTab()                    # Создание вкладки диагностики
@@ -503,6 +517,7 @@ singbox-launcher/
 │   │   │
 │   ├── fynewidget/             # Переиспользуемые мелкие Fyne-виджеты
 │   │   │   - NewCheckWithContent()                     # Пустой Check + произвольный контент: тап/hover с контента на галку; опциональный тултип на контенте
+│   │   │   - NewSecondaryTapWrap()                     # Обёртка строки: `TappedSecondary` (контекстное меню на вкладке Servers)
 │   │   │
 │   └── platform/              # Платформо-зависимый код
 │       │   - платформо-специфичные функции (пути, трей, Dock и т.д.)
@@ -599,6 +614,11 @@ singbox-launcher/
 - `readConfigFile()` - чтение и очистка JSONC файла
 - `cleanJSONC()` - очистка JSONC от комментариев
 
+**outbound_share.go**
+- `GetOutboundMapByTag()` - один объект из массива `outbounds` по полю `tag`
+- `GetEndpointMapByTag()` - один объект из `endpoints[]` по полю `tag`
+- `ShareProxyURIForOutboundTag()` - share URI: сначала outbound, иначе WireGuard endpoint (`subscription.ShareURIFromWireGuardEndpoint`)
+
 **outbound_generator.go**
 - `GenerateNodeJSON()` - генерация JSON узла из ParsedNode (vless, vmess, trojan, shadowsocks, hysteria2)
 - `GenerateEndpointJSON()` - генерация JSON строки для WireGuard endpoint (ноды с Scheme wireguard)
@@ -642,6 +662,10 @@ singbox-launcher/
   - `ParseNode()` - парсинг URI узла прокси; **VLESS:** REALITY без транспорта и без `flow` → `flow: xtls-rprx-vision`; лейбл после sanitize — **textnorm**; **VMess ws:** Host из `host` или `sni`
   - `buildOutbound()` — сборка outbound-мапы для sing-box
   - `IsDirectLink()` - проверка прямого линка
+- `share_uri_encode.go`:
+  - `ShareURIFromOutbound()` — map outbound (как в config.json) → share URI; для `type: wireguard` — `ShareURIFromWireGuardEndpoint`; см. **docs/ParserConfig.md** (раздел Share URI)
+  - `ShareURIFromWireGuardEndpoint()` — `wireguard://` из объекта endpoint (один элемент в `peers[]`)
+  - `ErrShareURINotSupported` — селекторы, multi-peer WG, нехватка полей, inline SSH key и т.д.
 - `decoder.go`:
   - `DecodeSubscriptionContent()` - декодирование подписки (base64, yaml)
 - `fetcher.go`:
@@ -703,6 +727,7 @@ singbox-launcher/
 - `onResetAPIState()` - сброс состояния API
 - `pingProxy()` - пинг прокси (**имя — `ProxyInfo.Name`**, не DisplayName; путь кодируется в `api.GetDelay`)
 - Список прокси: **`DisplayOrName()`** для подписей; сортировка по отображаемому имени
+- Контекстное меню (ПКМ): строка списка обёрнута в `internal/fynewidget.NewSecondaryTapWrap`; `serversProxyContextMenu` / `serversRunCopyShareURIToClipboard`; сверху `ProxyInfo.ContextMenuTypeLine`, затем **Copy link** → `ShareProxyURIForOutboundTag` (outbound или WireGuard в `endpoints[]`); `subscription.ErrShareURINotSupported` → локализованное сообщение пользователю
 
 #### Wizard (`ui/wizard/`)
 

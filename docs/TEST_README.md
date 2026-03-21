@@ -17,6 +17,11 @@
 - **TestParseNode_RealWorldExamples** - парсинг реальных примеров из подписки
 - **TestBuildOutbound** - генерация outbound конфигураций для различных типов узлов
 
+**Дополнительно (обратная операция — outbound → share URI):**
+
+- **`core/config/subscription/share_uri_encode_test.go`** — `ShareURIFromOutbound`: round-trip VLESS/Trojan/Shadowsocks, `ErrShareURINotSupported` для `selector`, SOCKS из map; WireGuard round-trip и multi-peer → `ErrShareURINotSupported`
+- **`core/config/outbound_share_test.go`** — `ShareProxyURIForOutboundTag` по минимальному `config.json` (vless и WireGuard только в `endpoints[]`), ошибка поиска для несуществующего тега
+
 ### 2. Тесты парсера подписок (`core/config/subscription/subscription_parser_test.go`)
 
 Покрывают функциональность работы с подписками:

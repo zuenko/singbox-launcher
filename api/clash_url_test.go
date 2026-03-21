@@ -23,7 +23,7 @@ func TestPingTestAllConcurrency_allowedValues(t *testing.T) {
 	prev := pingTestAllConcurrency
 	t.Cleanup(func() { pingTestAllConcurrency = prev })
 
-	for _, want := range []int{1, 5, 10, 20} {
+	for _, want := range []int{1, 5, 10, 20, 50, 100} {
 		SetPingTestAllConcurrency(want)
 		if got := GetPingTestAllConcurrency(); got != want {
 			t.Fatalf("Set %d: got %d", want, got)

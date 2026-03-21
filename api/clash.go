@@ -102,19 +102,19 @@ var (
 // It is process-wide and can be overridden at runtime from the UI.
 var pingTestURL = PingTestEndpointGoogle.URL
 
-// pingTestAllConcurrency is the worker count for bulk "ping all" on the Servers tab (1, 5, 10, or 20).
+// pingTestAllConcurrency is the worker count for bulk "ping all" on the Servers tab (see UI options).
 var pingTestAllConcurrency = 20
 
 func normalizePingTestAllConcurrency(n int) int {
 	switch n {
-	case 1, 5, 10, 20:
+	case 1, 5, 10, 20, 50, 100:
 		return n
 	default:
 		return 20
 	}
 }
 
-// GetPingTestAllConcurrency returns the number of parallel delay requests for ping-all (always 1, 5, 10, or 20).
+// GetPingTestAllConcurrency returns the number of parallel delay requests for ping-all.
 func GetPingTestAllConcurrency() int {
 	return pingTestAllConcurrency
 }
@@ -296,8 +296,10 @@ type ProxyInfo struct {
 	Name string
 	// DisplayName is normalized for UI (UTF-8 repair, angle quotes → " > "). Empty means callers may fall back to Name.
 	DisplayName string
-	Traffic     [2]int64 // [up, down]
-	Delay       int64    // Last known delay in ms
+	// ClashType is the proxy "type" from GET /proxies (e.g. Selector, URLTest, VLESS). Empty if the API omits it.
+	ClashType string
+	Traffic   [2]int64 // [up, down]
+	Delay     int64    // Last known delay in ms
 }
 
 // DisplayOrName returns DisplayName when set, otherwise a normalized form of Name for UI.
@@ -310,6 +312,15 @@ func (p ProxyInfo) DisplayOrName() string {
 		return p.Name
 	}
 	return d
+}
+
+// ContextMenuTypeLine returns ClashType in lowercase for the Servers tab context menu, or unknownLabel if empty.
+func (p ProxyInfo) ContextMenuTypeLine(unknownLabel string) string {
+	t := strings.TrimSpace(p.ClashType)
+	if t == "" {
+		return unknownLabel
+	}
+	return strings.ToLower(t)
 }
 
 // GetProxiesInGroup retrieves proxies from a group, their traffic stats, and last delay from the Clash API. Returns ErrPlatformInterrupt when the system is sleeping or context is cancelled.
@@ -426,6 +437,9 @@ func GetProxiesInGroup(baseURL, token, groupName string) ([]ProxyInfo, string, e
 		}
 		pi := ProxyInfo{Name: name, DisplayName: disp}
 		if node, ok := proxiesMap[name].(map[string]interface{}); ok {
+			if t, ok := node["type"].(string); ok {
+				pi.ClashType = t
+			}
 			// Парсим трафик (остается на случай, если он появится)
 			if f, ok := node["up"].(float64); ok {
 				pi.Traffic[0] = int64(f)

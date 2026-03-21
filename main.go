@@ -55,6 +55,12 @@ func main() {
 	locale.LoadExternalLocales(locale.GetLocaleDir(binDir))
 	settings := locale.LoadSettings(binDir)
 	locale.SetLang(settings.Lang)
+	if settings.PingTestURL != "" {
+		api.SetPingTestURL(settings.PingTestURL)
+	}
+	if settings.PingTestAllConcurrency != 0 {
+		api.SetPingTestAllConcurrency(settings.PingTestAllConcurrency)
+	}
 	debuglog.InfoLog("Locale: language set to %q, available: %v", locale.GetLang(), locale.Languages())
 
 	// Check launcher version on startup (always checks, popup shown on first window display)

@@ -274,6 +274,7 @@ Replace `v0.8.0` with the version you want to install.
 - **Load Proxies** - Load proxy list from selected group
 - Switch between proxy servers
 - Check latency (ping) for each proxy
+- **Copy link** (right-click a proxy row): first menu line is the Clash API **`type`** in **lowercase** (e.g. `selector`, `direct`, `vless`), then **Copy link**; builds a share URI from the matching outbound in `config.json`, or from **WireGuard** in **`endpoints[]`** if the tag is not an outbound (see **docs/ParserConfig.md** — *Share URI*)
 - **Auto-loaders**: Automatically loads proxies when sing-box starts
 - Tab is visually disabled (grayed out) when sing-box is not running
 

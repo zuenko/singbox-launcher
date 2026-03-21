@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"errors"
 	"image/color"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -17,8 +19,10 @@ import (
 	"singbox-launcher/api"
 	"singbox-launcher/core"
 	"singbox-launcher/core/config"
+	"singbox-launcher/core/config/subscription"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/fynewidget"
 	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 	"singbox-launcher/internal/textnorm"
@@ -27,6 +31,13 @@ import (
 // serversListRowScrollbarGutterWidth — отступ справа внутри каждой строки списка прокси (после кнопок),
 // чтобы полоса прокрутки списка не наезжала на Ping / Switch (а не поле снаружи скролла).
 const serversListRowScrollbarGutterWidth = 10
+
+// clashAPITestMaxAttempts / clashAPITestRetryInterval — повторы GET /version при проверке Clash API:
+// диалог об ошибке только после исчерпания попыток (см. onTestAPIConnection).
+const (
+	clashAPITestMaxAttempts    = 5
+	clashAPITestRetryInterval = 5 * time.Second
+)
 
 var pingAllConcurrencyOptions = []string{"1", "5", "10", "20", "50", "100"}
 
@@ -244,7 +255,22 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				return
 			}
 			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
-			err := api.TestAPIConnection(baseURL, token)
+			var err error
+			for attempt := 0; attempt < clashAPITestMaxAttempts; attempt++ {
+				if platform.IsSleeping() {
+					return
+				}
+				err = api.TestAPIConnection(baseURL, token)
+				if err == nil {
+					break
+				}
+				if errors.Is(err, api.ErrPlatformInterrupt) {
+					return
+				}
+				if attempt < clashAPITestMaxAttempts-1 {
+					time.Sleep(clashAPITestRetryInterval)
+				}
+			}
 			fyne.Do(func() {
 				if err != nil {
 					ac.UIService.ApiStatusLabel.SetText(locale.T("servers.status_clash_api_off_error"))
@@ -355,7 +381,8 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		)
 
 		paddedContent := container.NewPadded(content)
-		return container.NewStack(background, paddedContent)
+		stack := container.NewStack(background, paddedContent)
+		return fynewidget.NewSecondaryTapWrap(stack)
 	}
 
 	updateItem := func(id int, o fyne.CanvasObject) {
@@ -365,7 +392,8 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		}
 		proxyInfo := proxies[id]
 
-		stack := o.(*fyne.Container)
+		wrap := o.(*fynewidget.SecondaryTapWrap)
+		stack := wrap.Content.(*fyne.Container)
 		background := stack.Objects[0].(*canvas.Rectangle)
 		paddedContent := stack.Objects[1].(*fyne.Container)
 		content := paddedContent.Objects[0].(*fyne.Container)
@@ -401,6 +429,23 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 		// Обновляем колбэки кнопок
 		proxyNameForCallback := proxyInfo.Name
+		rowID := id
+
+		wrap.OnSecondary = func(pe *fyne.PointEvent) {
+			if ac.UIService == nil || ac.UIService.MainWindow == nil {
+				return
+			}
+			if pl := ac.UIService.ProxiesListWidget; pl != nil {
+				pl.Select(rowID)
+			}
+			ac.SetSelectedIndex(rowID)
+			status.SetText(locale.Tf("servers.status_selected", proxyInfo.DisplayOrName()))
+
+			win := ac.UIService.MainWindow
+			menu := serversProxyContextMenu(ac, status, win, proxyInfo)
+			pop := widget.NewPopUpMenu(menu, win.Canvas())
+			pop.ShowAtPosition(pe.AbsolutePosition)
+		}
 
 		pingButton.OnTapped = func() {
 			pingProxy(proxyNameForCallback, pingButton)
@@ -435,7 +480,8 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		}
 	}
 
-	proxiesListWidget := widget.NewList(
+	var proxiesListWidget *widget.List
+	proxiesListWidget = widget.NewList(
 		func() int { return len(ac.GetProxiesList()) },
 		createItem,
 		updateItem,
@@ -708,8 +754,11 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			urlEntry.Disable()
 		}
 
-		parallelSelect := widget.NewSelect(pingAllConcurrencyOptions, nil)
-		parallelSelect.SetSelected(strconv.Itoa(api.GetPingTestAllConcurrency()))
+		parallelChosen := strconv.Itoa(api.GetPingTestAllConcurrency())
+		parallelSelect := widget.NewSelect(pingAllConcurrencyOptions, func(v string) {
+			parallelChosen = v
+		})
+		parallelSelect.SetSelected(parallelChosen)
 
 		parallelRow := container.NewHBox(
 			widget.NewLabel(locale.T("servers.ping_label_parallel")),
@@ -746,8 +795,20 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			}
 
 			api.SetPingTestURL(newURL)
-			n, _ := strconv.Atoi(parallelSelect.Selected)
+			n, _ := strconv.Atoi(parallelChosen)
+			if n == 0 && parallelSelect.Selected != "" {
+				n, _ = strconv.Atoi(parallelSelect.Selected)
+			}
 			api.SetPingTestAllConcurrency(n)
+
+			binDir := platform.GetBinDir(ac.FileService.ExecDir)
+			st := locale.LoadSettings(binDir)
+			st.PingTestURL = api.GetPingTestURL()
+			st.PingTestAllConcurrency = api.GetPingTestAllConcurrency()
+			if err := locale.SaveSettings(binDir, st); err != nil {
+				debuglog.WarnLog("ping settings: failed to save settings.json: %v", err)
+			}
+
 			status.SetText(locale.Tf("servers.status_ping_url_updated", newURL))
 		}, ac.UIService.MainWindow)
 
@@ -893,4 +954,39 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	)
 
 	return contentContainer
+}
+
+// serversProxyContextMenu is the ПКМ menu for one proxy row: type line (Action nil → desktop does not dismiss; not Disabled → normal text color) + Copy link.
+func serversProxyContextMenu(ac *core.AppController, status *widget.Label, win fyne.Window, proxy api.ProxyInfo) *fyne.Menu {
+	hint := proxy.ContextMenuTypeLine(locale.T("servers.menu_context_type_unknown"))
+	return fyne.NewMenu("",
+		fyne.NewMenuItem(hint, nil),
+		fyne.NewMenuItem(locale.T("servers.menu_copy_link"), func() {
+			serversRunCopyShareURIToClipboard(ac, status, win, proxy.Name)
+		}),
+	)
+}
+
+func serversRunCopyShareURIToClipboard(ac *core.AppController, status *widget.Label, win fyne.Window, tag string) {
+	cfgPath := ac.FileService.ConfigPath
+	go func() {
+		fyne.Do(func() {
+			status.SetText(locale.T("servers.copy_link_resolving"))
+		})
+		line, err := config.ShareProxyURIForOutboundTag(cfgPath, tag)
+		fyne.Do(func() {
+			if err != nil {
+				if errors.Is(err, subscription.ErrShareURINotSupported) {
+					ShowErrorText(win, locale.T("app.tab.servers"), locale.T("servers.copy_link_not_supported"))
+				} else {
+					ShowError(win, err)
+				}
+				return
+			}
+			if app := fyne.CurrentApp(); app != nil && app.Clipboard() != nil {
+				app.Clipboard().SetContent(line)
+			}
+			status.SetText(locale.T("servers.copy_link_done"))
+		})
+	}()
 }
