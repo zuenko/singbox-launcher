@@ -843,8 +843,7 @@ singbox-launcher/
 
 **tabs/** - UI вкладок
 - `source_tab.go`:
-  - `createSourceTab()` - создание вкладки Sources & ParserConfig
-  - UI компоненты первой вкладки (URL поля, кнопки); кнопка **Edit** открывает окно правки источника
+  - `CreateSourcesTab()` — вкладка **Sources**: URL, список источников на всю оставшуюся высоту (`Border`); **Preview all servers** открывает отдельное окно (`showSourcePreviewAllWindow`, слот `SetViewWindow`); **Edit** — `showSourceEditWindow`
 - `source_edit_window.go`:
   - `showSourceEditWindow()` — диалог одного `ProxySource`: вкладки **Настройки**, **Просмотр** (локальные outbounds + ноды), **JSON** (read-only `proxies[i]`); `exclude_from_global` / `expose_group_tags_to_global`; `business` для маркеров **WIZARD:** в `proxies[].outbounds`; обновление Preview/JSON при смене настроек, если вкладка активна
 - `rules_tab.go`:

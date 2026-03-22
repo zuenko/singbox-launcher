@@ -256,6 +256,8 @@
   "wizard.source.button_add": "Добавить",
   "wizard.source.button_get_free": "Бесплатный VPN!",
   "wizard.source.label_sources": "Источники",
+  "wizard.source.button_preview_all": "Просмотр всех серверов…",
+  "wizard.source.preview_all_title": "Серверы из всех источников",
   "wizard.source.no_sources": "Источники не определены в ParserConfig.",
   "wizard.source.connections_n": "Подключения %d",
   "wizard.source.source_n": "Источник %d",

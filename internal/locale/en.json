@@ -256,6 +256,8 @@
   "wizard.source.button_add": "Add",
   "wizard.source.button_get_free": "Get free VPN!",
   "wizard.source.label_sources": "Sources",
+  "wizard.source.button_preview_all": "Preview all servers…",
+  "wizard.source.preview_all_title": "Servers from all sources",
   "wizard.source.no_sources": "No sources defined in ParserConfig.",
   "wizard.source.connections_n": "Connections %d",
   "wizard.source.source_n": "Source %d",

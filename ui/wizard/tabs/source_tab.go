@@ -1,7 +1,7 @@
 // Package tabs содержит UI компоненты для табов визарда конфигурации.
 //
 // Файл source_tab.go содержит функции, создающие UI табов визарда:
-//   - Вкладка Sources: ввод URL, проверка, список источников и Preview сгенерированных нод/селекторов
+//   - Вкладка Sources: ввод URL, проверка, список источников; объединённый превью серверов — в отдельном окне
 //   - Вкладка Outbounds and ParserConfig: редактор ParserConfig JSON и вход в конфигуратор outbounds
 //
 // Каждый таб визарда имеет свою отдельную ответственность и логику UI.
@@ -305,9 +305,66 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	guiState.RefreshSourcesList = refreshSourcesList
 
 	sourcesScroll := container.NewVScroll(sourcesBox)
-	sourcesScroll.SetMinSize(fyne.NewSize(0, 140))
+	sourcesScroll.SetMinSize(fyne.NewSize(0, 80))
 
-	// Section 3: Preview — servers from all sources (same as View, but combined at bottom of tab)
+	previewAllBtn := widget.NewButton(locale.T("wizard.source.button_preview_all"), func() {
+		showSourcePreviewAllWindow(presenter)
+	})
+	sourcesHeader := container.NewHBox(
+		sourcesLabel,
+		layout.NewSpacer(),
+		previewAllBtn,
+	)
+
+	topBlock := container.NewVBox(
+		widget.NewSeparator(),
+		urlContainer,
+		widget.NewSeparator(),
+		sourcesHeader,
+	)
+
+	tabScrollGutter := canvas.NewRectangle(color.Transparent)
+	tabScrollGutter.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
+
+	// Sources list fills remaining tab height (preview all servers moved to a separate window).
+	body := container.NewBorder(
+		topBlock,
+		nil,
+		nil,
+		tabScrollGutter,
+		sourcesScroll,
+	)
+
+	return body
+}
+
+// showSourcePreviewAllWindow opens a window with the combined server list from all sources (uses View window slot).
+func showSourcePreviewAllWindow(presenter *wizardpresentation.WizardPresenter) {
+	if presenter == nil {
+		return
+	}
+	if w := presenter.OpenOutboundEditWindow(); w != nil {
+		w.RequestFocus()
+		return
+	}
+	if w := presenter.OpenViewWindow(); w != nil {
+		w.RequestFocus()
+		return
+	}
+	presenter.MergeGUIToModel()
+
+	app := fyne.CurrentApp()
+	if app == nil {
+		return
+	}
+
+	win := app.NewWindow(locale.T("wizard.source.preview_all_title"))
+	presenter.SetViewWindow(win)
+	win.SetOnClosed(func() {
+		presenter.ClearViewWindow()
+		presenter.UpdateChildOverlay()
+	})
+
 	var previewNodes []*config.ParsedNode
 	previewStatusLabel := widget.NewLabel(locale.T("wizard.source.preview_click_refresh"))
 	previewList := widget.NewList(
@@ -319,10 +376,6 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 			}
 		},
 	)
-	previewScroll := container.NewScroll(previewList)
-	previewScroll.SetMinSize(fyne.NewSize(0, 180))
-	previewScrollStrip := canvas.NewRectangle(color.Transparent)
-	previewScrollStrip.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
 
 	refreshPreview := func() {
 		m := presenter.Model()
@@ -335,7 +388,8 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 		previewStatusLabel.SetText(locale.T("wizard.source.preview_loading"))
 
 		go func() {
-			errorCount, err := wizardbusiness.RebuildPreviewCache(m)
+			mm := m
+			errorCount, err := wizardbusiness.RebuildPreviewCache(mm)
 			presenter.UpdateUI(func() {
 				if err != nil {
 					previewNodes = nil
@@ -343,12 +397,11 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 					previewStatusLabel.SetText(locale.Tf("wizard.source.preview_error", err.Error()))
 					return
 				}
-				// m was updated in place by RebuildPreviewCache(m)
-				previewNodes = m.PreviewNodes
+				previewNodes = mm.PreviewNodes
 				previewList.Refresh()
 				sourcesCount := 0
-				if m.ParserConfig != nil {
-					sourcesCount = len(m.ParserConfig.ParserConfig.Proxies)
+				if mm.ParserConfig != nil {
+					sourcesCount = len(mm.ParserConfig.ParserConfig.Proxies)
 				}
 				status := locale.Tf("wizard.source.preview_servers", len(previewNodes), sourcesCount)
 				if errorCount > 0 {
@@ -359,35 +412,33 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 		}()
 	}
 
-	previewRefreshBtn := widget.NewButton(locale.T("wizard.source.button_refresh"), refreshPreview)
-	previewStatusRow := container.NewHBox(previewStatusLabel, layout.NewSpacer(), previewRefreshBtn)
-	previewListRow := container.NewBorder(nil, nil, nil, previewScrollStrip, previewScroll)
-	previewBox := container.NewVBox(
-		previewStatusRow,
-		previewListRow,
+	refreshBtn := widget.NewButton(locale.T("wizard.source.button_refresh"), refreshPreview)
+	closeBtn := widget.NewButton(locale.T("wizard.source.view_close"), func() { win.Close() })
+	topRow := container.NewHBox(previewStatusLabel, layout.NewSpacer(), refreshBtn)
+	listStrip := canvas.NewRectangle(color.Transparent)
+	listStrip.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
+	previewScroll := container.NewScroll(previewList)
+	previewScroll.Direction = container.ScrollVerticalOnly
+	listRow := container.NewBorder(nil, nil, nil, listStrip, previewScroll)
+	bottomRow := container.NewHBox(layout.NewSpacer(), closeBtn)
+
+	minList := canvas.NewRectangle(color.Transparent)
+	minList.SetMinSize(fyne.NewSize(0, 320))
+	listFill := container.NewMax(minList, listRow)
+
+	content := container.NewBorder(
+		container.NewVBox(topRow, widget.NewSeparator()),
+		bottomRow,
+		nil, nil,
+		listFill,
 	)
 
-	// Combine all sections
-	content := container.NewVBox(
-		widget.NewSeparator(),
-		urlContainer,
-		widget.NewSeparator(),
-		sourcesLabel,
-		sourcesScroll,
-		widget.NewSeparator(),
-		previewBox,
-		widget.NewSeparator(),
-	)
-
-	tabScrollGutter := canvas.NewRectangle(color.Transparent)
-	tabScrollGutter.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
-	contentWithScrollGutter := container.NewBorder(nil, nil, nil, tabScrollGutter, content)
-
-	// Add scroll for long content
-	scrollContainer := container.NewScroll(contentWithScrollGutter)
-	scrollContainer.SetMinSize(fyne.NewSize(0, 620))
-
-	return scrollContainer
+	win.SetContent(content)
+	win.Resize(fyne.NewSize(560, 520))
+	win.CenterOnScreen()
+	refreshPreview()
+	win.Show()
+	presenter.UpdateChildOverlay()
 }
 
 // nodeDisplayLine returns a short one-line description for a parsed node (for list display).
