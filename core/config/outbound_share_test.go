@@ -35,6 +35,29 @@ func TestGetOutboundMapByTag_NotFound(t *testing.T) {
 	}
 }
 
+func TestBuildShareURILinesForOutboundTags(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.json")
+	body := []byte(`{"outbounds":[
+		{"type":"vless","tag":"n1","uuid":"550e8400-e29b-41d4-a716-446655440000","server":"a.example.com","server_port":443,"tls":{"enabled":true,"server_name":"a.example.com"}},
+		{"type":"selector","tag":"sel","outbounds":["n1"]},
+		{"type":"vless","tag":"n2","uuid":"650e8400-e29b-41d4-a716-446655440001","server":"b.example.com","server_port":443,"tls":{"enabled":true,"server_name":"b.example.com"}}
+	]}`)
+	if err := os.WriteFile(p, body, 0644); err != nil {
+		t.Fatal(err)
+	}
+	lines, err := BuildShareURILinesForOutboundTags(p, []string{"n1", "missing", "n2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 2 {
+		t.Fatalf("want 2 lines, got %d: %v", len(lines), lines)
+	}
+	if !strings.Contains(lines[0], "a.example.com") || !strings.Contains(lines[1], "b.example.com") {
+		t.Fatalf("unexpected order or content: %v", lines)
+	}
+}
+
 func TestShareProxyURIForOutboundTag_WireGuardEndpoint(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "config.json")

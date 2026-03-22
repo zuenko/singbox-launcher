@@ -70,16 +70,13 @@ func shareURITryEndpointAfterOutboundError(err error) bool {
 	return strings.Contains(s, "not found") || strings.Contains(s, "outbounds not found")
 }
 
-// ShareProxyURIForOutboundTag builds a subscription-style share URI from the sing-box outbound with the given tag,
-// or from a WireGuard entry in endpoints[] with that tag if no matching outbound exists.
-// Parses config.json once per call.
-func ShareProxyURIForOutboundTag(configPath, tag string) (string, error) {
+// ShareProxyURIForOutboundTagFromRoot builds a share URI like ShareProxyURIForOutboundTag using an already-parsed config root.
+func ShareProxyURIForOutboundTagFromRoot(root map[string]interface{}, tag string) (string, error) {
 	if tag == "" {
 		return "", fmt.Errorf("empty outbound tag")
 	}
-	root, err := loadConfigRootMap(configPath)
-	if err != nil {
-		return "", err
+	if root == nil {
+		return "", fmt.Errorf("nil config root")
 	}
 	out, outErr := findTaggedInRoot(root, tag, "outbounds", "outbound with tag %q not found")
 	if outErr == nil {
@@ -92,4 +89,40 @@ func ShareProxyURIForOutboundTag(configPath, tag string) (string, error) {
 		}
 	}
 	return "", outErr
+}
+
+// ShareProxyURIForOutboundTag builds a subscription-style share URI from the sing-box outbound with the given tag,
+// or from a WireGuard entry in endpoints[] with that tag if no matching outbound exists.
+// Parses config.json once per call.
+func ShareProxyURIForOutboundTag(configPath, tag string) (string, error) {
+	if tag == "" {
+		return "", fmt.Errorf("empty outbound tag")
+	}
+	root, err := loadConfigRootMap(configPath)
+	if err != nil {
+		return "", err
+	}
+	return ShareProxyURIForOutboundTagFromRoot(root, tag)
+}
+
+// BuildShareURILinesForOutboundTags loads config once and appends one non-empty share URI per tag in order.
+// Tags that cannot be encoded (missing outbound, unsupported type, etc.) are skipped without aborting.
+func BuildShareURILinesForOutboundTags(configPath string, tags []string) ([]string, error) {
+	root, err := loadConfigRootMap(configPath)
+	if err != nil {
+		return nil, err
+	}
+	var lines []string
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		line, err := ShareProxyURIForOutboundTagFromRoot(root, tag)
+		if err != nil || strings.TrimSpace(line) == "" {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return lines, nil
 }

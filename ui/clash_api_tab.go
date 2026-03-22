@@ -781,6 +781,58 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	sortByNameButton.SetToolTip(locale.T("servers.tooltip_sort_by_name"))
 	sortNameLabel := widget.NewLabel(locale.T("servers.label_sort_by_name"))
 
+	exportShareURIsButton := ttwidget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
+		if ac.UIService == nil || ac.UIService.MainWindow == nil {
+			return
+		}
+		win := ac.UIService.MainWindow
+		if ac.FileService == nil || strings.TrimSpace(ac.FileService.ConfigPath) == "" {
+			ShowErrorText(win, locale.T("app.tab.servers"), locale.T("servers.error_export_no_config"))
+			return
+		}
+		allProxies := ac.GetProxiesList()
+		if len(allProxies) == 0 {
+			status.SetText(locale.T("servers.status_no_proxies"))
+			return
+		}
+		visible := proxiesForListView()
+		if len(visible) == 0 {
+			status.SetText(locale.T("servers.status_export_nothing_visible"))
+			return
+		}
+		tags := make([]string, 0, len(visible))
+		for _, p := range visible {
+			if proxyClashTypeSkippedForShareExport(p) {
+				continue
+			}
+			tags = append(tags, p.Name)
+		}
+		cfgPath := ac.FileService.ConfigPath
+		go func() {
+			fyne.Do(func() {
+				status.SetText(locale.T("servers.status_export_uris_building"))
+			})
+			lines, err := config.BuildShareURILinesForOutboundTags(cfgPath, tags)
+			fyne.Do(func() {
+				if err != nil {
+					ShowError(win, err)
+					return
+				}
+				if len(lines) == 0 {
+					ShowErrorText(win, locale.T("app.tab.servers"), locale.T("servers.status_export_uris_none"))
+					return
+				}
+				// One line per server URI; full block to clipboard.
+				clipboardText := strings.Join(lines, "\n")
+				if app := fyne.CurrentApp(); app != nil && app.Clipboard() != nil {
+					app.Clipboard().SetContent(clipboardText)
+				}
+				status.SetText(locale.Tf("servers.status_export_uris_done", len(lines)))
+			})
+		}()
+	})
+	exportShareURIsButton.SetToolTip(locale.T("servers.tooltip_export_uris"))
+
 	// Кнопки пинга и сортировки по задержке (справа)
 	var sortByDelayButton *ttwidget.Button
 	sortByDelayButton = ttwidget.NewButton("↑", func() {
@@ -941,6 +993,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	buttonsRow := container.NewHBox(
 		sortByNameButton,
 		sortNameLabel,
+		exportShareURIsButton,
 		layout.NewSpacer(),
 		filterPingErrorsButton,
 		sortByDelayButton,
@@ -1069,6 +1122,16 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	)
 
 	return contentContainer
+}
+
+// proxyClashTypeSkippedForShareExport skips selector/urltest/direct (routing outbounds), not leaf share links.
+func proxyClashTypeSkippedForShareExport(p api.ProxyInfo) bool {
+	switch strings.ToLower(strings.TrimSpace(p.ClashType)) {
+	case "selector", "urltest", "direct":
+		return true
+	default:
+		return false
+	}
 }
 
 // serversProxyContextMenu is the ПКМ menu for one proxy row: type line (Action nil → desktop does not dismiss; not Disabled → normal text color) + Copy link.
