@@ -3,7 +3,7 @@ package models
 import "encoding/json"
 
 // PersistedDNSState is the dns_options object in state.json (not sing-box config.dns).
-// See docs/WIZARD_STATE.md and SPECS/024-F-N-WIZARD_DNS_SECTION/SPEC.md.
+// See docs/WIZARD_STATE.md and SPECS/024-F-C-WIZARD_DNS_SECTION/SPEC.md.
 // Each element of Servers may include wizard-only keys: "description" (string), "enabled" (bool, default true).
 //
 // DNS rules: JSON array **`rules`** (same as sing-box dns.rules / wizard_template dns_options.rules).
