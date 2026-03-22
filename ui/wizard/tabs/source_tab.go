@@ -39,7 +39,6 @@ import (
 	"singbox-launcher/internal/textnorm"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizarddialogs "singbox-launcher/ui/wizard/dialogs"
-	wizardmodels "singbox-launcher/ui/wizard/models"
 	"singbox-launcher/ui/wizard/outbounds_configurator"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
 	wizardutils "singbox-launcher/ui/wizard/utils"
@@ -231,34 +230,12 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 					tb.SetToolTip(tooltipText)
 				}
 
-				prefixEntry := widget.NewEntry()
-				prefixEntry.SetText(proxy.TagPrefix)
-				prefixEntry.SetPlaceHolder(locale.T("wizard.source.placeholder_prefix"))
-				prefixEntry.OnChanged = func(s string) {
+				editBtn := widget.NewButton(locale.T("wizard.source.button_edit"), func() {
 					m := presenter.Model()
 					if m.ParserConfig == nil || sourceIndex >= len(m.ParserConfig.ParserConfig.Proxies) {
 						return
 					}
-					m.ParserConfig.ParserConfig.Proxies[sourceIndex].TagPrefix = strings.TrimSpace(s)
-					serialized, err := wizardbusiness.SerializeParserConfig(m.ParserConfig)
-					if err != nil {
-						debuglog.ErrorLog("source_tab: SerializeParserConfig after prefix change: %v", err)
-						return
-					}
-					m.ParserConfigJSON = serialized
-					m.PreviewNeedsParse = true
-					wizardbusiness.InvalidatePreviewCache(m)
-					presenter.UpdateParserConfig(serialized)
-					presenter.ScheduleRefreshOutboundOptionsDebounced()
-				}
-
-				viewBtn := widget.NewButton(locale.T("wizard.source.button_view"), func() {
-					m := presenter.Model()
-					if m.ParserConfig == nil || sourceIndex >= len(m.ParserConfig.ParserConfig.Proxies) {
-						return
-					}
-					prox := &m.ParserConfig.ParserConfig.Proxies[sourceIndex]
-					showSourceServersWindow(presenter, guiState.Window, shortLabel, prox.Source, prox.Skip)
+					showSourceEditWindow(presenter, guiState, guiState.Window, sourceIndex, shortLabel)
 				})
 
 				delBtn := widget.NewButton(locale.T("wizard.source.button_del"), func() {
@@ -287,8 +264,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 				rowGutter.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
 				rightControls := container.NewHBox(
 					copyBtn,
-					prefixEntry,
-					viewBtn,
+					editBtn,
 					delBtn,
 					rowGutter,
 				)
@@ -460,106 +436,6 @@ func fetchAndParseSource(sourceURL string, skip []map[string]string) ([]*config.
 		return nodes, nil
 	}
 	return nil, fmt.Errorf("not a subscription URL or direct link")
-}
-
-// showSourceServersWindow opens a separate window, fetches/parses the subscription and shows the server list (like Servers tab).
-// Only one View window is allowed; if already open, focus is moved to it.
-func showSourceServersWindow(presenter *wizardpresentation.WizardPresenter, parent fyne.Window, sourceLabel string, sourceURL string, skip []map[string]string) {
-	if presenter != nil {
-		if w := presenter.OpenViewWindow(); w != nil {
-			w.RequestFocus()
-			return
-		}
-	}
-	app := fyne.CurrentApp()
-	if app == nil {
-		return
-	}
-	title := locale.Tf("wizard.source.view_title", sourceLabel)
-	title = wizardutils.TruncateStringEllipsis(title, wizardutils.MaxLabelRunes, "...")
-	win := app.NewWindow(title)
-	if presenter != nil {
-		presenter.SetViewWindow(win)
-		win.SetOnClosed(func() {
-			presenter.ClearViewWindow()
-			presenter.UpdateChildOverlay()
-		})
-	}
-	statusLabel := widget.NewLabel(locale.T("wizard.source.preview_loading"))
-	closeBtn := widget.NewButton(locale.T("wizard.source.view_close"), func() { win.Close() })
-	topContent := container.NewBorder(nil, container.NewHBox(layout.NewSpacer(), closeBtn), nil, nil, statusLabel)
-	win.SetContent(topContent)
-	win.Resize(fyne.NewSize(420, 380))
-	win.CenterOnScreen()
-	win.Show()
-	if presenter != nil {
-		presenter.UpdateChildOverlay()
-	}
-
-	go func() {
-		var nodes []*config.ParsedNode
-		var err error
-
-		tryCache := func(model *wizardmodels.WizardModel) bool {
-			if model == nil || model.ParserConfig == nil || model.PreviewNodesBySource == nil {
-				return false
-			}
-			for i, ps := range model.ParserConfig.ParserConfig.Proxies {
-				if ps.Source == sourceURL {
-					if nodesForSource, ok := model.PreviewNodesBySource[i]; ok {
-						nodes = nodesForSource
-						return true
-					}
-					break
-				}
-			}
-			return false
-		}
-
-		if presenter != nil {
-			model := presenter.Model()
-			if tryCache(model) {
-				// Use existing cache (e.g. after user clicked Refresh).
-			} else if model != nil {
-				// Cache empty or source not in cache: rebuild so View matches other previews, then use cache.
-				_, cacheErr := wizardbusiness.RebuildPreviewCache(model)
-				if cacheErr != nil {
-					err = cacheErr
-				} else {
-					tryCache(model)
-				}
-			}
-		}
-
-		// Fallback: if cache did not provide nodes (e.g. URL not in ParserConfig), load directly.
-		if nodes == nil && err == nil {
-			nodes, err = fetchAndParseSource(sourceURL, skip)
-		}
-
-		fyne.Do(func() {
-			if err != nil {
-				statusLabel.SetText(locale.Tf("wizard.source.preview_error", err.Error()))
-				return
-			}
-			if len(nodes) == 0 {
-				statusLabel.SetText(locale.T("wizard.source.view_no_servers"))
-				return
-			}
-			statusLabel.SetText(locale.Tf("wizard.source.view_server_count", len(nodes)))
-			list := widget.NewList(
-				func() int { return len(nodes) },
-				func() fyne.CanvasObject {
-					return widget.NewLabel("")
-				},
-				func(id int, o fyne.CanvasObject) {
-					o.(*widget.Label).SetText(nodeDisplayLine(nodes[id]))
-				},
-			)
-			scroll := container.NewScroll(list)
-			scroll.SetMinSize(fyne.NewSize(0, 280))
-			win.SetContent(container.NewBorder(statusLabel, container.NewHBox(layout.NewSpacer(), closeBtn), nil, nil, scroll))
-		})
-	}()
 }
 
 // CreateOutboundsAndParserConfigTab creates the Outbounds and ParserConfig tab UI.

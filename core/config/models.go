@@ -14,6 +14,7 @@ type ParsedNode = configtypes.ParsedNode
 const ParserConfigVersion = configtypes.ParserConfigVersion
 const SubscriptionUserAgent = configtypes.SubscriptionUserAgent
 const MaxNodesPerSubscription = configtypes.MaxNodesPerSubscription
+const UnsetSourceIndex = configtypes.UnsetSourceIndex
 
 // NormalizeParserConfig delegates to configtypes.NormalizeParserConfig.
 func NormalizeParserConfig(parserConfig *ParserConfig, updateLastUpdated bool) {

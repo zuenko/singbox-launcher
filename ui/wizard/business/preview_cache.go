@@ -71,6 +71,9 @@ func RebuildPreviewCache(model *wizardmodels.WizardModel) (int, error) {
 		if len(nodes) == 0 {
 			continue
 		}
+		for _, n := range nodes {
+			n.SourceIndex = i
+		}
 		nodesBySource[i] = nodes
 		allNodes = append(allNodes, nodes...)
 	}

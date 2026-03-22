@@ -43,6 +43,10 @@ type ProxySource struct {
 	TagPrefix   string              `json:"tag_prefix,omitempty"`  // Prefix to add to all node tags from this source
 	TagPostfix  string              `json:"tag_postfix,omitempty"` // Postfix to add to all node tags from this source
 	TagMask     string              `json:"tag_mask,omitempty"`    // Mask to replace entire tag (ignores tag_prefix and tag_postfix if set)
+	// ExcludeFromGlobal: when true, nodes from this source are omitted from the pool for global ParserConfig.outbounds (generation-time only).
+	ExcludeFromGlobal bool `json:"exclude_from_global,omitempty"`
+	// ExposeGroupTagsToGlobal: when true, tags of wizard-marked local outbounds are merged into each global outbound at generation time (SPEC 026).
+	ExposeGroupTagsToGlobal bool `json:"expose_group_tags_to_global,omitempty"`
 }
 
 // WizardConfig represents the wizard configuration for outbounds
@@ -104,6 +108,9 @@ func (oc *OutboundConfig) GetWizardRequired() int {
 	return 0
 }
 
+// UnsetSourceIndex means SourceIndex was not assigned; exclude_from_global must not apply.
+const UnsetSourceIndex = -1
+
 // ParsedNode represents a parsed proxy node with all extracted information.
 // It contains protocol-specific fields (UUID, Flow, etc.) and the generated
 // outbound configuration ready for JSON serialization.
@@ -118,6 +125,8 @@ type ParsedNode struct {
 	Comment  string
 	Query    url.Values
 	Outbound map[string]interface{}
+	// SourceIndex is the index into ParserConfig.proxies for this node; UnsetSourceIndex if unknown.
+	SourceIndex int
 }
 
 // NormalizeParserConfig normalizes ParserConfig structure:

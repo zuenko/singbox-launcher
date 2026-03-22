@@ -14,7 +14,9 @@
 
 ### Highlights
 
-- **Parser / subscriptions:** **`MaxNodesPerSubscription`** increased from **500** to **3000** per source (preview, config generation, and wizard **View** all use the same cap).
+- **Parser / subscriptions:** **`MaxNodesPerSubscription`** increased from **500** to **3000** per source (preview, config generation, and wizard source **Preview** all use the same cap).
+
+- **Wizard — Sources / Edit source:** **Edit** opens **Settings | Preview** for one subscription: **`tag_prefix`**, optional local **auto** (urltest) and **select** (markers **`WIZARD:auto`** / **`WIZARD:selector`** in `proxies[].outbounds[].comment`), and per-source flags **`exclude_from_global`** and **`expose_group_tags_to_global`**. Excluded nodes omit from the pool for **global** `ParserConfig.outbounds` only. **Expose** merges local group tags into each global outbound **at generation time** (JSON `addOutbounds` unchanged); merged tags respect each global entry’s **`filters`** (same rules as node filters). Parsed nodes carry **`SourceIndex`** for exclude; preview cache sets it too.
 
 - **Wizard & main window — UI/UX (gutter, Rules, Sources):** **Right scrollbar gutter** where scrollbars used to cover text or controls: **Rules** (custom-rules list), **Sources** (URL field, source list, server preview, tab scroll), **DNS** (server list only; not the rules JSON field), and the main **Servers** tab (**inside each proxy row**, after the buttons — not an outer margin beside the scrollbar). **Rules — custom rules:** **Up/Down** reorder, **scroll position** kept after moves, **delete** asks for **confirmation**; refreshing outbound selects no longer clears **unsaved** edits. **Sources:** compact **label + copy** per row instead of a wide text button.
 
@@ -110,7 +112,9 @@
 
 ### Основное
 
-- **Парсер / подписки:** лимит **`MaxNodesPerSubscription`** увеличен с **500** до **3000** на один источник (превью, генерация конфига и **Просмотр** в визарде используют тот же потолок).
+- **Парсер / подписки:** лимит **`MaxNodesPerSubscription`** увеличен с **500** до **3000** на один источник (превью, генерация конфига и превью источников во визарде используют тот же потолок).
+
+- **Визард — Sources / правка источника:** кнопка **Edit** открывает **Настройки | Просмотр**: **`tag_prefix`**, опциональные локальные **auto** (urltest) и **select** (маркеры **`WIZARD:auto`** / **`WIZARD:selector`** в `comment` локальных outbounds), флаги **`exclude_from_global`** и **`expose_group_tags_to_global`**. Исключённые источники не попадают в пул узлов для **глобальных** `ParserConfig.outbounds`. **Expose** подмешивает теги локальных групп в каждый глобальный outbound **только при генерации** (поле **`addOutbounds`** в JSON не трогается); подмешиваемые теги проходят **`filters`** глобальной записи. У узлов задаётся **`SourceIndex`**; то же в кэше превью.
 
 - **Визард и главное окно — UI/UX (gutter, Rules, Sources):** **Отступ справа под скролл**, где полоса прокрутки наезжала на текст или кнопки: **Rules** (список пользовательских правил), **Sources** (поле URL, список источников, превью серверов, общий скролл вкладки), **DNS** (только список серверов; не поле JSON правил), вкладка **Servers** — **внутри каждой строки** списка прокси после кнопок (не внешний зазор между скроллом и краем окна). **Rules — пользовательские правила:** **↑/↓**, позиция прокрутки сохраняется, удаление с **подтверждением**; обновление outbound-селектов больше **не сбрасывает несохранённые правки**. **Sources:** компактная строка **подпись + копирование** вместо широкой кнопки.
 

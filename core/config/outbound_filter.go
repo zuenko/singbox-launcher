@@ -15,6 +15,26 @@ import (
 
 // filterNodesForSelector returns nodes that match the filter. filter may be nil (all nodes),
 // a single map (AND of key/pattern), or a slice of maps (OR of maps). Empty map = no filter.
+// FilterNodesExcludeFromGlobal drops nodes whose source has exclude_from_global (SPEC 026).
+func FilterNodesExcludeFromGlobal(allNodes []*ParsedNode, proxies []ProxySource) []*ParsedNode {
+	if len(allNodes) == 0 {
+		return allNodes
+	}
+	out := make([]*ParsedNode, 0, len(allNodes))
+	for _, n := range allNodes {
+		idx := n.SourceIndex
+		if idx < 0 || idx >= len(proxies) {
+			out = append(out, n)
+			continue
+		}
+		if proxies[idx].ExcludeFromGlobal {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
 func filterNodesForSelector(allNodes []*ParsedNode, filter interface{}) []*ParsedNode {
 	if filter == nil {
 		return allNodes // No filter, return all nodes
@@ -140,6 +160,12 @@ func matchesPattern(value, pattern string) bool {
 //
 // allNodes must be the same set of nodes that will be used for selector generation
 // (i.e. result of the same LoadNodesFromSource pipeline that GenerateOutboundsFromParserConfig uses).
+// PreviewGlobalSelectorNodes applies exclude_from_global, then the same filter logic as PreviewSelectorNodes.
+func PreviewGlobalSelectorNodes(allNodes []*ParsedNode, proxies []ProxySource, outboundConfig OutboundConfig) ([]*ParsedNode, string) {
+	pool := FilterNodesExcludeFromGlobal(allNodes, proxies)
+	return PreviewSelectorNodes(pool, outboundConfig)
+}
+
 func PreviewSelectorNodes(allNodes []*ParsedNode, outboundConfig OutboundConfig) ([]*ParsedNode, string) {
 	filtered := filterNodesForSelector(allNodes, outboundConfig.Filters)
 
@@ -155,4 +181,20 @@ func PreviewSelectorNodes(allNodes []*ParsedNode, outboundConfig OutboundConfig)
 	}
 
 	return filtered, defaultTag
+}
+
+// ExposeTagSyntheticNode builds a minimal ParsedNode for ParserConfig.outbounds[].filters (SPEC §5):
+// tag and comment from the wizard local outbound; host/scheme/label left empty.
+func ExposeTagSyntheticNode(tag, comment string) *ParsedNode {
+	return &ParsedNode{Tag: tag, Comment: comment, SourceIndex: UnsetSourceIndex}
+}
+
+// SelectorFiltersAcceptNode reports whether a single node matches the same filter rules as filterNodesForSelector
+// (including OR-array and AND-object semantics).
+func SelectorFiltersAcceptNode(filter interface{}, node *ParsedNode) bool {
+	if node == nil {
+		return false
+	}
+	matched := filterNodesForSelector([]*ParsedNode{node}, filter)
+	return len(matched) > 0
 }

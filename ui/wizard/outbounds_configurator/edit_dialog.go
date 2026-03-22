@@ -422,8 +422,13 @@ func ShowEditDialog(
 			return
 		}
 
-		// Use core/config helper to get filtered nodes and default tag, consistent with generator logic.
-		filteredNodes, defaultTag := config.PreviewSelectorNodes(allNodes, *cfg)
+		var filteredNodes []*config.ParsedNode
+		var defaultTag string
+		if model.ParserConfig != nil {
+			filteredNodes, defaultTag = config.PreviewGlobalSelectorNodes(allNodes, model.ParserConfig.ParserConfig.Proxies, *cfg)
+		} else {
+			filteredNodes, defaultTag = config.PreviewSelectorNodes(allNodes, *cfg)
+		}
 		filteredSet := make(map[*config.ParsedNode]bool, len(filteredNodes))
 		for _, n := range filteredNodes {
 			filteredSet[n] = true

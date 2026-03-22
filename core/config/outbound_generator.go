@@ -85,6 +85,102 @@ type outboundInfo struct {
 	isLocal       bool           // true if it's a local selector (from proxySource.Outbounds), false if global
 }
 
+// exposeTagCandidate is a wizard local outbound tag eligible for merge into global selectors (SPEC 026).
+type exposeTagCandidate struct {
+	Tag     string
+	Comment string
+}
+
+func commentHasWizardLocalOutboundMarker(comment string) bool {
+	if strings.Contains(comment, "WIZARD:auto") {
+		return true
+	}
+	if strings.Contains(comment, "WIZARD:select") || strings.Contains(comment, "WIZARD:selector") {
+		return true
+	}
+	return false
+}
+
+func collectExposeTagCandidates(parserConfig *ParserConfig) []exposeTagCandidate {
+	if parserConfig == nil {
+		return nil
+	}
+	var out []exposeTagCandidate
+	for _, ps := range parserConfig.ParserConfig.Proxies {
+		if !ps.ExposeGroupTagsToGlobal {
+			continue
+		}
+		for _, ob := range ps.Outbounds {
+			if ob.Tag == "" || !commentHasWizardLocalOutboundMarker(ob.Comment) {
+				continue
+			}
+			out = append(out, exposeTagCandidate{Tag: ob.Tag, Comment: ob.Comment})
+		}
+	}
+	return out
+}
+
+func augmentGlobalOutboundDependenciesForExpose(
+	outboundsInfo map[string]*outboundInfo,
+	parserConfig *ParserConfig,
+	exposeCandidates []exposeTagCandidate,
+	dependents map[string][]string,
+	inDegree map[string]int,
+) {
+	if parserConfig == nil || len(exposeCandidates) == 0 {
+		return
+	}
+	edgeSeen := make(map[string]map[string]struct{})
+	for _, gCfg := range parserConfig.ParserConfig.Outbounds {
+		info, ok := outboundsInfo[gCfg.Tag]
+		if !ok || info == nil || info.isLocal {
+			continue
+		}
+		for _, c := range exposeCandidates {
+			if !SelectorFiltersAcceptNode(gCfg.Filters, ExposeTagSyntheticNode(c.Tag, c.Comment)) {
+				continue
+			}
+			if _, exists := outboundsInfo[c.Tag]; !exists {
+				continue
+			}
+			if edgeSeen[c.Tag] == nil {
+				edgeSeen[c.Tag] = make(map[string]struct{})
+			}
+			if _, dup := edgeSeen[c.Tag][gCfg.Tag]; dup {
+				continue
+			}
+			edgeSeen[c.Tag][gCfg.Tag] = struct{}{}
+			dependents[c.Tag] = append(dependents[c.Tag], gCfg.Tag)
+			inDegree[gCfg.Tag]++
+		}
+	}
+}
+
+// globalOutboundExposeCredit counts unique expose tags that pass filters and reference a valid dynamic outbound (or unknown tag).
+func globalOutboundExposeCredit(info *outboundInfo, outboundsInfo map[string]*outboundInfo, exposeCandidates []exposeTagCandidate) int {
+	if info == nil || info.isLocal || len(exposeCandidates) == 0 {
+		return 0
+	}
+	seen := make(map[string]struct{})
+	credit := 0
+	for _, c := range exposeCandidates {
+		if _, dup := seen[c.Tag]; dup {
+			continue
+		}
+		if !SelectorFiltersAcceptNode(info.config.Filters, ExposeTagSyntheticNode(c.Tag, c.Comment)) {
+			continue
+		}
+		seen[c.Tag] = struct{}{}
+		if ref, ok := outboundsInfo[c.Tag]; ok {
+			if !ref.isValid {
+				continue
+			}
+		}
+		credit++
+	}
+	return credit
+}
+
 // appendOutboundTransportParts appends a sing-box "transport" object from node.Outbound (VLESS, VMess, Trojan).
 func appendOutboundTransportParts(parts []string, outbound map[string]interface{}) []string {
 	if outbound == nil {
@@ -349,6 +445,8 @@ func GenerateSelectorWithFilteredAddOutbounds(
 	allNodes []*ParsedNode,
 	outboundConfig OutboundConfig,
 	outboundsInfo map[string]*outboundInfo,
+	forGlobalOutbound bool,
+	exposeCandidates []exposeTagCandidate,
 ) (string, error) {
 	// Filter nodes based on filters (version 3)
 	filterMap := outboundConfig.Filters
@@ -361,6 +459,9 @@ func GenerateSelectorWithFilteredAddOutbounds(
 	// Build outbounds list with unique tags
 	// Pre-allocate with estimated capacity to reduce allocations
 	estimatedSize := len(outboundConfig.AddOutbounds) + len(filteredNodes)
+	if forGlobalOutbound {
+		estimatedSize += len(exposeCandidates)
+	}
 	outboundsList := make([]string, 0, estimatedSize)
 	seenTags := make(map[string]bool, estimatedSize)
 	duplicateCountInSelector := 0
@@ -407,7 +508,29 @@ func GenerateSelectorWithFilteredAddOutbounds(
 		}
 	}
 
-	// Check if we have any outbounds at all (addOutbounds + filteredNodes)
+	if forGlobalOutbound && len(exposeCandidates) > 0 {
+		exposeSeen := make(map[string]struct{}, len(exposeCandidates))
+		for _, c := range exposeCandidates {
+			if _, dup := exposeSeen[c.Tag]; dup {
+				continue
+			}
+			if !SelectorFiltersAcceptNode(outboundConfig.Filters, ExposeTagSyntheticNode(c.Tag, c.Comment)) {
+				continue
+			}
+			if addInfo, exists := outboundsInfo[c.Tag]; exists && !addInfo.isValid {
+				continue
+			}
+			exposeSeen[c.Tag] = struct{}{}
+			if seenTags[c.Tag] {
+				continue
+			}
+			outboundsList = append(outboundsList, c.Tag)
+			seenTags[c.Tag] = true
+			debuglog.DebugLog("Parser: Adding expose tag '%s' to global selector '%s'", c.Tag, outboundConfig.Tag)
+		}
+	}
+
+	// Check if we have any outbounds at all (addOutbounds + filteredNodes + expose)
 	if len(outboundsList) == 0 {
 		debuglog.DebugLog("Parser: No outbounds (neither addOutbounds nor filteredNodes) for %s '%s'", outboundConfig.Type, outboundConfig.Tag)
 		return "", nil
@@ -517,7 +640,7 @@ func GenerateEndpointJSON(node *ParsedNode) (string, error) {
 func buildOutboundsInfo(
 	parserConfig *ParserConfig,
 	nodesBySource map[int][]*ParsedNode,
-	allNodes []*ParsedNode,
+	globalNodePool []*ParsedNode,
 	progressCallback func(float64, string),
 ) map[string]*outboundInfo {
 	if progressCallback != nil {
@@ -547,7 +670,7 @@ func buildOutboundsInfo(
 	}
 
 	for _, outboundConfig := range parserConfig.ParserConfig.Outbounds {
-		filteredNodes := filterNodesForSelector(allNodes, outboundConfig.Filters)
+		filteredNodes := filterNodesForSelector(globalNodePool, outboundConfig.Filters)
 		logDuplicateTagIfExists(outboundsInfo, outboundConfig.Tag, "global", 0)
 		outboundsInfo[outboundConfig.Tag] = &outboundInfo{
 			config:        outboundConfig,
@@ -590,7 +713,13 @@ func logDuplicateTagIfExists(outboundsInfo map[string]*outboundInfo, tag, kind s
 // then for each selector (in that order) sets outboundCount = len(filteredNodes) + count of valid addOutbounds
 // (dynamic with outboundCount > 0 plus constants). isValid = (outboundCount > 0). Uses Kahn's algorithm;
 // if not all selectors are processed, a cycle is reported in the log.
-func computeOutboundValidity(outboundsInfo map[string]*outboundInfo, progressCallback func(float64, string)) {
+// Global selectors also gain edges from expose tag targets and count expose credits (SPEC 026).
+func computeOutboundValidity(
+	outboundsInfo map[string]*outboundInfo,
+	parserConfig *ParserConfig,
+	exposeCandidates []exposeTagCandidate,
+	progressCallback func(float64, string),
+) {
 	if progressCallback != nil {
 		progressCallback(70, "Calculating outbound dependencies (pass 2)...")
 	}
@@ -608,6 +737,8 @@ func computeOutboundValidity(outboundsInfo map[string]*outboundInfo, progressCal
 			}
 		}
 	}
+	augmentGlobalOutboundDependenciesForExpose(outboundsInfo, parserConfig, exposeCandidates, dependents, inDegree)
+
 	queue := make([]string, 0, len(outboundsInfo))
 	for tag, degree := range inDegree {
 		if degree == 0 {
@@ -620,6 +751,9 @@ func computeOutboundValidity(outboundsInfo map[string]*outboundInfo, progressCal
 		queue = queue[1:]
 		info := outboundsInfo[current]
 		totalCount := len(info.filteredNodes)
+		if !info.isLocal {
+			totalCount += globalOutboundExposeCredit(info, outboundsInfo, exposeCandidates)
+		}
 		for _, addTag := range info.config.AddOutbounds {
 			if addInfo, exists := outboundsInfo[addTag]; exists {
 				if addInfo.outboundCount > 0 {
@@ -658,8 +792,9 @@ func computeOutboundValidity(outboundsInfo map[string]*outboundInfo, progressCal
 func generateSelectorJSONs(
 	parserConfig *ParserConfig,
 	nodesBySource map[int][]*ParsedNode,
-	allNodes []*ParsedNode,
+	globalNodePool []*ParsedNode,
 	outboundsInfo map[string]*outboundInfo,
+	exposeCandidates []exposeTagCandidate,
 	progressCallback func(float64, string),
 ) ([]string, int, int) {
 	if progressCallback != nil {
@@ -685,7 +820,7 @@ func generateSelectorJSONs(
 				}
 				continue
 			}
-			selectorJSON, err := GenerateSelectorWithFilteredAddOutbounds(sourceNodes, outboundConfig, outboundsInfo)
+			selectorJSON, err := GenerateSelectorWithFilteredAddOutbounds(sourceNodes, outboundConfig, outboundsInfo, false, nil)
 			if err != nil {
 				debuglog.WarnLog("GenerateOutboundsFromParserConfig: Failed to generate local selector %s for source %d: %v",
 					outboundConfig.Tag, i+1, err)
@@ -706,7 +841,7 @@ func generateSelectorJSONs(
 			}
 			continue
 		}
-		selectorJSON, err := GenerateSelectorWithFilteredAddOutbounds(allNodes, outboundConfig, outboundsInfo)
+		selectorJSON, err := GenerateSelectorWithFilteredAddOutbounds(globalNodePool, outboundConfig, outboundsInfo, true, exposeCandidates)
 		if err != nil {
 			debuglog.WarnLog("GenerateOutboundsFromParserConfig: Failed to generate global selector %s: %v",
 				outboundConfig.Tag, err)
@@ -752,6 +887,9 @@ func GenerateOutboundsFromParserConfig(
 		}
 
 		if len(nodesFromSource) > 0 {
+			for _, n := range nodesFromSource {
+				n.SourceIndex = i
+			}
 			allNodes = append(allNodes, nodesFromSource...)
 			nodesBySource[i] = nodesFromSource
 		}
@@ -791,9 +929,11 @@ func GenerateOutboundsFromParserConfig(
 		}
 	}
 
-	outboundsInfo := buildOutboundsInfo(parserConfig, nodesBySource, allNodes, progressCallback)
-	computeOutboundValidity(outboundsInfo, progressCallback)
-	selectorJSONs, localSelectorsCount, globalSelectorsCount := generateSelectorJSONs(parserConfig, nodesBySource, allNodes, outboundsInfo, progressCallback)
+	globalPool := FilterNodesExcludeFromGlobal(allNodes, parserConfig.ParserConfig.Proxies)
+	exposeCandidates := collectExposeTagCandidates(parserConfig)
+	outboundsInfo := buildOutboundsInfo(parserConfig, nodesBySource, globalPool, progressCallback)
+	computeOutboundValidity(outboundsInfo, parserConfig, exposeCandidates, progressCallback)
+	selectorJSONs, localSelectorsCount, globalSelectorsCount := generateSelectorJSONs(parserConfig, nodesBySource, globalPool, outboundsInfo, exposeCandidates, progressCallback)
 	selectorsJSON = append(selectorsJSON, selectorJSONs...)
 
 	return &OutboundGenerationResult{
