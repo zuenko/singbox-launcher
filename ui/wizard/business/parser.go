@@ -507,6 +507,31 @@ func updateAndSerializeParserConfig(
 	return nil
 }
 
+// noopParseTiming is used when calling parseParserConfigForApply without debug timings.
+type noopParseTiming struct{}
+
+func (noopParseTiming) LogTiming(string, time.Duration) {}
+
+// EnsureWizardModelParserConfig parses ParserConfigJSON into model.ParserConfig when the struct is nil
+// but JSON is non-empty (same idea as preview cache). No-op if ParserConfig is already set.
+func EnsureWizardModelParserConfig(model *wizardmodels.WizardModel) error {
+	if model == nil {
+		return fmt.Errorf("wizard model is nil")
+	}
+	if model.ParserConfig != nil {
+		return nil
+	}
+	if strings.TrimSpace(model.ParserConfigJSON) == "" {
+		return fmt.Errorf("ParserConfigJSON is empty")
+	}
+	pc, err := parseParserConfigForApply(model.ParserConfigJSON, noopParseTiming{})
+	if err != nil {
+		return err
+	}
+	model.ParserConfig = pc
+	return nil
+}
+
 // SerializeParserConfig serializes ParserConfig to JSON string.
 func SerializeParserConfig(parserConfig *config.ParserConfig) (string, error) {
 	if parserConfig == nil {

@@ -231,7 +231,18 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 				}
 
 				editBtn := widget.NewButton(locale.T("wizard.source.button_edit"), func() {
+					presenter.MergeGUIToModel()
 					m := presenter.Model()
+					if m == nil {
+						return
+					}
+					if err := wizardbusiness.EnsureWizardModelParserConfig(m); err != nil {
+						debuglog.ErrorLog("source_tab: EnsureWizardModelParserConfig before Edit: %v", err)
+						if guiState.Window != nil {
+							dialog.ShowError(err, guiState.Window)
+						}
+						return
+					}
 					if m.ParserConfig == nil || sourceIndex >= len(m.ParserConfig.ParserConfig.Proxies) {
 						return
 					}

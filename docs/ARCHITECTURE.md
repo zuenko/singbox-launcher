@@ -138,7 +138,7 @@ singbox-launcher/
 │   │       │
 │   └── config/                # Работа с конфигурацией
 │       ├── configtypes/        # Общие типы (отдельный пакет для разрыва циклической зависимости)
-│       │   └── types.go        # ParserConfig, ProxySource, OutboundConfig, ParsedNode, NormalizeParserConfig
+│       │   └── types.go        # ParserConfig, ProxySource (exclude_from_global, expose_group_tags_to_global), OutboundConfig, ParsedNode (SourceIndex), NormalizeParserConfig
 │       │
 │       ├── models.go           # Type aliases → configtypes (обратная совместимость: config.ParsedNode и т.д.)
 │       │   │   - ParserConfig = configtypes.ParserConfig
@@ -160,12 +160,15 @@ singbox-launcher/
 │       ├── outbound_generator.go  # Генерация outbounds и endpoints (ноды + селекторы)
 │       │   │   - GenerateNodeJSON() / GenerateEndpointJSON()  # Генерация JSON узла (outbound или WireGuard endpoint)
 │       │   │   - GenerateSelectorWithFilteredAddOutbounds() # Генерация селектора с фильтрацией
-│       │   │   - GenerateOutboundsFromParserConfig()        # Оркестрация: wireguard → EndpointsJSON, остальные → OutboundsJSON
+│       │   │   - GenerateOutboundsFromParserConfig()        # Оркестрация: wireguard → EndpointsJSON, остальные → OutboundsJSON; пул глобальных нод без exclude_from_global; expose → рёбра в глобальные селекторы
 │       │   │   - OutboundGenerationResult struct             # Результат (OutboundsJSON, EndpointsJSON, счётчики)
 │       │   │   - outboundInfo struct                         # Информация о динамическом селекторе
 │       │   │
 │       ├── outbound_filter.go    # Логика фильтрации нод для селекторов
 │       │   │   - filterNodesForSelector()                   # Фильтрация по tag/host/scheme/label
+│       │   │   - FilterNodesExcludeFromGlobal()             # Пул нод для глобальных outbound (исключение по источнику)
+│       │   │   - PreviewGlobalSelectorNodes()               # Превью глобального селектора с учётом exclude
+│       │   │   - ExposeTagSyntheticNode()                   # Синтетическая нода для сопоставления expose с фильтрами
 │       │   │   - matchesFilter() / matchesPattern()         # Literal / regex / negation matching
 │       │   │   - PreviewSelectorNodes()                     # Фильтрация для UI preview
 │       │   │
@@ -352,6 +355,9 @@ singbox-launcher/
 │       │   ├── source_tab.go   # Вкладка Sources & ParserConfig
 │       │   │   │   - createSourceTab()                       # Создание вкладки Sources & ParserConfig
 │       │   │   │
+│       │   ├── source_edit_window.go  # Окно Edit источника (вкладки Настройки / Preview, exclude/expose, WIZARD-синхронизация через business)
+│       │   │   │   - showSourceEditWindow()                  # Диалог правки одного ProxySource
+│       │   │   │
 │       │   ├── rules_tab.go    # Вкладка правил
 │       │   │   │   - CreateRulesTab()                        # Создание вкладки правил (основная функция)
 │       │   │   │   - createSelectableRulesUI()               # UI для selectable rules из шаблона
@@ -396,6 +402,12 @@ singbox-launcher/
 │       │   │   │   - restoreTagPrefixAndPostfix()           # Восстановление тегов
 │       │   │   │   - connectionsMatch() / isConnectionOnlyProxy()  # Сравнение и определение типа proxy
 │       │   │   │   - updateAndSerializeParserConfig()       # Обновление и сериализация
+│       │   │   │
+│       │   ├── preview_cache.go  # Кэш превью outbounds для UI
+│       │   │   │   - Присвоение ParsedNode.SourceIndex при сборке превью
+│       │   │   │
+│       │   ├── source_local_wizard.go  # Синхронизация локальных urltest/selector с proxies[] (маркеры WIZARD:)
+│       │   │   │   - ensure/remove локальных outbounds, expose, переименование тегов при смене префикса
 │       │   │   │
 │       │   ├── create_config.go  # Сборка конфигурации из шаблона
 │       │   │   │   - BuildTemplateConfig()                   # Построение конфигурации
@@ -625,15 +637,22 @@ singbox-launcher/
 **outbound_generator.go**
 - `GenerateNodeJSON()` - генерация JSON узла из ParsedNode (vless, vmess, trojan, shadowsocks, hysteria2)
 - `GenerateEndpointJSON()` - генерация JSON строки для WireGuard endpoint (ноды с Scheme wireguard)
-- `GenerateSelectorWithFilteredAddOutbounds()` - генерация селектора с фильтрацией addOutbounds
+- `GenerateSelectorWithFilteredAddOutbounds()` - генерация селектора с фильтрацией addOutbounds; опционально глобальный режим и кандидаты **expose** (теги локальных групп источника)
 - `GenerateOutboundsFromParserConfig()` - генерация outbounds и endpoints (wireguard-ноды → EndpointsJSON, остальные → OutboundsJSON; трёхпроходный алгоритм для селекторов)
+  - На нодах выставляется `SourceIndex`; пул для глобальных outbound — без узлов из источников с `exclude_from_global`
   - Pass 1: Создание outboundsInfo и подсчет узлов
-  - Pass 2: Топологическая сортировка зависимостей и расчет валидности
-  - Pass 3: Генерация JSON только для валидных селекторов
+  - Pass 2: Топологическая сортировка зависимостей и расчет валидности; рёбра **expose** → глобальные селекторы
+  - Pass 3: Генерация JSON только для валидных селекторов; подмешивание expose-кандидатов в глобальные селекторы
 - `OutboundGenerationResult` struct - результат генерации (OutboundsJSON, EndpointsJSON, статистика и счётчики)
 - `outboundInfo` struct - информация о динамическом селекторе (для трехпроходного алгоритма)
 - `filterNodesForSelector()` - фильтрация узлов для селектора
 - `matchesFilter()`, `getNodeValue()`, `matchesPattern()` - вспомогательные функции фильтрации
+
+**outbound_filter.go**
+- `FilterNodesExcludeFromGlobal()` — пул нод для глобальных outbound (исключение по `ProxySource.exclude_from_global` и индексу источника)
+- `PreviewGlobalSelectorNodes()` — превью списка узлов глобального селектора с учётом exclude
+- `ExposeTagSyntheticNode()` — синтетическая нода для проверки фильтров селектора на теги expose
+- `PreviewSelectorNodes()` / `filterNodesForSelector()` — как в дереве файлов
 
 **updater.go**
 - `UpdateConfigFromSubscriptions()` - обновление config.json из подписок (запись outbounds и endpoints между маркерами @ParserSTART/@ParserEND и @ParserSTART_E/@ParserEND_E)
@@ -825,7 +844,9 @@ singbox-launcher/
 **tabs/** - UI вкладок
 - `source_tab.go`:
   - `createSourceTab()` - создание вкладки Sources & ParserConfig
-  - UI компоненты первой вкладки (URL поля, кнопки)
+  - UI компоненты первой вкладки (URL поля, кнопки); кнопка **Edit** открывает окно правки источника
+- `source_edit_window.go`:
+  - `showSourceEditWindow()` — диалог одного `ProxySource`: вкладки настроек и превью, `exclude_from_global` / `expose_group_tags_to_global`, вызовы `business` для маркеров **WIZARD:** в `proxies[].outbounds`
 - `rules_tab.go`:
   - `createTemplateTab()` - создание вкладки правил
   - `createRulesScroll()` - создание прокручиваемого списка правил
@@ -870,6 +891,10 @@ singbox-launcher/
     - `connectionsMatch()` / `isConnectionOnlyProxy()` - сравнение connections и определение типа proxy
     - `updateAndSerializeParserConfig()` - обновление ParserConfig и сериализация его
   - Бизнес-функции принимают `UIUpdater` (с методом `Model()`) и получают модель из него
+- `preview_cache.go`:
+  - Кэш превью сгенерированных outbounds; при сборке нод выставляется `ParsedNode.SourceIndex` для фильтрации по источнику в UI
+- `source_local_wizard.go`:
+  - Синхронизация локальных urltest/selector с `ParserConfig.proxies[i].outbounds` (маркеры **WIZARD:**), флаги expose, переименование тегов при смене префикса
 - `create_config.go`:
   - `BuildTemplateConfig()` - построение финальной конфигурации из шаблона и модели
   - `BuildParserOutboundsBlock()` - формирование блока outbounds из сгенерированных outbounds

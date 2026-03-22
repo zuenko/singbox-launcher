@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"singbox-launcher/core/config"
+	wizardmodels "singbox-launcher/ui/wizard/models"
 )
 
 // TestSerializeParserConfig_Standalone tests SerializeParserConfig without UI dependencies
@@ -80,6 +81,31 @@ func TestSerializeParserConfig_Standalone(t *testing.T) {
 				tt.checkResult(t, result)
 			}
 		})
+	}
+}
+
+func TestEnsureWizardModelParserConfig_FromJSON(t *testing.T) {
+	validJSON := `{"ParserConfig":{"version":2,"proxies":[{"source":"https://example.com/sub"}],"outbounds":[]}}`
+	m := wizardmodels.NewWizardModel()
+	m.ParserConfigJSON = validJSON
+	m.ParserConfig = nil
+	if err := EnsureWizardModelParserConfig(m); err != nil {
+		t.Fatal(err)
+	}
+	if m.ParserConfig == nil || len(m.ParserConfig.ParserConfig.Proxies) != 1 {
+		t.Fatalf("expected one proxy, got %#v", m.ParserConfig)
+	}
+	if err := EnsureWizardModelParserConfig(m); err != nil {
+		t.Fatalf("second call should be no-op: %v", err)
+	}
+}
+
+func TestEnsureWizardModelParserConfig_EmptyJSON(t *testing.T) {
+	m := wizardmodels.NewWizardModel()
+	m.ParserConfigJSON = ""
+	m.ParserConfig = nil
+	if err := EnsureWizardModelParserConfig(m); err == nil {
+		t.Fatal("expected error for empty JSON")
 	}
 }
 

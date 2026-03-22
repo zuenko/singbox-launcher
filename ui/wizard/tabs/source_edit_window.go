@@ -1,7 +1,7 @@
 package tabs
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -19,14 +19,28 @@ import (
 	wizardutils "singbox-launcher/ui/wizard/utils"
 )
 
+func showWizardTagConflictError(win fyne.Window) {
+	dialog.ShowError(errors.New(locale.T("wizard.source.wizard_tag_conflict")), win)
+}
+
+func setFyneWidgetToolTip(w fyne.CanvasObject, tip string) {
+	if tb, ok := interface{}(w).(interface{ SetToolTip(string) }); ok {
+		tb.SetToolTip(tip)
+	}
+}
+
 func serializeParserAfterSourceEdit(
 	presenter *wizardpresentation.WizardPresenter,
 	guiState *wizardpresentation.GUIState,
 	m *wizardmodels.WizardModel,
+	errParent fyne.Window,
 ) error {
 	serialized, err := wizardbusiness.SerializeParserConfig(m.ParserConfig)
 	if err != nil {
 		debuglog.ErrorLog("source_edit: SerializeParserConfig: %v", err)
+		if errParent != nil {
+			dialog.ShowError(err, errParent)
+		}
 		return err
 	}
 	m.ParserConfigJSON = serialized
@@ -49,18 +63,36 @@ func showSourceEditWindow(
 	sourceIndex int,
 	shortLabel string,
 ) {
-	if presenter != nil {
-		if w := presenter.OpenViewWindow(); w != nil {
-			w.RequestFocus()
-			return
-		}
+	if presenter == nil {
+		return
 	}
+	// One modal child workflow: finish Outbound Edit or another Source Edit (View slot) first.
+	if w := presenter.OpenOutboundEditWindow(); w != nil {
+		w.RequestFocus()
+		return
+	}
+	if w := presenter.OpenViewWindow(); w != nil {
+		w.RequestFocus()
+		return
+	}
+	presenter.MergeGUIToModel()
+
 	app := fyne.CurrentApp()
 	if app == nil {
 		return
 	}
 	m := presenter.Model()
-	if m == nil || m.ParserConfig == nil || sourceIndex < 0 || sourceIndex >= len(m.ParserConfig.ParserConfig.Proxies) {
+	if m == nil {
+		return
+	}
+	if err := wizardbusiness.EnsureWizardModelParserConfig(m); err != nil {
+		debuglog.ErrorLog("source_edit: EnsureWizardModelParserConfig: %v", err)
+		if parent != nil {
+			dialog.ShowError(err, parent)
+		}
+		return
+	}
+	if sourceIndex < 0 || sourceIndex >= len(m.ParserConfig.ParserConfig.Proxies) {
 		return
 	}
 
@@ -95,7 +127,7 @@ func showSourceEditWindow(
 
 	var exposeOnChanged func(bool)
 	exposeOnChanged = func(v bool) {
-		if !exposeCheck.Enabled() {
+		if exposeCheck.Disabled() {
 			return
 		}
 		pp := proxyRef()
@@ -103,7 +135,7 @@ func showSourceEditWindow(
 			return
 		}
 		pp.ExposeGroupTagsToGlobal = v
-		_ = serializeParserAfterSourceEdit(presenter, guiState, presenter.Model())
+		_ = serializeParserAfterSourceEdit(presenter, guiState, presenter.Model(), win)
 	}
 	exposeCheck.OnChanged = exposeOnChanged
 
@@ -122,13 +154,11 @@ func showSourceEditWindow(
 			exposeCheck.SetChecked(false)
 		}
 		exposeCheck.OnChanged = exposeOnChanged
-		if tb, ok := interface{}(exposeCheck).(interface{ SetToolTip(string) }); ok {
-			if has {
-				tb.SetToolTip("")
-			} else {
-				tb.SetToolTip(locale.T("wizard.source.expose_tags_tooltip"))
-			}
+		tip := locale.T("wizard.source.expose_tags_tooltip")
+		if has {
+			tip = ""
 		}
+		setFyneWidgetToolTip(exposeCheck, tip)
 	}
 
 	refreshExcludeHint := func() {
@@ -165,7 +195,7 @@ func showSourceEditWindow(
 		}
 		p.TagPrefix = strings.TrimSpace(s)
 		wizardbusiness.RenameWizardLocalOutboundTags(p, sourceIndex)
-		_ = serializeParserAfterSourceEdit(presenter, guiState, presenter.Model())
+		_ = serializeParserAfterSourceEdit(presenter, guiState, presenter.Model(), win)
 		syncFormFromModel()
 	}
 
@@ -177,7 +207,7 @@ func showSourceEditWindow(
 		if on {
 			if err := wizardbusiness.EnsureLocalAuto(p, sourceIndex); err != nil {
 				autoCheck.SetChecked(false)
-				dialog.ShowError(fmt.Errorf("%s", locale.T("wizard.source.wizard_tag_conflict")), win)
+				showWizardTagConflictError(win)
 				return
 			}
 		} else {
@@ -185,7 +215,7 @@ func showSourceEditWindow(
 			wizardbusiness.RemoveWizardAutoOutbounds(p)
 			wizardbusiness.SyncExposeFlagWhenNoLocalGroups(p)
 		}
-		_ = serializeParserAfterSourceEdit(presenter, guiState, presenter.Model())
+		_ = serializeParserAfterSourceEdit(presenter, guiState, presenter.Model(), win)
 		syncFormFromModel()
 	}
 
@@ -197,14 +227,14 @@ func showSourceEditWindow(
 		if on {
 			if err := wizardbusiness.EnsureLocalSelect(p, sourceIndex); err != nil {
 				selectCheck.SetChecked(false)
-				dialog.ShowError(fmt.Errorf("%s", locale.T("wizard.source.wizard_tag_conflict")), win)
+				showWizardTagConflictError(win)
 				return
 			}
 		} else {
 			wizardbusiness.RemoveWizardSelectOutbounds(p)
 			wizardbusiness.SyncExposeFlagWhenNoLocalGroups(p)
 		}
-		_ = serializeParserAfterSourceEdit(presenter, guiState, presenter.Model())
+		_ = serializeParserAfterSourceEdit(presenter, guiState, presenter.Model(), win)
 		syncFormFromModel()
 	}
 
@@ -214,7 +244,7 @@ func showSourceEditWindow(
 			return
 		}
 		p.ExcludeFromGlobal = v
-		_ = serializeParserAfterSourceEdit(presenter, guiState, presenter.Model())
+		_ = serializeParserAfterSourceEdit(presenter, guiState, presenter.Model(), win)
 		refreshExcludeHint()
 	}
 
@@ -235,7 +265,10 @@ func showSourceEditWindow(
 	previewListHost := container.NewMax()
 	previewBox := container.NewBorder(previewStatus, nil, nil, nil, previewListHost)
 
+	previewRefreshSeq := 0
 	refreshPreviewTab := func() {
+		previewRefreshSeq++
+		seq := previewRefreshSeq
 		previewStatus.SetText(locale.T("wizard.source.preview_loading"))
 		previewListHost.Objects = nil
 		previewListHost.Add(layout.NewSpacer())
@@ -264,6 +297,9 @@ func showSourceEditWindow(
 				}
 			}
 			fyne.Do(func() {
+				if seq != previewRefreshSeq {
+					return
+				}
 				previewListHost.Objects = nil
 				if err != nil {
 					previewStatus.SetText(locale.Tf("wizard.source.preview_error", err.Error()))

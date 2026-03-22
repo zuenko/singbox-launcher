@@ -15,6 +15,18 @@ func TestLocalAutoOutboundTag(t *testing.T) {
 	}
 }
 
+func TestCommentHasWizardSelect_LegacyMarker(t *testing.T) {
+	if !commentHasWizardSelect("x " + wizardMarkerSelectLegacy + " y") {
+		t.Fatal("legacy WIZARD:select should count as wizard select")
+	}
+	if !commentHasWizardSelect(WizardMarkerSelect) {
+		t.Fatal("WIZARD:selector should match")
+	}
+	if commentHasWizardSelect("no marker here") {
+		t.Fatal("plain comment should not match")
+	}
+}
+
 func TestEnsureLocalAutoSelect(t *testing.T) {
 	ps := &config.ProxySource{TagPrefix: "2:"}
 	if err := EnsureLocalAuto(ps, 1); err != nil {

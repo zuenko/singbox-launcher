@@ -11,6 +11,8 @@ import (
 const (
 	WizardMarkerAuto   = "WIZARD:auto"
 	WizardMarkerSelect = "WIZARD:selector"
+	// wizardMarkerSelectLegacy matches older comments that used "WIZARD:select" instead of WIZARD:selector.
+	wizardMarkerSelectLegacy = "WIZARD:select"
 )
 
 // ErrWizardOutboundTagConflict is returned when enabling a wizard local group would collide with a non-wizard outbound tag.
@@ -39,7 +41,7 @@ func commentHasWizardAuto(comment string) bool {
 }
 
 func commentHasWizardSelect(comment string) bool {
-	return strings.Contains(comment, WizardMarkerSelect) || strings.Contains(comment, "WIZARD:select")
+	return strings.Contains(comment, WizardMarkerSelect) || strings.Contains(comment, wizardMarkerSelectLegacy)
 }
 
 // ProxyHasLocalAuto reports whether the source has an outbound with WIZARD:auto marker.
