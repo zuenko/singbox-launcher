@@ -517,7 +517,7 @@ singbox-launcher/
 │   │   │
 │   ├── fynewidget/             # Переиспользуемые мелкие Fyne-виджеты
 │   │   │   - NewCheckWithContent()                     # Пустой Check + произвольный контент: тап/hover с контента на галку; опциональный тултип на контенте
-│   │   │   - NewSecondaryTapWrap()                     # Обёртка строки: `TappedSecondary` (контекстное меню на вкладке Servers)
+│   │   │   - NewSecondaryTapWrap()                     # Обёртка строки: `MouseDown` сохраняет модификаторы, `Tapped`/`OnPrimary(mods)` — выбор (Ctrl/Cmd/Shift надёжнее, чем `CurrentKeyModifiers` на отпускании в Windows); `TappedSecondary` → контекстное меню
 │   │   │
 │   ├── wizardsync/             # Предикаты слияния GUI→модель визарда без Fyne (тестируемо без CGO/GL)
 │   │   │   - GuiTextAwaitingProgrammaticFill() / FinalOutboundSelectReadLooksStale()

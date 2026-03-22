@@ -20,7 +20,11 @@
 
 - **Servers tab — context menu:** Right-click a proxy row → first line is Clash **`type`** in **lowercase** (e.g. `selector`, `direct`, `vless`), then **Copy link** (normal foreground; top row uses `Action: nil`, not `Disabled`). Share URI from **outbound** or **WireGuard** `endpoints[]`. Unsupported outbounds still show an error when copying.
 
-- **Servers tab — list filter:** Small **Visibility / VisibilityOff** themed-icon toggle sits **left of sort-by-delay**, then **Test all**; it hides or shows proxies whose last ping is an **error** (`Delay == -1`); full list and batch ping are unchanged (tooltips explain the two states). Each toggle updates the bottom status to **Total / Available** counts (`%d / %d`, available = not `Delay == -1`).
+- **Servers tab — list filter:** Small **Visibility / VisibilityOff** themed-icon toggle sits **left of sort-by-delay**, then **Test all**; it hides or shows proxies whose last ping is an **error** (`Delay == -1`); full list and batch ping are unchanged (tooltips explain the two states). Rows that are **selected** (including **multi-select**) stay visible on error ping. Each toggle updates the bottom status to **Total / Available** counts (`%d / %d`, available = not `Delay == -1`).
+
+- **Servers tab — multi-select:** **Ctrl** (or **Cmd** on macOS) **+ click** toggles a row in the selection; **Shift + click** selects a **range** from the last plain/toggle click (anchor) to the clicked row; plain click replaces the selection with one row. Status shows **count** when more than one proxy is selected. **Copy share URIs** uses **all visible rows** when **0 or 1** proxy is selected, and **only selected rows** (in list order) when **2+** are selected; the button **tooltip** switches accordingly.
+
+- **Servers tab — scroll after active change:** After **Switch** (▶️) the list is **reordered** with **`reorderWithPinned`** (same as API load) and the scroller jumps **to the top** so **direct-out** / **active** rows stay visible. **Reload** from API does the same **ScrollToTop** after refresh.
 
 - **Wizard — unsaved prompt:** Tab switches use a **quiet** GUI→model sync (no spurious **dirty** flag). **Save before close** appears only when data actually changed; opening the wizard, switching tabs, and closing without edits no longer triggers the save/discard dialog. Closing still runs a full sync first so the current tab’s edits are reflected in the check. **Outbounds** list (**↑/↓**, Edit, Add, Delete): the configurator updates the JSON entry under `ParserConfigUpdating`, so **`MarkAsChanged`** is called explicitly after apply — reorder and other list actions now correctly trigger the unsaved dialog.
 
@@ -112,7 +116,11 @@
 
 - **Вкладка Servers:** **ПКМ** — сверху тип из поля **`type`** в **нижнем регистре** (`selector`, `direct`, `vless`, …), обычный цвет текста; ниже **«Копировать ссылку»**. Share URI из **outbound** или **WireGuard** в **`endpoints[]`**. Неподдерживаемые outbound по-прежнему дают ошибку при копировании.
 
-- **Вкладка Servers — фильтр списка:** компактная кнопка **видимость / скрыто** стоит **слева от сортировки по задержке**, затем **«тест»**; переключает отображение прокси с **ошибкой последнего пинга**; полный список в памяти и массовый ping не меняются (подсказки на кнопке описывают оба состояния). При каждом нажатии в статусе строка **всего / доступно** (`%d / %d`, доступно = не ошибка пинга).
+- **Вкладка Servers — фильтр списка:** компактная кнопка **видимость / скрыто** стоит **слева от сортировки по задержке**, затем **«тест»**; переключает отображение прокси с **ошибкой последнего пинга**; полный список в памяти и массовый ping не меняются (подсказки на кнопке описывают оба состояния). Строки из **выделения** (в том числе при **мультивыборе**) не скрываются при ошибке пинга. При каждом нажатии в статусе строка **всего / доступно** (`%d / %d`, доступно = не ошибка пинга).
+
+- **Вкладка Servers — мультивыбор:** **Ctrl** (на macOS также **Cmd**) **+ клик** — добавить/убрать строку из выделения; **Shift + клик** — **диапазон** от якоря (последний обычный или Ctrl-клик) до текущей строки; обычный клик — одна строка. В статусе при нескольких прокси показывается **число**. **Копирование share URI:** при **0 или 1** выделенном — как раньше **все видимые** строки; при **2+** выделенных — **только они**, в порядке списка; **подсказка** кнопки переключается.
+
+- **Вкладка Servers — прокрутка после смены активного:** после **Switch** (▶️) список снова **упорядочивается** через **`reorderWithPinned`** (как после загрузки с API) и список **прокручивается в начало**, чтобы **direct-out** и **активный** прокси были в зоне видимости. После **перезагрузки списка с API** выполняется то же **ScrollToTop**.
 
 - **Визард — Outbounds, несохранённое:** список outbounds (**↑/↓**, правка, добавление, удаление) обновляет JSON под флагом **`ParserConfigUpdating`**, поэтому **`MarkAsChanged`** вызывается явно после применения — диалог «сохранить при закрытии» снова появляется после смены порядка и прочих действий в списке.
 
