@@ -193,7 +193,7 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 	rulesScroll := container.NewScroll(guiState.DNSRulesEntry)
 	rulesScroll.Direction = container.ScrollBoth
 	rulesHeight := canvas.NewRectangle(color.Transparent)
-	rulesHeight.SetMinSize(fyne.NewSize(0, 120))
+		rulesHeight.SetMinSize(fyne.NewSize(0, 170)) // was 120; +50 px for rules JSON area
 	rulesBlock := container.NewMax(rulesHeight, rulesScroll)
 
 	rulesLabel := widget.NewLabel(locale.T("wizard.dns.label_rules"))
@@ -388,8 +388,7 @@ func deleteDNSServerAt(p *wizardpresentation.WizardPresenter, index int) {
 }
 
 // applyDNSServerJSON parses JSON, validates tag and uniqueness, then replaces editIndex or appends (editIndex < 0).
-// dnsServerDialogEntryMinHeight is the minimum height for the JSON editor in Add/Edit DNS server dialogs
-// (2× the rules text block min height on the DNS tab).
+// dnsServerDialogEntryMinHeight is the minimum height for the JSON editor in Add/Edit DNS server dialogs.
 const dnsServerDialogEntryMinHeight = 240
 
 func dnsServerDialogJSONArea(entry *widget.Entry) fyne.CanvasObject {

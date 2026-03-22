@@ -355,7 +355,7 @@ singbox-launcher/
 │       │   ├── source_tab.go   # Вкладка Sources & ParserConfig
 │       │   │   │   - createSourceTab()                       # Создание вкладки Sources & ParserConfig
 │       │   │   │
-│       │   ├── source_edit_window.go  # Окно Edit источника (вкладки Настройки / Preview, exclude/expose, WIZARD-синхронизация через business)
+│       │   ├── source_edit_window.go  # Окно Edit источника (Настройки / Preview / JSON; Preview: локальные outbounds + ноды подписки; exclude/expose, WIZARD через business)
 │       │   │   │   - showSourceEditWindow()                  # Диалог правки одного ProxySource
 │       │   │   │
 │       │   ├── rules_tab.go    # Вкладка правил
@@ -846,7 +846,7 @@ singbox-launcher/
   - `createSourceTab()` - создание вкладки Sources & ParserConfig
   - UI компоненты первой вкладки (URL поля, кнопки); кнопка **Edit** открывает окно правки источника
 - `source_edit_window.go`:
-  - `showSourceEditWindow()` — диалог одного `ProxySource`: вкладки настроек и превью, `exclude_from_global` / `expose_group_tags_to_global`, вызовы `business` для маркеров **WIZARD:** в `proxies[].outbounds`
+  - `showSourceEditWindow()` — диалог одного `ProxySource`: вкладки **Настройки**, **Просмотр** (локальные outbounds + ноды), **JSON** (read-only `proxies[i]`); `exclude_from_global` / `expose_group_tags_to_global`; `business` для маркеров **WIZARD:** в `proxies[].outbounds`; обновление Preview/JSON при смене настроек, если вкладка активна
 - `rules_tab.go`:
   - `createTemplateTab()` - создание вкладки правил
   - `createRulesScroll()` - создание прокручиваемого списка правил

@@ -429,6 +429,14 @@ func setupTabChangeHandler(presenter *wizardpresentation.WizardPresenter, guiSta
 		}
 		previousTabIndex = newIndex
 
+		// Outbounds tab: sync struct from JSON and rebuild configurator list (Sources Edit updates JSON/entry only).
+		if item.Text == locale.T("wizard.tab_outbounds") {
+			presenter.ApplyParserConfigFromCurrentJSON()
+			if guiState.RefreshOutboundsConfiguratorList != nil {
+				guiState.RefreshOutboundsConfiguratorList()
+			}
+		}
+
 		// Handle tab-specific actions
 		if item == rulesTabItem {
 			// Trigger async parsing to ensure outbounds are up-to-date

@@ -11,7 +11,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -157,23 +156,31 @@ func moveOutboundDown(parserConfig *config.ParserConfig, r outboundRow) {
 // ParserConfig is taken from the model (editPresenter.Model()) so the configurator always edits the current config.
 // onApply is called after each mutation (Edit/Add/Delete/Up/Down) so the caller can serialize and sync.
 // editPresenter is required (Model() is used to get ParserConfig); when set, the Edit/Add window is registered for overlay.
-func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresenter, onApply func()) fyne.CanvasObject {
+// The returned refresh function rebuilds the list from the current model (call after ParserConfig changes outside the list, e.g. Sources → Edit).
+func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresenter, onApply func()) (fyne.CanvasObject, func()) {
 	listContent := container.NewVBox()
 
 	var refreshList func()
 	refreshList = func() {
 		parserConfig := getParserConfig(editPresenter.Model())
 		if parserConfig == nil {
+			listContent.Objects = nil
+			listContent.Refresh()
 			return
 		}
 		rows := collectRows(parserConfig)
 		items := make([]fyne.CanvasObject, 0, len(rows))
+		setReorderBtnTip := func(w fyne.CanvasObject, tip string) {
+			if tb, ok := interface{}(w).(interface{ SetToolTip(string) }); ok {
+				tb.SetToolTip(tip)
+			}
+		}
 		for rowIdx, r := range rows {
 			r := r
 			rowIdx := rowIdx
-			label := r.Outbound.Tag + " (" + r.Outbound.Type + ") — " + r.SourceLabel
-			label = strings.ToValidUTF8(label, "")
-			label = wizardutils.TruncateStringEllipsis(label, wizardutils.MaxLabelRunes, "...")
+			rawLine := r.Outbound.Tag + " (" + r.Outbound.Type + ") — " + r.SourceLabel
+			rawLine = strings.ToValidUTF8(rawLine, "")
+			displayLine := wizardutils.TruncateStringEllipsis(rawLine, wizardutils.MaxLabelRunes, "...")
 			canUp := rowIdx > 0 && sameScope(rows[rowIdx], rows[rowIdx-1])
 			canDown := rowIdx < len(rows)-1 && sameScope(rows[rowIdx], rows[rowIdx+1])
 
@@ -198,6 +205,9 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 			})
 			if !canUp {
 				upBtn.Disable()
+				setReorderBtnTip(upBtn, locale.T("wizard.outbound.reorder_up_off"))
+			} else {
+				setReorderBtnTip(upBtn, locale.T("wizard.outbound.reorder_up"))
 			}
 
 			downBtn := widget.NewButton("↓", func() {
@@ -221,6 +231,9 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 			})
 			if !canDown {
 				downBtn.Disable()
+				setReorderBtnTip(downBtn, locale.T("wizard.outbound.reorder_down_off"))
+			} else {
+				setReorderBtnTip(downBtn, locale.T("wizard.outbound.reorder_down"))
 			}
 
 			editBtn := widget.NewButtonWithIcon(locale.T("wizard.shared.button_edit"), theme.DocumentCreateIcon(), func() {
@@ -289,12 +302,20 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 				}
 			})
 
-			// Add fixed 30px transparent padding on the right inside the row,
-			// so scrollbar has its own visual strip without increasing label width.
+			// Add transparent padding on the right so the list scrollbar has a visual strip.
 			rightPadding := canvas.NewRectangle(color.Transparent)
 			rightPadding.SetMinSize(fyne.NewSize(10, 0))
 
-			row := container.NewHBox(upBtn, downBtn, widget.NewLabel(label), layout.NewSpacer(), editBtn, delBtn, rightPadding)
+			// Border + ellipsis (same idea as Sources list): HBox would give the label its full text min width → horizontal scroll.
+			nameLabel := widget.NewLabel(displayLine)
+			nameLabel.Wrapping = fyne.TextWrapOff
+			nameLabel.Truncation = fyne.TextTruncateEllipsis
+			if tb, ok := interface{}(nameLabel).(interface{ SetToolTip(string) }); ok {
+				tb.SetToolTip(rawLine)
+			}
+			leftArrows := container.NewHBox(upBtn, downBtn)
+			rightControls := container.NewHBox(editBtn, delBtn, rightPadding)
+			row := container.NewBorder(nil, nil, leftArrows, rightControls, nameLabel)
 			items = append(items, row)
 		}
 		listContent.Objects = items
@@ -334,5 +355,5 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 		nil,
 		nil, nil,
 		scroll,
-	)
+	), refreshList
 }

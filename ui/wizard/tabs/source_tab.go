@@ -211,7 +211,20 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 					copyText = strings.Join(proxy.Connections, "\n")
 				}
 				sourceLabel := widget.NewLabel(shortLabel)
+				sourceLabel.Wrapping = fyne.TextWrapOff
 				sourceLabel.Truncation = fyne.TextTruncateEllipsis
+
+				// Show tag_prefix in the row (often short like "BL:") so list stays scannable without opening Edit.
+				var rowCenter fyne.CanvasObject = sourceLabel
+				if pfx := strings.TrimSpace(tagPrefix); pfx != "" {
+					pfxShow := wizardutils.TruncateStringEllipsis(pfx, 24, "...")
+					prefixLabel := widget.NewLabel(pfxShow)
+					prefixLabel.Importance = widget.MediumImportance
+					if pfxShow != pfx {
+						setFyneWidgetToolTip(prefixLabel, pfx)
+					}
+					rowCenter = container.NewBorder(nil, nil, prefixLabel, nil, sourceLabel)
+				}
 
 				copyBtn := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
 					if copyText == "" {
@@ -279,7 +292,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 					delBtn,
 					rowGutter,
 				)
-				row := container.NewBorder(nil, nil, nil, rightControls, sourceLabel)
+				row := container.NewBorder(nil, nil, nil, rightControls, rowCenter)
 				sourcesBox.Add(row)
 			}(i)
 		}
@@ -527,12 +540,16 @@ func CreateOutboundsAndParserConfigTab(presenter *wizardpresentation.WizardPrese
 		if guiState.RefreshSourcesList != nil {
 			guiState.RefreshSourcesList()
 		}
+		if guiState.RefreshOutboundsConfiguratorList != nil {
+			guiState.RefreshOutboundsConfiguratorList()
+		}
 		// SetText runs under ParserConfigUpdating, so ParserConfigEntry.OnChanged skips MarkAsChanged;
 		// outbounds list actions (Edit/Add/Delete, ↑/↓) must mark dirty explicitly.
 		presenter.MarkAsChanged()
 	}
 
-	configuratorContent := outbounds_configurator.NewConfiguratorContent(guiState.Window, presenter, onConfiguratorApply)
+	configuratorContent, refreshOutboundsConfigurator := outbounds_configurator.NewConfiguratorContent(guiState.Window, presenter, onConfiguratorApply)
+	guiState.RefreshOutboundsConfiguratorList = refreshOutboundsConfigurator
 
 	// No Parse button on this tab per SPEC: update is automatic via configurator callback and tab switch (Rules/Preview).
 	headerRow := container.NewHBox(

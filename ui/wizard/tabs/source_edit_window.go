@@ -1,10 +1,14 @@
 package tabs
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"image/color"
 	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
@@ -19,6 +23,12 @@ import (
 	wizardutils "singbox-launcher/ui/wizard/utils"
 )
 
+// Min heights for Source Edit dialog tab bodies (child window; do not use main window canvas before Show).
+const (
+	sourceEditSettingsScrollMinH float32 = 260
+	sourceEditJSONScrollMinH     float32 = 380
+)
+
 func showWizardTagConflictError(win fyne.Window) {
 	dialog.ShowError(errors.New(locale.T("wizard.source.wizard_tag_conflict")), win)
 }
@@ -27,6 +37,27 @@ func setFyneWidgetToolTip(w fyne.CanvasObject, tip string) {
 	if tb, ok := interface{}(w).(interface{ SetToolTip(string) }); ok {
 		tb.SetToolTip(tip)
 	}
+}
+
+// formatLocalOutboundPreviewLine is a one-line summary for proxies[i].outbounds[] in the Edit → Preview tab.
+func formatLocalOutboundPreviewLine(ob *config.OutboundConfig) string {
+	if ob == nil {
+		return ""
+	}
+	typ := ob.Type
+	if typ == "" {
+		typ = "?"
+	}
+	comment := strings.TrimSpace(ob.Comment)
+	rs := []rune(comment)
+	const maxR = 96
+	if len(rs) > maxR {
+		comment = string(rs[:maxR-1]) + "…"
+	}
+	if ob.Tag == "" {
+		return fmt.Sprintf("[%s]  %s", typ, comment)
+	}
+	return fmt.Sprintf("%s  [%s]  %s", ob.Tag, typ, comment)
 }
 
 func serializeParserAfterSourceEdit(
@@ -55,7 +86,7 @@ func serializeParserAfterSourceEdit(
 	return nil
 }
 
-// showSourceEditWindow opens Settings | Preview for one proxy source (SPEC 026).
+// showSourceEditWindow opens Settings | Preview | JSON for one proxy source (SPEC 026).
 func showSourceEditWindow(
 	presenter *wizardpresentation.WizardPresenter,
 	guiState *wizardpresentation.GUIState,
@@ -99,13 +130,11 @@ func showSourceEditWindow(
 	title := locale.Tf("wizard.source.edit_title", shortLabel)
 	title = wizardutils.TruncateStringEllipsis(title, wizardutils.MaxLabelRunes, "...")
 	win := app.NewWindow(title)
-	if presenter != nil {
-		presenter.SetViewWindow(win)
-		win.SetOnClosed(func() {
-			presenter.ClearViewWindow()
-			presenter.UpdateChildOverlay()
-		})
-	}
+	presenter.SetViewWindow(win)
+	win.SetOnClosed(func() {
+		presenter.ClearViewWindow()
+		presenter.UpdateChildOverlay()
+	})
 
 	proxyRef := func() *config.ProxySource {
 		mm := presenter.Model()
@@ -125,6 +154,8 @@ func showSourceEditWindow(
 	hintLabel := widget.NewLabel("")
 	hintLabel.Wrapping = fyne.TextWrapWord
 
+	var afterSync func()
+
 	var exposeOnChanged func(bool)
 	exposeOnChanged = func(v bool) {
 		if exposeCheck.Disabled() {
@@ -136,6 +167,9 @@ func showSourceEditWindow(
 		}
 		pp.ExposeGroupTagsToGlobal = v
 		_ = serializeParserAfterSourceEdit(presenter, guiState, presenter.Model(), win)
+		if afterSync != nil {
+			afterSync()
+		}
 	}
 	exposeCheck.OnChanged = exposeOnChanged
 
@@ -186,6 +220,9 @@ func showSourceEditWindow(
 		excludeCheck.SetChecked(p.ExcludeFromGlobal)
 		refreshExposeAvailability()
 		refreshExcludeHint()
+		if afterSync != nil {
+			afterSync()
+		}
 	}
 
 	prefixEntry.OnChanged = func(s string) {
@@ -246,6 +283,9 @@ func showSourceEditWindow(
 		p.ExcludeFromGlobal = v
 		_ = serializeParserAfterSourceEdit(presenter, guiState, presenter.Model(), win)
 		refreshExcludeHint()
+		if afterSync != nil {
+			afterSync()
+		}
 	}
 
 	settingsContent := container.NewVBox(
@@ -259,7 +299,7 @@ func showSourceEditWindow(
 		hintLabel,
 	)
 	settingsScroll := container.NewVScroll(settingsContent)
-	settingsScroll.SetMinSize(fyne.NewSize(360, 280))
+	settingsScroll.SetMinSize(fyne.NewSize(0, sourceEditSettingsScrollMinH))
 
 	previewStatus := widget.NewLabel(locale.T("wizard.source.preview_loading"))
 	previewListHost := container.NewMax()
@@ -301,52 +341,137 @@ func showSourceEditWindow(
 					return
 				}
 				previewListHost.Objects = nil
+				p := proxyRef()
+				localLines := make([]string, 0, 8)
+				if p != nil {
+					for i := range p.Outbounds {
+						localLines = append(localLines, formatLocalOutboundPreviewLine(&p.Outbounds[i]))
+					}
+				}
 				if err != nil {
-					previewStatus.SetText(locale.Tf("wizard.source.preview_error", err.Error()))
-					previewListHost.Add(layout.NewSpacer())
-					previewListHost.Refresh()
-					return
+					previewStatus.SetText(locale.Tf("wizard.source.preview_status_err", len(localLines), err.Error()))
+				} else {
+					previewStatus.SetText(locale.Tf("wizard.source.preview_status_ok", len(localLines), len(nodes)))
 				}
-				if len(nodes) == 0 {
-					previewStatus.SetText(locale.T("wizard.source.view_no_servers"))
-					previewListHost.Add(layout.NewSpacer())
-					previewListHost.Refresh()
-					return
+				body := container.NewVBox()
+				lblLocal := widget.NewLabel(locale.T("wizard.source.preview_section_local"))
+				lblLocal.TextStyle = fyne.TextStyle{Bold: true}
+				body.Add(lblLocal)
+				if len(localLines) == 0 {
+					body.Add(widget.NewLabel(locale.T("wizard.source.preview_no_local_outbounds")))
+				} else {
+					ll := localLines
+					localList := widget.NewList(
+						func() int { return len(ll) },
+						func() fyne.CanvasObject { return widget.NewLabel("") },
+						func(id int, o fyne.CanvasObject) {
+							o.(*widget.Label).SetText(ll[id])
+						},
+					)
+					h := float32(24 * len(localLines))
+					if h > 140 {
+						h = 140
+					}
+					if h < 48 {
+						h = 48
+					}
+					scLoc := container.NewScroll(localList)
+					scLoc.SetMinSize(fyne.NewSize(0, h))
+					body.Add(scLoc)
 				}
-				previewStatus.SetText(locale.Tf("wizard.source.view_server_count", len(nodes)))
-				list := widget.NewList(
-					func() int { return len(nodes) },
-					func() fyne.CanvasObject { return widget.NewLabel("") },
-					func(id int, o fyne.CanvasObject) {
-						o.(*widget.Label).SetText(nodeDisplayLine(nodes[id]))
-					},
-				)
-				sc := container.NewScroll(list)
-				sc.SetMinSize(fyne.NewSize(0, 240))
-				previewListHost.Add(sc)
+				body.Add(widget.NewSeparator())
+				lblSrv := widget.NewLabel(locale.T("wizard.source.preview_section_servers"))
+				lblSrv.TextStyle = fyne.TextStyle{Bold: true}
+				body.Add(lblSrv)
+				// On parse error, previewStatus already shows preview_status_err; no duplicate line here.
+				if err == nil {
+					if len(nodes) == 0 {
+						body.Add(widget.NewLabel(locale.T("wizard.source.view_no_servers")))
+					} else {
+						nn := nodes
+						srvList := widget.NewList(
+							func() int { return len(nn) },
+							func() fyne.CanvasObject { return widget.NewLabel("") },
+							func(id int, o fyne.CanvasObject) {
+								o.(*widget.Label).SetText(nodeDisplayLine(nn[id]))
+							},
+						)
+						sc := container.NewScroll(srvList)
+						sc.SetMinSize(fyne.NewSize(0, 220))
+						body.Add(sc)
+					}
+				}
+				previewListHost.Add(container.NewVScroll(body))
 				previewListHost.Refresh()
 			})
 		}()
 	}
 
+	// JSON: same pattern as wizard Preview tab — MultiLineEntry inside Max + VScroll (no duplicate tab title).
+	jsonEntry := widget.NewMultiLineEntry()
+	jsonEntry.Wrapping = fyne.TextWrapOff
+	jsonEntry.OnChanged = func(string) { /* display-only; changes are not saved */ }
+	jsonScroll := container.NewVScroll(container.NewMax(
+		canvas.NewRectangle(color.Transparent),
+		jsonEntry,
+	))
+	jsonScroll.SetMinSize(fyne.NewSize(0, sourceEditJSONScrollMinH))
+
+	refreshJSONTab := func() {
+		p := proxyRef()
+		if p == nil {
+			jsonEntry.SetText("")
+			return
+		}
+		b, jerr := json.MarshalIndent(p, "", "  ")
+		if jerr != nil {
+			jsonEntry.SetText(jerr.Error())
+			return
+		}
+		jsonEntry.SetText(string(b))
+	}
+
+	jsonHint := widget.NewLabel(locale.T("wizard.source.json_hint"))
+	jsonHint.Wrapping = fyne.TextWrapWord
+	jsonCol := container.NewVBox(jsonHint, jsonScroll)
+
 	settingsTab := container.NewTabItem(locale.T("wizard.source.tab_settings"), settingsScroll)
 	previewTab := container.NewTabItem(locale.T("wizard.source.tab_preview"), previewBox)
-	tabs := container.NewAppTabs(settingsTab, previewTab)
-	tabs.OnSelected = func(ti *container.TabItem) {
-		if ti == previewTab {
+	jsonTab := container.NewTabItem(locale.T("wizard.source.tab_json"), jsonCol)
+	tabs := container.NewAppTabs(settingsTab, previewTab, jsonTab)
+	afterSync = func() {
+		if tabs.Selected() == previewTab {
 			refreshPreviewTab()
+		}
+		if tabs.Selected() == jsonTab {
+			refreshJSONTab()
+		}
+	}
+	tabs.OnSelected = func(ti *container.TabItem) {
+		switch ti {
+		case previewTab:
+			refreshPreviewTab()
+		case jsonTab:
+			refreshJSONTab()
 		}
 	}
 
-	closeBtn := widget.NewButton(locale.T("wizard.source.edit_close"), func() { win.Close() })
-	root := container.NewBorder(nil, container.NewHBox(layout.NewSpacer(), closeBtn), nil, nil, tabs)
+	cancelBtn := widget.NewButton(locale.T("wizard.outbound.button_cancel"), func() {
+		win.Close()
+	})
+	saveBtn := widget.NewButton(locale.T("wizard.outbound.button_save"), func() {
+		if err := serializeParserAfterSourceEdit(presenter, guiState, presenter.Model(), win); err != nil {
+			return
+		}
+		win.Close()
+	})
+	buttonsRow := container.NewHBox(layout.NewSpacer(), cancelBtn, saveBtn)
+	root := container.NewBorder(nil, buttonsRow, nil, nil, tabs)
 
 	win.SetContent(root)
 	win.Resize(fyne.NewSize(440, 420))
 	win.CenterOnScreen()
 	syncFormFromModel()
 	win.Show()
-	if presenter != nil {
-		presenter.UpdateChildOverlay()
-	}
+	presenter.UpdateChildOverlay()
 }

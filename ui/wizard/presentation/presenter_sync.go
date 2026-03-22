@@ -99,6 +99,9 @@ func (p *WizardPresenter) applyWizardWidgetsFromModel() {
 	if p.guiState.RefreshSourcesList != nil {
 		p.guiState.RefreshSourcesList()
 	}
+	if p.guiState.RefreshOutboundsConfiguratorList != nil {
+		p.guiState.RefreshOutboundsConfiguratorList()
+	}
 	if p.guiState.RefreshDNSList != nil {
 		p.guiState.RefreshDNSList()
 	}
@@ -445,4 +448,37 @@ func (p *WizardPresenter) ValidateAndApplyParserConfigFromEntry() {
 	}
 	p.model.PreviewNeedsParse = true
 	wizardbusiness.InvalidatePreviewCache(p.model)
+}
+
+// ApplyParserConfigFromCurrentJSON replaces model.ParserConfig from model.ParserConfigJSON when JSON parses and validates,
+// normalizes via SerializeParserConfig, and updates the Outbounds entry. Used when opening the Outbounds tab so the
+// configurator list matches JSON after edits on Sources (local outbounds) or other tabs.
+func (p *WizardPresenter) ApplyParserConfigFromCurrentJSON() {
+	if p.guiState == nil {
+		return
+	}
+	raw := strings.TrimSpace(p.model.ParserConfigJSON)
+	if raw == "" {
+		p.model.ParserConfig = nil
+		return
+	}
+	var pc config.ParserConfig
+	if err := json.Unmarshal([]byte(raw), &pc); err != nil {
+		return
+	}
+	if err := wizardbusiness.ValidateParserConfig(&pc); err != nil {
+		return
+	}
+	serialized, err := wizardbusiness.SerializeParserConfig(&pc)
+	if err != nil {
+		return
+	}
+	p.model.ParserConfig = &pc
+	p.model.ParserConfigJSON = serialized
+	p.guiState.LastValidParserConfigJSON = serialized
+	if p.guiState.ParserConfigEntry != nil {
+		p.guiState.ParserConfigUpdating = true
+		p.guiState.ParserConfigEntry.SetText(serialized)
+		p.guiState.ParserConfigUpdating = false
+	}
 }

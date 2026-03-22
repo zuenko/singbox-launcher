@@ -279,6 +279,13 @@
   "wizard.source.edit_title": "Source — %s",
   "wizard.source.tab_settings": "Settings",
   "wizard.source.tab_preview": "Preview",
+  "wizard.source.tab_json": "JSON",
+  "wizard.source.json_hint": "Read-only snapshot of this source (proxies[i]). Updates when you change Settings or return to this tab.",
+  "wizard.source.preview_section_local": "Local outbounds (this source)",
+  "wizard.source.preview_section_servers": "Servers from subscription / links",
+  "wizard.source.preview_no_local_outbounds": "None — enable Local auto or Local select in Settings.",
+  "wizard.source.preview_status_ok": "Local outbounds: %d · Servers: %d",
+  "wizard.source.preview_status_err": "Local outbounds: %d · Servers: load failed — %s",
   "wizard.source.label_prefix": "Tag prefix",
   "wizard.source.local_auto": "Local auto (urltest)",
   "wizard.source.local_select": "Local select",
@@ -522,5 +529,9 @@
   "wizard.outbound.error_tag_required": "tag is required",
   "wizard.outbound.error_open_docs": "failed to open documentation",
   "wizard.outbound.configurator_label": "Outbounds:",
+  "wizard.outbound.reorder_up": "Move up (same subscription or global list).",
+  "wizard.outbound.reorder_up_off": "Cannot move up: already first in this block, or the row above is another subscription or the global list.",
+  "wizard.outbound.reorder_down": "Move down (same subscription or global list).",
+  "wizard.outbound.reorder_down_off": "Cannot move down: already last in this block, or the row below is another subscription or the global list.",
   "wizard.outbound.button_add": "Add"
 }

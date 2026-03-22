@@ -279,6 +279,13 @@
   "wizard.source.edit_title": "Источник — %s",
   "wizard.source.tab_settings": "Настройки",
   "wizard.source.tab_preview": "Просмотр",
+  "wizard.source.tab_json": "JSON",
+  "wizard.source.json_hint": "Только чтение: снимок этого источника (proxies[i]). Обновляется при смене настроек или при открытии вкладки.",
+  "wizard.source.preview_section_local": "Локальные outbounds (этот источник)",
+  "wizard.source.preview_section_servers": "Серверы из подписки / ссылок",
+  "wizard.source.preview_no_local_outbounds": "Нет — включите «Локальный auto» или «Локальный select» в настройках.",
+  "wizard.source.preview_status_ok": "Локальные outbounds: %d · Серверов: %d",
+  "wizard.source.preview_status_err": "Локальные outbounds: %d · Серверы: ошибка загрузки — %s",
   "wizard.source.label_prefix": "Префикс тега",
   "wizard.source.local_auto": "Локальный auto (urltest)",
   "wizard.source.local_select": "Локальный select",
@@ -522,5 +529,9 @@
   "wizard.outbound.error_tag_required": "тег обязателен",
   "wizard.outbound.error_open_docs": "не удалось открыть документацию",
   "wizard.outbound.configurator_label": "Outbound'ы:",
+  "wizard.outbound.reorder_up": "Выше (только внутри этой подписки или глобального списка).",
+  "wizard.outbound.reorder_up_off": "Нельзя выше: уже первый в блоке, или строка выше — другая подписка / глобальный список.",
+  "wizard.outbound.reorder_down": "Ниже (только внутри этой подписки или глобального списка).",
+  "wizard.outbound.reorder_down_off": "Нельзя ниже: уже последний в блоке, или строка ниже — другая подписка / глобальный список.",
   "wizard.outbound.button_add": "Добавить"
 }

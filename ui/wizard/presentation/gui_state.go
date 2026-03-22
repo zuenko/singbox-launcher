@@ -76,6 +76,10 @@ type GUIState struct {
 	// Optional refresh for Sources list (set by CreateSourcesTab); called from SyncModelToGUI.
 	RefreshSourcesList func()
 
+	// Optional refresh for Outbounds configurator list (set by CreateOutboundsAndParserConfigTab).
+	// Must run after ParserConfig/proxies change from Sources Edit, UpdateParserConfig, or tab switch.
+	RefreshOutboundsConfiguratorList func()
+
 	// DNS tab
 	DNSRulesEntry            *widget.Entry
 	DNSFinalSelect           *widget.Select
