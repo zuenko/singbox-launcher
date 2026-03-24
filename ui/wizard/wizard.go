@@ -219,8 +219,8 @@ func initializeWizardContent(presenter *wizardpresentation.WizardPresenter, guiS
 	// Setup tab change handler
 	setupTabChangeHandler(presenter, guiState, wizardWindow, tabs, rulesTabItem, previewTabItem, model, &currentTabIndex)
 
-	// Sync model to GUI after initial setup
-	presenter.SyncModelToGUI()
+	// Sync model to GUI after initial setup (Rules tab уже создана выше — без повторного пересоздания)
+	presenter.SyncModelToGUIInitial()
 
 	// Set initial window content
 	setWindowContent(guiState, wizardWindow, tabs)

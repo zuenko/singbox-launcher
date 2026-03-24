@@ -147,10 +147,13 @@ func (p *WizardPresenter) RefreshOutboundOptions() {
 
 	wizardbusiness.EnsureFinalSelected(p.model, options)
 
-	p.guiState.UpdatingOutboundOptions = true
-	debuglog.DebugLog("RefreshOutboundOptions: UpdatingOutboundOptions set to true")
-
 	p.UpdateUI(func() {
+		// Флаг только здесь, не до UpdateUI: иначе applyWizardWidgetsFromModel() (SyncModelToGUI
+		// сразу после создания табов) успевает выставить false до этого колбэка — SetSelected вызовет
+		// OnChanged и ложный MarkAsChanged при закрытии визарда без правок.
+		p.guiState.UpdatingOutboundOptions = true
+		debuglog.DebugLog("RefreshOutboundOptions: UpdatingOutboundOptions set to true")
+
 		for _, ruleWidget := range p.guiState.RuleOutboundSelects {
 			if ruleWidget.RuleState == nil {
 				continue

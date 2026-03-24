@@ -20,6 +20,7 @@ import (
 	"fyne.io/fyne/v2/container"
 
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/locale"
 )
 
 // RefreshRulesTab refreshes the Rules tab content.
@@ -32,8 +33,9 @@ func (p *WizardPresenter) RefreshRulesTab(createRulesTab func(*WizardPresenter) 
 
 	// Find Rules tab
 	var rulesTabItem *container.TabItem
+	rulesTitle := locale.T("wizard.tab_rules")
 	for _, tabItem := range p.guiState.Tabs.Items {
-		if tabItem.Text == "Rules" {
+		if tabItem.Text == rulesTitle {
 			rulesTabItem = tabItem
 			break
 		}

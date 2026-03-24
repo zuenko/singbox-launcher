@@ -63,9 +63,37 @@ func (p *WizardPresenter) TriggerParseForPreview() {
 		}
 		if err := wizardbusiness.ParseAndPreview(p, configService); err != nil {
 			debuglog.ErrorLog("TriggerParseForPreview: ParseAndPreview failed: %v", err)
+			SafeFyneDo(p.guiState.Window, func() {
+				if p.guiState.TemplatePreviewEntry != nil {
+					p.SetTemplatePreviewText(locale.Tf("wizard.preview.error", err))
+				}
+				if p.guiState.TemplatePreviewStatusLabel != nil {
+					p.guiState.TemplatePreviewStatusLabel.SetText(locale.Tf("wizard.preview.status_error", err))
+				}
+				if p.guiState.ShowPreviewButton != nil {
+					p.guiState.ShowPreviewButton.Enable()
+				}
+			})
 			return
 		}
 		p.RefreshOutboundOptions()
+		// ParseAndPreview выставляет TemplatePreviewNeedsUpdate после успеха, но OnChanged вкладки Preview
+		// уже отработал раньше — иначе preview остаётся на «Parsing…» до любого следующего клика.
+		if p.model.TemplatePreviewNeedsUpdate {
+			p.UpdateTemplatePreviewAsync()
+		} else {
+			SafeFyneDo(p.guiState.Window, func() {
+				if p.guiState.TemplatePreviewStatusLabel != nil {
+					p.guiState.TemplatePreviewStatusLabel.SetText(locale.T("wizard.preview.status_click_show"))
+				}
+				if p.guiState.ShowPreviewButton != nil {
+					p.guiState.ShowPreviewButton.Enable()
+				}
+				if p.guiState.TemplatePreviewEntry != nil {
+					p.SetTemplatePreviewText(locale.T("wizard.preview.placeholder"))
+				}
+			})
+		}
 	}()
 }
 

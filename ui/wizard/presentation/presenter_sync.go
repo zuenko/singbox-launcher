@@ -1,7 +1,7 @@
 // Package presentation содержит слой представления визарда конфигурации.
 //
 // Файл presenter_sync.go содержит методы синхронизации данных между моделью и GUI:
-//   - SyncModelToGUI — модель → виджеты (источники, ParserConfig, DNS, Final outbound и связанные поля)
+//   - SyncModelToGUI / SyncModelToGUIInitial — модель → виджеты; Initial без пересоздания вкладки Rules
 //   - SyncGUIToModel / MergeGUIToModel — GUI → модель (первый с MarkAsChanged при отличиях, второй только слияние)
 //
 // Эти методы обеспечивают двустороннюю синхронизацию между WizardModel и GUIState,
@@ -11,7 +11,7 @@
 // Методы синхронизации используются в разных местах (перед сохранением, при инициализации).
 //
 // Используется в:
-//   - wizard.go — SyncModelToGUI при инициализации и после загрузки state
+//   - wizard.go — SyncModelToGUIInitial при первом открытии; SyncModelToGUI после LoadState / Read
 //   - presenter_save.go — SyncGUIToModel в начале SaveConfig
 //   - presenter_state.go — SyncGUIToModel в CreateStateFromModel перед сборкой state
 //   - presenter_async.go, wizard.go, tabs/source_tab.go — MergeGUIToModel (смена вкладок, закрытие, парсинг preview без hasChanges)
@@ -63,14 +63,26 @@ import (
 // Всегда через fyne.Do: прямой вызов SetText/Refresh с потока, где создали окно, даёт зависания/краши при открытии визарда.
 // Если сразу после SyncModelToGUI вызывается SyncGUIToModel (Save), DNS-виджеты могут быть ещё пустыми — см. защиту в SyncGUIToModel.
 func (p *WizardPresenter) SyncModelToGUI() {
+	p.syncModelToGUI(true)
+}
+
+// SyncModelToGUIInitial — первая синхронизация при открытии визарда: вкладка Rules уже
+// построена в createWizardTabs; повторное RefreshRulesTabAfterLoadState даёт второй CreateRulesTab,
+// лишний асинхронный RefreshOutboundOptions и ложный MarkAsChanged при закрытии без правок.
+func (p *WizardPresenter) SyncModelToGUIInitial() {
+	p.syncModelToGUI(false)
+}
+
+func (p *WizardPresenter) syncModelToGUI(recreateRulesTab bool) {
 	p.UpdateUI(p.applyWizardWidgetsFromModel)
 
-	// Пересоздаем вкладку Rules, если она уже создана (часть синхронизации модели с GUI)
-	// Это обновит чекбоксы и селекторы правил в соответствии с текущим состоянием модели
+	if !recreateRulesTab {
+		return
+	}
+	rulesTitle := locale.T("wizard.tab_rules")
 	if p.createRulesTabFunc != nil && p.guiState.Tabs != nil {
-		// Проверяем, существует ли вкладка Rules
 		for _, tabItem := range p.guiState.Tabs.Items {
-			if tabItem.Text == "Rules" {
+			if tabItem.Text == rulesTitle {
 				p.RefreshRulesTabAfterLoadState()
 				break
 			}
