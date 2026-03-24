@@ -2,7 +2,6 @@ package tabs
 
 import (
 	"image/color"
-	"slices"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -22,6 +21,15 @@ import (
 
 // rowHighlight is a subtle tint for rows marked for adding (similar to list selection).
 var rowHighlight = color.NRGBA{R: 0x33, G: 0x88, B: 0xee, A: 0x2a}
+
+func boolSliceAnyTrue(values []bool) bool {
+	for _, v := range values {
+		if v {
+			return true
+		}
+	}
+	return false
+}
 
 // ShowRulesLibraryDialog shows presets from the template; user checks rows and taps Add selected.
 func ShowRulesLibraryDialog(p *wizardpresentation.WizardPresenter, showAddRuleDialog ShowAddRuleDialogFunc) {
@@ -46,7 +54,7 @@ func ShowRulesLibraryDialog(p *wizardpresentation.WizardPresenter, showAddRuleDi
 	addBtn.Disable()
 
 	refreshAddBtn := func(b *widget.Button) {
-		if slices.Contains(picked, true) {
+		if boolSliceAnyTrue(picked) {
 			b.Enable()
 		} else {
 			b.Disable()
