@@ -64,8 +64,6 @@ func ShowRulesLibraryDialog(p *wizardpresentation.WizardPresenter, showAddRuleDi
 
 	for i := range rules {
 		i, tr := i, &rules[i]
-		bg := canvas.NewRectangle(color.Transparent)
-		bg.SetMinSize(fyne.NewSize(0, 36))
 
 		lbl := ttwidget.NewLabel(tr.Label)
 		lbl.Wrapping = fyne.TextWrapOff
@@ -74,14 +72,12 @@ func ShowRulesLibraryDialog(p *wizardpresentation.WizardPresenter, showAddRuleDi
 			lbl.SetToolTip(d)
 		}
 
+		var row *fynewidget.HoverRow
 		chk := widget.NewCheck("", func(on bool) {
 			picked[i] = on
-			if on {
-				bg.FillColor = rowHighlight
-			} else {
-				bg.FillColor = color.Transparent
+			if row != nil {
+				row.Refresh()
 			}
-			bg.Refresh()
 			refreshAddBtn(addBtn)
 		})
 
@@ -95,7 +91,14 @@ func ShowRulesLibraryDialog(p *wizardpresentation.WizardPresenter, showAddRuleDi
 		// Border: чекбокс слева, подпись в центре получает оставшуюся ширину (HBox даёт лейблу ~0 → только «…»).
 		rowLeft := container.NewBorder(nil, nil, chk, nil, labelTap)
 		padded := container.NewPadded(rowLeft)
-		row := container.NewMax(bg, padded)
+		minH := canvas.NewRectangle(color.Transparent)
+		minH.SetMinSize(fyne.NewSize(0, 36))
+		paddedWithMin := container.NewMax(minH, padded)
+		row = fynewidget.NewHoverRow(paddedWithMin, fynewidget.HoverRowConfig{
+			IsSelected:   func() bool { return picked[i] },
+			SelectedFill: &rowHighlight,
+		})
+		row.WireTooltipLabelHover(lbl)
 		listBox.Add(row)
 	}
 

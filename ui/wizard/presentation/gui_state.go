@@ -37,7 +37,7 @@ import (
 type RuleWidget struct {
 	Select    *widget.Select
 	Checkbox  *widget.Check    // Может быть nil, если правило не имеет чекбокса
-	SRSButton *ttwidget.Button // Кнопка ⬇/🔄/✔️ для правил с SRS (ttwidget для tooltip)
+	SRSButton *ttwidget.Button // ⬇/🔄/✔️ для SRS: тот же виджет, что fynewidget.HoverForwardTTButton (см. TTWidget)
 	RuleState interface{}      // *models.RuleState - используется interface{} чтобы избежать циклических зависимостей
 }
 

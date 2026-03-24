@@ -247,9 +247,13 @@ func buildCustomRuleRows(
 		idx := i
 		srsEntries, isSRSRule := customRuleSRSEntries(customRule)
 
-		outboundSelect := createOutboundSelectorForCustomRule(
-			presenter, model, guiState, customRule, idx, availableOutbounds,
+		var row *fynewidget.HoverRow
+		rowGetter := func() *fynewidget.HoverRow { return row }
+
+		outboundWidget := createOutboundSelectorForCustomRule(
+			presenter, model, guiState, customRule, idx, availableOutbounds, rowGetter,
 		)
+		outboundSelect := &outboundWidget.Select
 		if isSRSRule && len(srsEntries) > 0 && !services.AllSRSDownloadedForEntries(model.ExecDir, srsEntries) {
 			outboundSelect.Disable()
 		}
@@ -263,12 +267,15 @@ func buildCustomRuleRows(
 		if d := strings.TrimSpace(customRule.Rule.Description); d != "" {
 			label.SetToolTip(d)
 		}
+		var srsHF *fynewidget.HoverForwardTTButton
 		if isSRSRule && len(srsEntries) > 0 {
-			srsButton = createCustomRuleSRSButton(presenter, model, guiState, customRule, idx, srsEntries, checkbox, outboundSelect, enableRuleOnSRSSuccess)
+			srsBtn := createCustomRuleSRSButton(presenter, model, guiState, customRule, idx, srsEntries, checkbox, outboundSelect, enableRuleOnSRSSuccess, rowGetter)
+			srsButton = srsBtn.TTWidget()
+			srsHF = srsBtn
 		}
 
 		moveUpButton, moveDownButton, editButton, deleteButton := createCustomRuleActionButtons(
-			presenter, model, guiState, customRule, idx, showAddRuleDialog,
+			presenter, model, guiState, customRule, idx, showAddRuleDialog, rowGetter,
 		)
 
 		customRuleWidget := &wizardpresentation.RuleWidget{
@@ -281,7 +288,7 @@ func buildCustomRuleRows(
 
 		// Border: центр под подпись (HBox(left, Spacer, …) давал left только MinSize → «…» у label).
 		leftLead := container.NewHBox(checkbox, moveUpButton, moveDownButton)
-		rightCluster := container.NewHBox(editButton, deleteButton, outboundSelect)
+		rightCluster := container.NewHBox(editButton, deleteButton, outboundWidget)
 
 		labelTap := fynewidget.NewTapWrap(label, func() {
 			if checkbox.Disabled() {
@@ -290,10 +297,13 @@ func buildCustomRuleRows(
 			checkbox.SetChecked(!checkbox.Checked)
 		})
 		var center fyne.CanvasObject = labelTap
-		if srsButton != nil {
-			center = container.NewBorder(nil, nil, nil, srsButton, labelTap)
+		if srsHF != nil {
+			center = container.NewBorder(nil, nil, nil, srsHF, labelTap)
 		}
-		rulesBox.Add(container.NewBorder(nil, nil, leftLead, rightCluster, center))
+		rowInner := container.NewBorder(nil, nil, leftLead, rightCluster, center)
+		row = fynewidget.NewHoverRow(rowInner, fynewidget.HoverRowConfig{})
+		row.WireTooltipLabelHover(label)
+		rulesBox.Add(row)
 	}
 }
 
@@ -348,23 +358,24 @@ func createOutboundSelectorForCustomRule(
 	customRule *wizardmodels.RuleState,
 	idx int,
 	availableOutbounds []string,
-) *widget.Select {
+	rowGetter fynewidget.RowHoverGetter,
+) *fynewidget.HoverForwardSelect {
 	wizardmodels.EnsureDefaultOutbound(customRule, availableOutbounds)
 
-	outboundSelect := widget.NewSelect(availableOutbounds, func(value string) {
+	sel := fynewidget.NewHoverForwardSelect(availableOutbounds, func(value string) {
 		if guiState.UpdatingOutboundOptions {
 			return
 		}
 		model.CustomRules[idx].SelectedOutbound = value
 		model.TemplatePreviewNeedsUpdate = true
 		presenter.MarkAsChanged()
-	})
-	outboundSelect.SetSelected(customRule.SelectedOutbound)
+	}, rowGetter)
+	sel.SetSelected(customRule.SelectedOutbound)
 	if !customRule.Enabled {
-		outboundSelect.Disable()
+		sel.Disable()
 	}
 
-	return outboundSelect
+	return sel
 }
 
 // createCustomRuleActionButtons создает кнопки редактирования и удаления для custom rule.
@@ -375,10 +386,11 @@ func createCustomRuleActionButtons(
 	customRule *wizardmodels.RuleState,
 	idx int,
 	showAddRuleDialog ShowAddRuleDialogFunc,
-) (*widget.Button, *widget.Button, *widget.Button, *widget.Button) {
-	moveUpButton := widget.NewButton("↑", func() {
+	rowGetter fynewidget.RowHoverGetter,
+) (*fynewidget.HoverForwardButton, *fynewidget.HoverForwardButton, *fynewidget.HoverForwardButton, *fynewidget.HoverForwardButton) {
+	moveUpButton := fynewidget.NewHoverForwardButton("↑", func() {
 		moveCustomRuleUp(presenter, model, guiState, idx, showAddRuleDialog)
-	})
+	}, rowGetter)
 	moveUpButton.Importance = widget.LowImportance
 	if idx <= 0 {
 		moveUpButton.Disable()
@@ -387,9 +399,9 @@ func createCustomRuleActionButtons(
 		setTooltip(moveUpButton, locale.T("wizard.rules.tooltip_move_up"))
 	}
 
-	moveDownButton := widget.NewButton("↓", func() {
+	moveDownButton := fynewidget.NewHoverForwardButton("↓", func() {
 		moveCustomRuleDown(presenter, model, guiState, idx, showAddRuleDialog)
-	})
+	}, rowGetter)
 	moveDownButton.Importance = widget.LowImportance
 	if idx >= len(model.CustomRules)-1 {
 		moveDownButton.Disable()
@@ -399,14 +411,14 @@ func createCustomRuleActionButtons(
 	}
 
 	// Edit — только иконка (подпись в tooltip, как у удаления)
-	editButton := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() {
+	editButton := fynewidget.NewHoverForwardButtonWithIcon("", theme.DocumentCreateIcon(), func() {
 		showAddRuleDialog(presenter, customRule, idx)
-	})
+	}, rowGetter)
 	editButton.Importance = widget.LowImportance
 	setTooltip(editButton, locale.T("wizard.shared.button_edit"))
 
 	// Delete button (standard trash icon; confirmation before removal)
-	deleteButton := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+	deleteButton := fynewidget.NewHoverForwardButtonWithIcon("", theme.DeleteIcon(), func() {
 		ruleLabel := strings.TrimSpace(customRule.Rule.Label)
 		if ruleLabel == "" {
 			ruleLabel = locale.T("wizard.rules.dialog_delete_unnamed")
@@ -422,7 +434,7 @@ func createCustomRuleActionButtons(
 			},
 			guiState.Window,
 		)
-	})
+	}, rowGetter)
 	deleteButton.Importance = widget.LowImportance
 	setTooltip(deleteButton, locale.T("wizard.rules.button_delete"))
 
@@ -510,18 +522,19 @@ func createCustomRuleSRSButton(
 	checkbox *widget.Check,
 	outboundSelect *widget.Select,
 	enableRuleOnSRSSuccess *bool,
-) *ttwidget.Button {
+	rowGetter fynewidget.RowHoverGetter,
+) *fynewidget.HoverForwardTTButton {
 	initialText := srsBtnDownload()
 	if services.AllSRSDownloadedForEntries(model.ExecDir, srsEntries) {
 		initialText = srsBtnDone()
 	}
-	btn := ttwidget.NewButton(initialText, nil)
+	btn := fynewidget.NewHoverForwardTTButton(initialText, nil, rowGetter)
 	btn.Importance = widget.LowImportance
 	if t := srsEntriesTooltip(srsEntries); t != "" {
 		btn.SetToolTip(t)
 	}
 	btn.OnTapped = func() {
-		runSRSDownloadAsync(presenter, model, guiState, srsEntries, btn, outboundSelect, func() {
+		runSRSDownloadAsync(presenter, model, guiState, srsEntries, btn.TTWidget(), outboundSelect, func() {
 			if *enableRuleOnSRSSuccess {
 				*enableRuleOnSRSSuccess = false
 				guiState.UpdatingOutboundOptions = true

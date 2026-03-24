@@ -34,6 +34,7 @@ import (
 	"singbox-launcher/core/config/subscription"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/fynewidget"
 	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 	"singbox-launcher/internal/textnorm"
@@ -42,6 +43,8 @@ import (
 	"singbox-launcher/ui/wizard/outbounds_configurator"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
 	wizardutils "singbox-launcher/ui/wizard/utils"
+
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 // CreateSourcesTab creates the Sources tab UI (URLs, URL status and preview).
@@ -151,6 +154,9 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 		for i := range m.ParserConfig.ParserConfig.Proxies {
 			// IIFE so each row's closures capture the correct index (avoids loop variable capture bug)
 			func(sourceIndex int) {
+				var row *fynewidget.HoverRow
+				rowGetter := func() *fynewidget.HoverRow { return row }
+
 				proxyPtr := &m.ParserConfig.ParserConfig.Proxies[sourceIndex]
 				proxy := *proxyPtr
 
@@ -206,23 +212,24 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 				if copyText == "" && len(proxy.Connections) > 0 {
 					copyText = strings.Join(proxy.Connections, "\n")
 				}
-				sourceLabel := widget.NewLabel(shortLabel)
+				sourceLabel := ttwidget.NewLabel(shortLabel)
 				sourceLabel.Wrapping = fyne.TextWrapOff
 				sourceLabel.Truncation = fyne.TextTruncateEllipsis
 
 				// Show tag_prefix in the row (often short like "BL:") so list stays scannable without opening Edit.
 				var rowCenter fyne.CanvasObject = sourceLabel
+				var prefixLabel *ttwidget.Label
 				if pfx := strings.TrimSpace(tagPrefix); pfx != "" {
 					pfxShow := wizardutils.TruncateStringEllipsis(pfx, 24, "...")
-					prefixLabel := widget.NewLabel(pfxShow)
+					prefixLabel = ttwidget.NewLabel(pfxShow)
 					prefixLabel.Importance = widget.MediumImportance
 					if pfxShow != pfx {
-						setFyneWidgetToolTip(prefixLabel, pfx)
+						prefixLabel.SetToolTip(pfx)
 					}
 					rowCenter = container.NewBorder(nil, nil, prefixLabel, nil, sourceLabel)
 				}
 
-				copyBtn := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
+				copyBtn := fynewidget.NewHoverForwardButtonWithIcon("", theme.ContentCopyIcon(), func() {
 					if copyText == "" {
 						return
 					}
@@ -230,16 +237,14 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 						fyne.CurrentApp().Clipboard().SetContent(copyText)
 						dialogs.ShowAutoHideInfo(fyne.CurrentApp(), guiState.Window, locale.T("wizard.source.dialog_copied_title"), locale.T("wizard.source.dialog_copied_message"))
 					}
-				})
+				}, rowGetter)
 				copyBtn.Importance = widget.LowImportance
-				if tb, ok := interface{}(sourceLabel).(interface{ SetToolTip(string) }); ok {
-					tb.SetToolTip(tooltipText)
-				}
+				sourceLabel.SetToolTip(tooltipText)
 				if tb, ok := interface{}(copyBtn).(interface{ SetToolTip(string) }); ok {
 					tb.SetToolTip(tooltipText)
 				}
 
-				editBtn := widget.NewButton(locale.T("wizard.source.button_edit"), func() {
+				editBtn := fynewidget.NewHoverForwardButton(locale.T("wizard.source.button_edit"), func() {
 					presenter.MergeGUIToModel()
 					m := presenter.Model()
 					if m == nil {
@@ -256,9 +261,9 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 						return
 					}
 					showSourceEditWindow(presenter, guiState, guiState.Window, sourceIndex, shortLabel)
-				})
+				}, rowGetter)
 
-				delBtn := widget.NewButton(locale.T("wizard.source.button_del"), func() {
+				delBtn := fynewidget.NewHoverForwardButton(locale.T("wizard.source.button_del"), func() {
 					m := presenter.Model()
 					if m.ParserConfig == nil || sourceIndex >= len(m.ParserConfig.ParserConfig.Proxies) {
 						return
@@ -278,7 +283,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 					if guiState.RefreshSourcesList != nil {
 						guiState.RefreshSourcesList()
 					}
-				})
+				}, rowGetter)
 
 				rowGutter := canvas.NewRectangle(color.Transparent)
 				rowGutter.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
@@ -288,7 +293,12 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 					delBtn,
 					rowGutter,
 				)
-				row := container.NewBorder(nil, nil, nil, rightControls, rowCenter)
+				rowInner := container.NewBorder(nil, nil, nil, rightControls, rowCenter)
+				row = fynewidget.NewHoverRow(rowInner, fynewidget.HoverRowConfig{})
+				row.WireTooltipLabelHover(sourceLabel)
+				if prefixLabel != nil {
+					row.WireTooltipLabelHover(prefixLabel)
+				}
 				sourcesBox.Add(row)
 			}(i)
 		}

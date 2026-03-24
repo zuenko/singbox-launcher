@@ -69,6 +69,9 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 		}
 		for i := range m.DNSServers {
 			func(idx int) {
+				var row *fynewidget.HoverRow
+				rowGetter := func() *fynewidget.HoverRow { return row }
+
 				raw := m.DNSServers[idx]
 				var obj map[string]interface{}
 				if err := json.Unmarshal(raw, &obj); err != nil {
@@ -103,14 +106,14 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 				}
 				setTooltip(enCheck, locale.T(tooltipForDNSServerCheck(locked)))
 
-				editBtn := widget.NewButtonWithIcon(locale.T("wizard.shared.button_edit"), theme.DocumentCreateIcon(), func() {
+				editBtn := fynewidget.NewHoverForwardButtonWithIcon(locale.T("wizard.shared.button_edit"), theme.DocumentCreateIcon(), func() {
 					showDNSServerEditor(presenter, dialogParent(), idx)
-				})
+				}, rowGetter)
 				editBtn.Importance = widget.LowImportance
-				delBtn := widget.NewButtonWithIcon(locale.T("wizard.shared.button_del"), theme.DeleteIcon(), func() {
+				delBtn := fynewidget.NewHoverForwardButtonWithIcon(locale.T("wizard.shared.button_del"), theme.DeleteIcon(), func() {
 					deleteDNSServerAt(presenter, idx)
 					presenter.RefreshDNSListAndSelects()
-				})
+				}, rowGetter)
 				delBtn.Importance = widget.LowImportance
 				if locked {
 					editBtn.Disable()
@@ -124,7 +127,9 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 				rowGutter.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
 				right := container.NewHBox(editBtn, delBtn, rowGutter)
 				// Border: check left, content center (tap/hover → check via fynewidget), buttons right — avoids zero-width label in HBox-only row.
-				row := container.NewBorder(nil, nil, enCheck, right, cwc.Content)
+				rowInner := container.NewBorder(nil, nil, enCheck, right, cwc.Content)
+				row = fynewidget.NewHoverRow(rowInner, fynewidget.HoverRowConfig{})
+				row.WireTooltipLabelHover(sumLabel)
 				serversBox.Add(row)
 			}(i)
 		}

@@ -15,9 +15,12 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/core/config"
+	"singbox-launcher/internal/fynewidget"
 	"singbox-launcher/internal/locale"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 	wizardutils "singbox-launcher/ui/wizard/utils"
+
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 // OutboundEditPresenter is used to register the Edit/Add window with the wizard overlay (single instance, focus redirect).
@@ -178,13 +181,16 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 		for rowIdx, r := range rows {
 			r := r
 			rowIdx := rowIdx
+			var row *fynewidget.HoverRow
+			rowGetter := func() *fynewidget.HoverRow { return row }
+
 			rawLine := r.Outbound.Tag + " (" + r.Outbound.Type + ") — " + r.SourceLabel
 			rawLine = strings.ToValidUTF8(rawLine, "")
 			displayLine := wizardutils.TruncateStringEllipsis(rawLine, wizardutils.MaxLabelRunes, "...")
 			canUp := rowIdx > 0 && sameScope(rows[rowIdx], rows[rowIdx-1])
 			canDown := rowIdx < len(rows)-1 && sameScope(rows[rowIdx], rows[rowIdx+1])
 
-			upBtn := widget.NewButton("↑", func() {
+			upBtn := fynewidget.NewHoverForwardButton("↑", func() {
 				parserConfig := getParserConfig(editPresenter.Model())
 				if parserConfig == nil {
 					return
@@ -202,7 +208,7 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 				if onApply != nil {
 					onApply()
 				}
-			})
+			}, rowGetter)
 			if !canUp {
 				upBtn.Disable()
 				setReorderBtnTip(upBtn, locale.T("wizard.outbound.reorder_up_off"))
@@ -210,7 +216,7 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 				setReorderBtnTip(upBtn, locale.T("wizard.outbound.reorder_up"))
 			}
 
-			downBtn := widget.NewButton("↓", func() {
+			downBtn := fynewidget.NewHoverForwardButton("↓", func() {
 				parserConfig := getParserConfig(editPresenter.Model())
 				if parserConfig == nil {
 					return
@@ -228,7 +234,7 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 				if onApply != nil {
 					onApply()
 				}
-			})
+			}, rowGetter)
 			if !canDown {
 				downBtn.Disable()
 				setReorderBtnTip(downBtn, locale.T("wizard.outbound.reorder_down_off"))
@@ -236,7 +242,7 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 				setReorderBtnTip(downBtn, locale.T("wizard.outbound.reorder_down"))
 			}
 
-			editBtn := widget.NewButtonWithIcon(locale.T("wizard.shared.button_edit"), theme.DocumentCreateIcon(), func() {
+			editBtn := fynewidget.NewHoverForwardButtonWithIcon(locale.T("wizard.shared.button_edit"), theme.DocumentCreateIcon(), func() {
 				parserConfig := getParserConfig(editPresenter.Model())
 				if parserConfig == nil {
 					return
@@ -277,9 +283,9 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 						onApply()
 					}
 				})
-			})
+			}, rowGetter)
 
-			delBtn := widget.NewButtonWithIcon(locale.T("wizard.shared.button_del"), theme.DeleteIcon(), func() {
+			delBtn := fynewidget.NewHoverForwardButtonWithIcon(locale.T("wizard.shared.button_del"), theme.DeleteIcon(), func() {
 				parserConfig := getParserConfig(editPresenter.Model())
 				if parserConfig == nil {
 					return
@@ -300,22 +306,22 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 				if onApply != nil {
 					onApply()
 				}
-			})
+			}, rowGetter)
 
 			// Add transparent padding on the right so the list scrollbar has a visual strip.
 			rightPadding := canvas.NewRectangle(color.Transparent)
 			rightPadding.SetMinSize(fyne.NewSize(10, 0))
 
 			// Border + ellipsis (same idea as Sources list): HBox would give the label its full text min width → horizontal scroll.
-			nameLabel := widget.NewLabel(displayLine)
+			nameLabel := ttwidget.NewLabel(displayLine)
 			nameLabel.Wrapping = fyne.TextWrapOff
 			nameLabel.Truncation = fyne.TextTruncateEllipsis
-			if tb, ok := interface{}(nameLabel).(interface{ SetToolTip(string) }); ok {
-				tb.SetToolTip(rawLine)
-			}
+			nameLabel.SetToolTip(rawLine)
 			leftArrows := container.NewHBox(upBtn, downBtn)
 			rightControls := container.NewHBox(editBtn, delBtn, rightPadding)
-			row := container.NewBorder(nil, nil, leftArrows, rightControls, nameLabel)
+			rowInner := container.NewBorder(nil, nil, leftArrows, rightControls, nameLabel)
+			row = fynewidget.NewHoverRow(rowInner, fynewidget.HoverRowConfig{})
+			row.WireTooltipLabelHover(nameLabel)
 			items = append(items, row)
 		}
 		listContent.Objects = items
