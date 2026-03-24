@@ -16,6 +16,10 @@
 
 - **Parser / subscriptions:** **`MaxNodesPerSubscription`** increased from **500** to **3000** per source (preview, config generation, and wizard source **Preview** all use the same cap).
 
+- **Wizard — Edit source / View servers:** Long **preview status** lines (e.g. subscription load errors) sit in a **horizontal scroll** area so the window does not grow wider.
+
+- **Wizard — Sources / Add:** **`UpdateParserConfig`** now updates the Outbounds **ParserConfig** entry **synchronously** (no deferred **`fyne.Do`**). Two **Add** clicks in a row no longer let **`MergeGUIToModel`** overwrite **`ParserConfigJSON`** with stale entry text, so auto **`tag_prefix`** indices (**`1:`**, **`2:`**, …) increment correctly after **Del** or consecutive adds.
+
 - **Wizard — Sources / Edit source:** **Edit** opens **Settings | Preview | JSON** for one subscription: **`tag_prefix`**, optional local **auto** (urltest) and **select** (markers **`WIZARD:auto`** / **`WIZARD:selector`** in `proxies[].outbounds[].comment`), and per-source flags **`exclude_from_global`** and **`expose_group_tags_to_global`**. **Preview** lists **local outbounds** (this source) above **servers from the subscription**, refreshes when you change settings while the tab is open, and still shows local rows if server load fails. **JSON** is a read-only pretty-print of `proxies[i]`. Excluded nodes omit from the pool for **global** `ParserConfig.outbounds` only. **Expose** merges local group tags into each global outbound **at generation time** (JSON `addOutbounds` unchanged); merged tags respect each global entry’s **`filters`** (same rules as node filters). Parsed nodes carry **`SourceIndex`** for exclude; preview cache sets it too.
 
 - **Wizard & main window — UI/UX (gutter, Rules, Sources):** **Right scrollbar gutter** where scrollbars used to cover text or controls: **Rules** (custom-rules list), **Sources** (URL field, source list, server preview, tab scroll), **DNS** (server list only; not the rules JSON field), and the main **Servers** tab (**inside each proxy row**, after the buttons — not an outer margin beside the scrollbar). **Rules — custom rules:** **Up/Down** reorder, **scroll position** kept after moves, **delete** asks for **confirmation**; refreshing outbound selects no longer clears **unsaved** edits. **Sources:** compact **label + copy** per row instead of a wide text button.
@@ -115,6 +119,10 @@
 ### Основное
 
 - **Парсер / подписки:** лимит **`MaxNodesPerSubscription`** увеличен с **500** до **3000** на один источник (превью, генерация конфига и превью источников во визарде используют тот же потолок).
+
+- **Визард — правка источника / просмотр серверов:** длинные строки **статуса превью** (например, ошибки загрузки подписки) выводятся в зоне с **горизонтальной прокруткой**, окно не растягивается по ширине.
+
+- **Визард — Sources, Add:** поле **ParserConfig** на вкладке Outbounds обновляется **сразу** (без отложенного **`fyne.Do`**). Подряд два **Add** или сочетание **Del** + **Add** больше не дают **одинаковый** числовой **`tag_prefix`**: раньше **`MergeGUIToModel`** читал **устаревший** текст entry и затирал **`ParserConfigJSON`** до отложенного обновления виджета.
 
 - **Визард — Sources / правка источника:** кнопка **Edit** открывает **Настройки | Просмотр | JSON**: **`tag_prefix`**, опциональные локальные **auto** (urltest) и **select** (маркеры **`WIZARD:auto`** / **`WIZARD:selector`** в `comment` локальных outbounds), флаги **`exclude_from_global`** и **`expose_group_tags_to_global`**. На **Просмотре** сверху — **локальные outbounds** этого источника, ниже — **серверы подписки**; при смене настроек список обновляется, если вкладка уже открыта; при ошибке загрузки серверов локальные строки всё равно видны. **JSON** — только чтение, красивый вывод `proxies[i]`. Исключённые источники не попадают в пул узлов для **глобальных** `ParserConfig.outbounds`. **Expose** подмешивает теги локальных групп в каждый глобальный outbound **только при генерации** (поле **`addOutbounds`** в JSON не трогается); подмешиваемые теги проходят **`filters`** глобальной записи. У узлов задаётся **`SourceIndex`**; то же в кэше превью.
 

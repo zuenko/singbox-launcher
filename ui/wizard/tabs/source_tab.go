@@ -363,6 +363,8 @@ func showSourcePreviewAllWindow(presenter *wizardpresentation.WizardPresenter) {
 
 	var previewNodes []*config.ParsedNode
 	previewStatusLabel := widget.NewLabel(locale.T("wizard.source.preview_click_refresh"))
+	previewStatusLabel.Wrapping = fyne.TextWrapOff
+	previewStatusScroll := container.NewHScroll(previewStatusLabel)
 	previewList := widget.NewList(
 		func() int { return len(previewNodes) },
 		func() fyne.CanvasObject { return widget.NewLabel("") },
@@ -410,7 +412,7 @@ func showSourcePreviewAllWindow(presenter *wizardpresentation.WizardPresenter) {
 
 	refreshBtn := widget.NewButton(locale.T("wizard.source.button_refresh"), refreshPreview)
 	closeBtn := widget.NewButton(locale.T("wizard.source.view_close"), func() { win.Close() })
-	topRow := container.NewHBox(previewStatusLabel, layout.NewSpacer(), refreshBtn)
+	topRow := container.NewBorder(nil, nil, nil, refreshBtn, previewStatusScroll)
 	listStrip := canvas.NewRectangle(color.Transparent)
 	listStrip.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
 	previewScroll := container.NewScroll(previewList)
@@ -577,20 +579,12 @@ func CreateOutboundsAndParserConfigTab(presenter *wizardpresentation.WizardPrese
 		m.ParserConfigJSON = serialized
 		m.PreviewNeedsParse = true
 		wizardbusiness.InvalidatePreviewCache(m)
-		// Update entry synchronously so that switching to another tab does not overwrite
-		// the model with stale entry content in SyncGUIToModel (UpdateParserConfig queues via fyne.Do).
-		guiState.ParserConfigUpdating = true
-		guiState.ParserConfigEntry.SetText(serialized)
-		guiState.ParserConfigUpdating = false
-		guiState.LastValidParserConfigJSON = serialized
+		presenter.UpdateParserConfig(serialized)
 		presenter.RefreshOutboundOptions()
 		if guiState.RefreshSourcesList != nil {
 			guiState.RefreshSourcesList()
 		}
-		if guiState.RefreshOutboundsConfiguratorList != nil {
-			guiState.RefreshOutboundsConfiguratorList()
-		}
-		// SetText runs under ParserConfigUpdating, so ParserConfigEntry.OnChanged skips MarkAsChanged;
+		// UpdateParserConfig sets ParserConfigUpdating during SetText so OnChanged does not MarkAsChanged;
 		// outbounds list actions (Edit/Add/Delete, ↑/↓) must mark dirty explicitly.
 		presenter.MarkAsChanged()
 	}

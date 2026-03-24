@@ -302,8 +302,10 @@ func showSourceEditWindow(
 	settingsScroll.SetMinSize(fyne.NewSize(0, sourceEditSettingsScrollMinH))
 
 	previewStatus := widget.NewLabel(locale.T("wizard.source.preview_loading"))
+	previewStatus.Wrapping = fyne.TextWrapOff
+	previewStatusScroll := container.NewHScroll(previewStatus)
 	previewListHost := container.NewMax()
-	previewBox := container.NewBorder(previewStatus, nil, nil, nil, previewListHost)
+	previewBox := container.NewBorder(previewStatusScroll, nil, nil, nil, previewListHost)
 
 	previewRefreshSeq := 0
 	refreshPreviewTab := func() {
