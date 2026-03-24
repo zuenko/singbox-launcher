@@ -14,16 +14,17 @@
 |------|----------------------------------------|---------------------------------------------------|
 | **Шаблон целиком** | Всегда читается **до** state: каркас `config`, дефолты DNS/selectable, сырой `dns_options` шаблона, `DefaultFinal` и т.д. State **не** заменяет шаблон целиком — по полям правила разные (строки таблицы ниже). | Тот же шаблон; парсер может прийти из **`config.json`**, если там есть валидный `@ParserConfig`. |
 | **`parser_config`** | **Только state.** Шаблонный парсер на этом шаге **не** подмешивается. | **`config.json`** (приоритет) или **шаблон**. |
-| **`config_params`** (`route.final`, `enable_tun_macos`, …) | **State**; если параметра нет — **`DefaultFinal`** и т.п. из **шаблона**. `route.default_domain_resolver` здесь не норма (одноразовая миграция → см. DNS). | Обычно нет файла state → final задаётся из шаблона / **`EnsureFinalSelected`** после инициализации selectable. |
+| **`config_params`** (`route.final`, `enable_tun_macos`, …) | **State**; если параметра нет — **`DefaultFinal`** и т.п. из **шаблона**. `route.default_domain_resolver` здесь не норма (одноразовая миграция → см. DNS). | Обычно нет файла state → final задаётся из шаблона / **`EnsureFinalSelected`** после инициализации **`custom_rules`**. |
 | **`dns_options`** | Снимок из **state** в модель, затем **`ApplyWizardDNSTemplate`**: список серверов **сшивается** с **текущим** шаблоном; **пустые** поля модели добираются из шаблона (скелет `config.dns` + `dns_options` шаблона по правилам в коде). | Нет снимка → **`ApplyWizardDNSTemplate`** только из **шаблона** (если список DNS в модели ещё пуст). |
-| **`selectable_rule_states`** | **Каркас и порядок правил — шаблон**; **enabled / selected_outbound** накладываются из state по **`label`**. Записи state без правила в шаблоне **отбрасываются**. | **Только шаблон** (дефолты `IsDefault` / `DefaultOutbound`). |
-| **`custom_rules`** | **Только state** (полные объекты правил). Шаблон не участвует. | Список пуст, пока пользователь не добавит правила. |
+| **`selectable_rule_states`** | **Только формат до `rules_library_merged` (версия 2 без флага):** до **`LoadState`** миграция **`ApplyRulesLibraryMigration`** переносит записи в начало **`custom_rules`** и очищает selectable. В сохранённом файле **3** ключа обычно нет. | Не используется: первый запуск без state — **`InitializeTemplateState`** засевает **`custom_rules`** из пресетов шаблона с **`default: true`**. |
+| **`custom_rules`** | **Единственный список правил маршрута** в модели после миграции: полные объекты, порядок = порядок в `route.rules` при генерации. | См. **`selectable_rule_states`** / засев из шаблона. |
 
-**Итог одной фразой:** это **не** универсальная схема «сначала весь скелет шаблона, потом state сверху». Для **парсера** и **custom** при **`LoadState`** приоритет у **state**; для **selectable** — **шаблон + точечное наложение state**; для **DNS** — **снимок state + обязательная сшивка с шаблоном** и добор пустот из шаблона.
+**Итог одной фразой:** для **парсера** и **`custom_rules`** при **`LoadState`** приоритет у **state** (после однократной миграции library selectable→custom); пресеты **`selectable_rules`** в шаблоне — только **библиотека** для кнопки «Add from library», не отдельный слой в модели; для **DNS** — **снимок state + обязательная сшивка с шаблоном** и добор пустот из шаблона.
 
 ## Версия формата
 
-- **version**: целое число (текущая версия — `2`). Используется для миграций при загрузке старых файлов.
+- **version**: целое число. Поддерживается чтение **`2`** и **`3`**; новые сохранения пишут **`3`**.
+- **`3` + rules library:** поле **`rules_library_merged`** (обычно `true`). Маршрут собирается **только** из **`custom_rules`** (единый список). Ключ **`selectable_rule_states`** в новых файлах не используется (может отсутствовать). Пресеты шаблона **`selectable_rules`** остаются **библиотекой** в UI («Add from library»), а не отдельным слоем в state. При первом открытии файла версии **2** без флага выполняется однократная миграция: содержимое **`selectable_rule_states`** сливается в начало **`custom_rules`**, затем state перезаписывается на диск.
 
 ## Структура JSON
 
@@ -39,16 +40,18 @@
 | `parser_config` | object | Конфигурация парсера (proxies, outbounds, parser) |
 | `config_params` | array | Параметры без отдельной секции в state (например `route.final`, `enable_tun_macos`, секреты для генерации конфига). **Не** используется для `route.default_domain_resolver` — см. **`dns_options`**. |
 | `dns_options` | object | Состояние вкладки DNS визарда (опционально; см. ниже). Имя ключа совпадает с секцией шаблона `wizard_template.json`. |
-| `selectable_rule_states` | array | Состояния правил из шаблона (label, enabled, selected_outbound) |
-| `custom_rules` | array | Пользовательские правила (полная структура) |
+| `selectable_rule_states` | array | Устарело при **`rules_library_merged`**: в формате **3** не используется для route (миграция с версии **2**) |
+| `rules_library_merged` | bool | **`true`** после миграции/нового формата: только **`custom_rules`** задают порядок правил в маршруте |
+| `custom_rules` | array | Все правила маршрута (полная структура), порядок = порядок в `route.rules` |
 
 Краткие резюме по ключам JSON (детали — в разделах ниже и в **«Резюме по блокам»**):
 
 - **`parser_config`** — при `LoadState`: вся правда в этом объекте из файла.
 - **`config_params`** — мелкие параметры генерации и UI; резолвер DNS сюда не кладём.
 - **`dns_options`** — снимок вкладки DNS + сшивка с шаблоном после загрузки.
-- **`selectable_rule_states`** — только выбор пользователя; сами правила живут в шаблоне.
-- **`custom_rules`** — автономные правила, только из state.
+- **`selectable_rule_states`** — устаревший слой (v2); при отсутствии **`rules_library_merged`** сливается в **`custom_rules`** при загрузке.
+- **`rules_library_merged`** — после **`true`** в файле и модели нет отдельного списка selectable-state; в **`custom_rules`** лежат все правила маршрута.
+- **`custom_rules`** — полный список **пользовательских** правил маршрута; при генерации конфига **`MergeRouteSection`** дописывает включённые записи к **базовому** `route` из шаблона (статические `rules` / `rule_set` в шаблоне остаются первыми). Подробнее — **`docs/ARCHITECTURE.md`**, **`create_config.go`**.
 
 ## dns_options (объект в state.json)
 
@@ -99,7 +102,9 @@
 
 ## `selectable_rule_states` (корень state.json)
 
-> **Резюме (чтение):** **источник структуры правил** — текущий **шаблон** (`TemplateData.SelectableRules`). В state лежат только **`label`**, **`enabled`**, **`selected_outbound`**. **`restoreSelectableRuleStates`** сопоставляет по **`label`**; без правила в шаблоне запись из state **игнорируется**; без записи в state — дефолты шаблона (`IsDefault`, `DefaultOutbound`).
+> **Резюме (актуальный формат 3):** в норме **отсутствует**. Если файл ещё в старом виде (**`rules_library_merged`** ложь / отсутствует), **`ApplyRulesLibraryMigration`** (в **`LoadState`**, до **`restoreCustomRules`**) строит единый **`custom_rules`**: сначала правила из шаблона в порядке **`selectable_rules`** с учётом сохранённых **`enabled` / selected_outbound** по **`label`**, затем хвост прежних **`custom_rules`**; выставляет **`rules_library_merged`**, очищает **`selectable_rule_states`** в объекте, который уйдёт в **`restoreCustomRules`**.
+
+> **Исторически (до миграции):** источник структуры — шаблон; в state были только **`label`**, **`enabled`**, **`selected_outbound`** по совпадению с **`TemplateData.SelectableRules`**.
 
 ## custom_rules (PersistedCustomRule)
 
@@ -156,7 +161,7 @@
 
 ### 2. Старт визарда при **наличии** `state.json`
 
-> **Резюме:** файл state → миграции при разборе JSON → **`LoadState`**: парсер и custom **из state**; **config_params** из state (с fallback шаблона для final); DNS — **state + ApplyWizardDNSTemplate**; selectable — **шаблон + state по label**.
+> **Резюме:** файл state → миграции при разборе JSON → **`LoadState`**: парсер и правила маршрута **из state** (после **`ApplyRulesLibraryMigration`** — только **`custom_rules`**); **config_params** из state (с fallback шаблона для final); DNS — **state + ApplyWizardDNSTemplate**.
 
 1. **`StateStore.LoadCurrentState()`** читает **`bin/wizard_states/state.json`**. Десериализация в **`WizardStateFile`**: кастомный **`UnmarshalJSON`** (миграции **`MigrateSelectableRuleStates`**, **`MigrateCustomRules`**, упрощённый **`parser_config`**).
 2. **`presenter.LoadState(stateFile)`** (порядок шагов в коде):
@@ -164,18 +169,18 @@
    - **`SourceURLs = ""`** — поле ввода URL только для добавления; список источников из **`ParserConfig.Proxies`**.
    - **`restoreConfigParams`** — из **`config_params`**: `route.final` → **`SelectedFinalOutbound`**, `enable_tun_macos` → флаг TUN; если `route.final` нет — **`DefaultFinal`** из шаблона. **`route.default_domain_resolver` в `config_params`** на этом шаге не читается (только миграция в **`restoreDNS`**).
    - **`restoreDNS`** — см. раздел **dns_options** и **Поток DNS** выше: **`LoadPersistedWizardDNS`** (если в state есть **`dns_options`**) копирует в модель **весь** снимок DNS из файла; при необходимости подхват старого резолвера из **`config_params`**; затем **`ApplyWizardDNSTemplate`** (слияние списка серверов с **текущим** шаблоном + подстановка **пустых** полей из шаблона).
-   - **`restoreSelectableRuleStates`** — **истина по структуре правил**: текущий шаблон (**`TemplateData.SelectableRules`**). Для каждого правила шаблона ищется сохранённая запись в **`selectable_rule_states`** по **`label`**: подставляются **`enabled`** и **`selected_outbound`**; если записи нет — **`IsDefault`** и **`DefaultOutbound`** из шаблона. Правила из state, которых уже нет в шаблоне, **игнорируются**.
-   - **`restoreCustomRules`** — **`custom_rules` из state** целиком в модель (**`ToRuleState()`**).
-   - **`PreviewNeedsParse = true`**, **`SyncModelToGUI`**, **`RefreshOutboundOptions`**, **`MarkAsSaved`**.
+   - **`ApplyRulesLibraryMigration(stateFile, TemplateData, ExecDir)`** — если миграция library ещё не выполнена: объединение selectable+template order и существующих **`custom_rules`** в один список в **`stateFile.CustomRules`**, **`RulesLibraryMerged = true`**, **`SelectableRuleStates = nil`**.
+   - **`model.RulesLibraryMerged`**, **`model.SelectableRuleStates = nil`**, затем **`restoreCustomRules(stateFile.CustomRules)`** — единственный источник правил маршрута в модели.
+   - **`PreviewNeedsParse = true`**, **`SyncModelToGUI`**, **`RefreshOutboundOptions`**. Если миграция только что записала флаг merged — **`SaveWizardState`** текущего файла (идемпотентность при повторном открытии) и **`MarkAsSaved`**; иначе **`MarkAsSaved`**.
 
-Итог: при **LoadState** источники правды — **state** для парсера, **config_params** для final/TUN, **dns_options + шаблон** для DNS (см. DNS-раздел), **шаблон + state** для selectable, **state** для custom.
+Итог: при **LoadState** источники правды — **state** для парсера, **config_params** для final/TUN, **dns_options + шаблон** для DNS (см. DNS-раздел), **`custom_rules` (после миграции)** для маршрута.
 
 ### 3. Старт визарда **без** `state.json`
 
-> **Резюме:** парсер из **`config.json`** или шаблона; selectable и DNS — из **шаблона** (`InitializeTemplateState`, при пустом списке DNS — `ApplyWizardDNSTemplate`). **`LoadState` не вызывается.**
+> **Резюме:** парсер из **`config.json`** или шаблона; правила маршрута и DNS — из **шаблона** (`InitializeTemplateState`, при пустом списке DNS — `ApplyWizardDNSTemplate`). **`LoadState` не вызывается.**
 
 1. **`LoadConfigFromFile`** — приоритет **`config.json`**: извлекается блок **`@ParserConfig`**; иначе парсер из **шаблона**. Опционально **`EnsureRequiredOutbounds`**. В модель: **`ParserConfigJSON`**, **`SourceURLs`** (строка из источников в конфиге).
-2. **`initializeWizardContent`** → **`InitializeTemplateState`**: если **`SelectableRuleStates` пуст** — создаётся список из **`TemplateData.SelectableRules`** с дефолтами шаблона и проверкой SRS; вызывается **`EnsureFinalSelected`** для **`SelectedFinalOutbound`**.
+2. **`initializeWizardContent`** → **`InitializeTemplateState`**: **`SelectableRuleStates` всегда сбрасывается**; если **`!RulesLibraryMerged`** и **`CustomRules` пуст** — в **`CustomRules`** добавляются клоны пресетов **`selectable_rules`** с **`IsDefault`** (и SRS-проверкой), затем **`RulesLibraryMerged = true`**; для каждой записи — **`EnsureDefaultOutbound`**; **`EnsureFinalSelected`** для **`SelectedFinalOutbound`**.
 3. Если **`len(DNSServers) == 0`** — **`ApplyWizardDNSTemplate`** (только шаблон, без предварительного **`LoadPersistedWizardDNS`**).
 
 **`LoadState` не вызывается.**
@@ -198,8 +203,7 @@
 | Поле URL на Sources | Пустое; список из **Proxies** | — |
 | **`route.final` / TUN** | **`config_params` state** | Fallback **`DefaultFinal`** шаблона, если параметра нет |
 | Вкладка DNS | **`dns_options` state** + **`ApplyWizardDNSTemplate`** | Скелет **`config.dns`**, сырой **`dns_options`**, блокировки тегов |
-| Selectable rules | **Шаблон** + **`selectable_rule_states`** по `label` | Определение правила и порядок |
-| Custom rules | **`custom_rules` state** | — |
+| Правила маршрута (`custom_rules`) | **`custom_rules` state** (после миграции — единственный список) | Первый запуск: засев из **`selectable_rules`** с **`default: true`**; шаблон **`selectable_rules`** — библиотека для UI |
 
 ### 6. Десериализация файла state (до `LoadState`)
 
@@ -221,5 +225,6 @@
 ## Миграции
 
 - **v1 → v2:** `selectable_rule_states` и `custom_rules` приводятся к новому формату (см. WIZARD_STATE_JSON_SCHEMA.md). Поле `type` в custom_rules при загрузке может быть в старом виде — тогда тип выводится из `rule`.
+- **v2 → v3 (rules library):** при **`LoadState`**, если **`rules_library_merged`** ещё не установлен, **`ApplyRulesLibraryMigration`** переносит selectable-слой в **`custom_rules`**, выставляет флаг и очищает **`selectable_rule_states`** в памяти; при успешной записи **`state.json`** повторная миграция не дублирует правила.
 
 См. также: **docs/ARCHITECTURE.md** (раздел про загрузку state), **SPECS/002-F-C-WIZARD_STATE/WIZARD_STATE_JSON_SCHEMA.md**. Краткая сводка приоритетов — раздел **«Резюме по блокам (чтение)»** в начале этого файла.

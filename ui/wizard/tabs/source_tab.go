@@ -44,10 +44,6 @@ import (
 	wizardutils "singbox-launcher/ui/wizard/utils"
 )
 
-// scrollbarGutterWidth is reserved space to the right of scrollable content so the
-// native scrollbar strip does not overlap buttons or text (same idea as outbounds list).
-const scrollbarGutterWidth = 10
-
 // CreateSourcesTab creates the Sources tab UI (URLs, URL status and preview).
 func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObject {
 	guiState := presenter.GUIState()

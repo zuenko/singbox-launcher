@@ -169,9 +169,9 @@ func (ss *StateStore) loadStateFromFile(filePath string, expectedID string) (*wi
 		return nil, fmt.Errorf("failed to unmarshal state file: %w", err)
 	}
 
-	// Валидация версии
-	if state.Version != wizardmodels.WizardStateVersion {
-		return nil, fmt.Errorf("unsupported state file version: %d (expected %d)", state.Version, wizardmodels.WizardStateVersion)
+	// Валидация версии: 2 — до rules library; 3 — текущий формат
+	if state.Version < 2 || state.Version > wizardmodels.WizardStateVersion {
+		return nil, fmt.Errorf("unsupported state file version: %d (supported 2..%d)", state.Version, wizardmodels.WizardStateVersion)
 	}
 
 	// Валидация ID (если задан, должен совпадать с именем файла)

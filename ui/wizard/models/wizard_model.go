@@ -7,7 +7,7 @@
 //   - SourceURLs — поле ввода для добавления новых URL (кнопка Add); не источник истины для существующих источников
 //   - Сгенерированные outbounds (GeneratedOutbounds, OutboundStats)
 //   - Template данные (TemplateData)
-//   - Правила (SelectableRuleStates, CustomRules, SelectedFinalOutbound)
+//   - Правила маршрута: CustomRules (единый список); SelectedFinalOutbound; SelectableRuleStates не используется (027)
 //   - Флаги состояния бизнес-операций (AutoParseInProgress, PreviewGenerationInProgress)
 //
 // GUI-состояние (виджеты Fyne, UI-флаги) находится в presentation/GUIState.
@@ -59,9 +59,10 @@ type WizardModel struct {
 	// Template данные
 	TemplateData *wizardtemplate.TemplateData
 
-	// Правила
+	// Правила (маршрут — только CustomRules; SelectableRuleStates не используется после 027)
 	SelectableRuleStates   []*RuleState
 	CustomRules            []*RuleState
+	RulesLibraryMerged     bool // true после миграции/засева; сериализуется в state.json
 	SelectedFinalOutbound  string
 	EnableTunForMacOS      bool // на darwin при сборке конфига: true — добавлять TUN inbound (требует пароль при Start/Stop)
 

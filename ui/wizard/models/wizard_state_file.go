@@ -34,7 +34,8 @@ import (
 
 const (
 	// WizardStateVersion — версия формата файла состояния.
-	WizardStateVersion = 2
+	// 3 — rules library: единый custom_rules, rules_library_merged, без маршрутного слоя selectable.
+	WizardStateVersion = 3
 
 	// MaxStateIDLength — максимальная длина ID состояния.
 	MaxStateIDLength = 50
@@ -57,8 +58,10 @@ type WizardStateFile struct {
 	UpdatedAt            time.Time                      `json:"updated_at"`
 	ParserConfig         config.ParserConfig            `json:"-"` // Используется только в памяти, не сериализуется напрямую
 	ConfigParams         []ConfigParam                  `json:"config_params"`
-	SelectableRuleStates []PersistedSelectableRuleState `json:"selectable_rule_states"`
+	SelectableRuleStates []PersistedSelectableRuleState `json:"selectable_rule_states,omitempty"`
 	CustomRules          []PersistedCustomRule          `json:"custom_rules"`
+	// RulesLibraryMerged — после 027: true, selectable_rule_states не используется для route.
+	RulesLibraryMerged bool `json:"rules_library_merged,omitempty"`
 	// DNSOptions — снимок вкладки DNS визарда; в JSON ключ dns_options (как в wizard_template.json).
 	DNSOptions *PersistedDNSState `json:"dns_options,omitempty"`
 }
@@ -416,7 +419,8 @@ func (wsf *WizardStateFile) UnmarshalJSON(data []byte) error {
 		// raw messages для миграции
 		SelectableRuleStates json.RawMessage `json:"selectable_rule_states"`
 		CustomRules          json.RawMessage `json:"custom_rules"`
-		DNSOptions *PersistedDNSState `json:"dns_options"`
+		RulesLibraryMerged   bool            `json:"rules_library_merged"`
+		DNSOptions           *PersistedDNSState `json:"dns_options"`
 	}
 
 	var basic BasicFields
@@ -429,6 +433,7 @@ func (wsf *WizardStateFile) UnmarshalJSON(data []byte) error {
 	wsf.Comment = basic.Comment
 	wsf.ConfigParams = basic.ConfigParams
 	wsf.DNSOptions = basic.DNSOptions
+	wsf.RulesLibraryMerged = basic.RulesLibraryMerged
 
 	// Парсим время
 	if basic.CreatedAt != "" {

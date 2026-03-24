@@ -48,7 +48,8 @@
 Покрывают логику мастера конфигурации:
 
 - **TestValidateParserConfig** (`validator_test.go`) - валидация ParserConfig
-- **TestMergeRouteSection** (`generator_test.go`) - объединение правил маршрутизации
+- **TestMergeRouteSection** (`generator_test.go`) — слияние секции **`route`** (база шаблона + **`custom_rules`**)
+- **`rules_library_test.go`** — клон пресета, миграция library, **`EnsureCustomRulesDefaultOutbounds`**
 - **TestApplyURLToParserConfig_Logic** (`parser_test.go`) - классификация строк на подписки и connections (применение URL использует buildProxiesFromInputs)
 - **TestLoadConfigFromFile** (`loader_test.go`) - загрузка конфигурации из файла
 - **TestDefaultWizardFlow_NextNextFinish** (`wizard_integration_test.go`) - интеграционный тест полного wizard flow

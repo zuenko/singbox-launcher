@@ -20,7 +20,6 @@ package presentation
 import (
 	"time"
 
-	"singbox-launcher/core/services"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/locale"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
@@ -179,35 +178,28 @@ func (p *WizardPresenter) RefreshOutboundOptions() {
 	})
 }
 
-// InitializeTemplateState инициализирует состояние шаблона.
-// Создаёт RuleState для каждого selectable rule из шаблона (если ещё не загружены из state.json).
+// InitializeTemplateState — правила маршрута только в CustomRules; selectable-слой не используется.
+// Первый запуск без state: засев пресетов с default:true из шаблона; затем outbound/final.
 func (p *WizardPresenter) InitializeTemplateState() {
 	if p.model.TemplateData == nil {
 		return
 	}
 
+	p.model.SelectableRuleStates = nil
 	options := wizardbusiness.EnsureDefaultAvailableOutbounds(wizardbusiness.GetAvailableOutbounds(p.model))
 
-	if len(p.model.SelectableRuleStates) == 0 {
-		for _, rule := range p.model.TemplateData.SelectableRules {
-			outbound := rule.DefaultOutbound
-			if outbound == "" {
-				outbound = options[0]
+	if !p.model.RulesLibraryMerged && len(p.model.CustomRules) == 0 {
+		for i := range p.model.TemplateData.SelectableRules {
+			tr := &p.model.TemplateData.SelectableRules[i]
+			if rs := wizardbusiness.ClonePresetWithSRSGuard(p.model, tr, tr.IsDefault, options); rs != nil {
+				p.model.CustomRules = append(p.model.CustomRules, rs)
 			}
-			enabled := rule.IsDefault
-			if !services.AllSRSDownloaded(p.model.ExecDir, rule.RuleSets) {
-				enabled = false
-			}
-			p.model.SelectableRuleStates = append(p.model.SelectableRuleStates, &wizardmodels.RuleState{
-				Rule:             rule,
-				SelectedOutbound: outbound,
-				Enabled:          enabled,
-			})
 		}
-	} else {
-		for _, ruleState := range p.model.SelectableRuleStates {
-			wizardmodels.EnsureDefaultOutbound(ruleState, options)
-		}
+		p.model.RulesLibraryMerged = true
+	}
+
+	for _, ruleState := range p.model.CustomRules {
+		wizardmodels.EnsureDefaultOutbound(ruleState, options)
 	}
 
 	wizardbusiness.EnsureFinalSelected(p.model, options)

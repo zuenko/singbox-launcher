@@ -55,7 +55,8 @@ func TestMergeRouteSection(t *testing.T) {
 		},
 	}
 
-	result, err := MergeRouteSection(rawRoute, selectableRules, customRules, "final-out", "", "", false)
+	allRules := append(append([]*wizardmodels.RuleState(nil), selectableRules...), customRules...)
+	result, err := MergeRouteSection(rawRoute, allRules, "final-out", "", "", false)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestMergeRouteSection_RejectAction(t *testing.T) {
 		},
 	}
 
-	result, err := MergeRouteSection(rawRoute, selectableRules, nil, "", "", "", false)
+	result, err := MergeRouteSection(rawRoute, selectableRules, "", "", "", false)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestMergeRouteSection_DisabledRules(t *testing.T) {
 		},
 	}
 
-	result, err := MergeRouteSection(rawRoute, selectableRules, nil, "", "", "", false)
+	result, err := MergeRouteSection(rawRoute, selectableRules, "", "", "", false)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -203,7 +204,7 @@ func TestMergeRouteSection_CustomRulesOrderPreserved(t *testing.T) {
 		},
 	}
 
-	result, err := MergeRouteSection(rawRoute, nil, customRules, "", "", "", false)
+	result, err := MergeRouteSection(rawRoute, customRules, "", "", "", false)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -342,7 +343,7 @@ func TestIndentMultiline(t *testing.T) {
 
 func TestMergeRouteSection_DefaultDomainResolver(t *testing.T) {
 	raw := json.RawMessage(`{"rules":[],"final":"direct-out","default_domain_resolver":"old"}`)
-	out, err := MergeRouteSection(raw, nil, nil, "", "", "new_tag", false)
+	out, err := MergeRouteSection(raw, nil, "", "", "new_tag", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,7 +358,7 @@ func TestMergeRouteSection_DefaultDomainResolver(t *testing.T) {
 
 func TestMergeRouteSection_OmitDefaultDomainResolver(t *testing.T) {
 	raw := json.RawMessage(`{"rules":[],"final":"direct-out","default_domain_resolver":"old"}`)
-	out, err := MergeRouteSection(raw, nil, nil, "", "", "", true)
+	out, err := MergeRouteSection(raw, nil, "", "", "", true)
 	if err != nil {
 		t.Fatal(err)
 	}

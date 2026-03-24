@@ -38,21 +38,19 @@ func TestDefaultWizardFlow_NextNextFinish(t *testing.T) {
 	// Emulate user entering subscription URL (Page 1 of wizard)
 	model.SourceURLs = "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt"
 
-	// Build selectable rule states with defaults (as wizard does)
 	options := EnsureDefaultAvailableOutbounds(GetAvailableOutbounds(model))
-	if len(model.SelectableRuleStates) == 0 {
-		for _, rule := range templateData.SelectableRules {
-			outbound := rule.DefaultOutbound
-			if outbound == "" {
-				outbound = options[0]
-			}
-			model.SelectableRuleStates = append(model.SelectableRuleStates, &wizardmodels.RuleState{
-				Rule:             rule,
-				SelectedOutbound: outbound,
-				Enabled:          rule.IsDefault,
-			})
+	for i := range templateData.SelectableRules {
+		rule := &templateData.SelectableRules[i]
+		outbound := rule.DefaultOutbound
+		if outbound == "" {
+			outbound = options[0]
+		}
+		rs := CloneTemplateSelectableToRuleState(rule, rule.IsDefault, outbound, options)
+		if rs != nil {
+			model.CustomRules = append(model.CustomRules, rs)
 		}
 	}
+	model.RulesLibraryMerged = true
 
 	EnsureFinalSelected(model, options)
 	ApplyWizardDNSTemplate(model)
@@ -105,19 +103,19 @@ func TestWizardFlowWithCustomRules(t *testing.T) {
 	// Emulate user entering subscription URL
 	model.SourceURLs = "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS.txt"
 
-	// Initialize rule states
 	options := EnsureDefaultAvailableOutbounds(GetAvailableOutbounds(model))
-	for _, rule := range templateData.SelectableRules {
+	for i := range templateData.SelectableRules {
+		rule := &templateData.SelectableRules[i]
 		outbound := rule.DefaultOutbound
 		if outbound == "" {
 			outbound = options[0]
 		}
-		model.SelectableRuleStates = append(model.SelectableRuleStates, &wizardmodels.RuleState{
-			Rule:             rule,
-			SelectedOutbound: outbound,
-			Enabled:          rule.IsDefault,
-		})
+		rs := CloneTemplateSelectableToRuleState(rule, rule.IsDefault, outbound, options)
+		if rs != nil {
+			model.CustomRules = append(model.CustomRules, rs)
+		}
 	}
+	model.RulesLibraryMerged = true
 
 	// Add custom rule (user action)
 	customRule := &wizardmodels.RuleState{

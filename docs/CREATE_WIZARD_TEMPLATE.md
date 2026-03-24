@@ -265,7 +265,7 @@ The unified template consists of five main sections:
 - `inbounds`: Should be an empty array `[]` — it will be filled from `params` based on the platform
 - `outbounds`: Contains only static outbounds (like `direct-out`). Generated proxy outbounds from the parser are automatically inserted at the beginning of this array (between markers `/** @ParserSTART */` and `/** @ParserEND */`).
 - `endpoints`: (Optional.) Empty array `[]` by default. WireGuard nodes from sources are written between `/** @ParserSTART_E */` and `/** @ParserEND_E */`. Requires sing-box 1.11+. See [ParserConfig.md](ParserConfig.md) for `wireguard://` links.
-- `route.rules`: Contains only basic universal rules (hijack-dns, ip_is_private, local). User-selectable rules are defined in `selectable_rules`
+- `route.rules`: Contains only basic universal rules (hijack-dns, ip_is_private, local). Per-user routing presets are authored in **`selectable_rules`**; the wizard merges **enabled** copies into `route` from a single saved list **`custom_rules`** (see **docs/WIZARD_STATE.md**), not as a second parallel `route` layer
 - `route.rule_set`: Contains only shared rule sets used by multiple rules or DNS rules. Rule sets specific to individual selectable rules are defined within those rules
 - `route.default_domain_resolver`: Tag of a DNS server from `config.dns.servers` used to resolve domain names inside the route engine. The wizard’s DNS tab also reads the default from **`dns_options`** (below) when present.
 
@@ -295,7 +295,7 @@ The unified template consists of five main sections:
 
 ### 4. `selectable_rules` Section
 
-**Purpose**: Defines user-manageable routing rules that appear as checkboxes in the wizard.
+**Purpose**: Preset definitions used by the wizard **Rules** tab: **first-run seed** (entries with `"default": true`) and the **Add from library** dialog. They are **not** a separate on/off row list in `state.json` anymore — the running profile stores one ordered **`custom_rules`** array (see **docs/WIZARD_STATE.md**, spec **027**).
 
 **Structure**:
 ```json
@@ -1331,10 +1331,10 @@ Put `config_template.json` in the `bin/` folder next to the executable.
    - Click "Parse" - should generate outbounds preview
 
 2. **Tab 2 (Rules)**:
-   - Verify all your `selectable_rules` checkboxes appear
-   - Check that outbound dropdowns show correct options
-   - Toggle some rules on/off
-   - Verify platform-specific rules only appear on the correct platform
+   - After first launch, presets with `"default": true` appear as rows; **Add from library** lists all `selectable_rules` presets for appending copies
+   - Check outbound dropdowns and per-rule enable checkbox
+   - Reorder with ↑/↓ if needed
+   - Verify platform-filtered presets behave as expected on each OS
 
 3. **Tab 3 (Preview)**:
    - Click "Show Preview"
@@ -1376,7 +1376,7 @@ Put `config_template.json` in the `bin/` folder next to the executable.
 
 ### Rules Not Showing in Wizard
 
-**Problem**: `selectable_rules` don't appear as checkboxes.
+**Problem**: Expected presets do not appear on the Rules tab or in **Add from library**.
 
 **Solutions**:
 - Verify JSON structure is valid

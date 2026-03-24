@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"singbox-launcher/core"
-	"singbox-launcher/core/services"
 	"singbox-launcher/internal/debuglog"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
@@ -76,12 +75,8 @@ func (p *WizardPresenter) CreateStateFromModel(comment, id string) *wizardmodels
 	// Извлекаем config_params из модели
 	state.ConfigParams = p.extractConfigParams()
 
-	// Преобразуем SelectableRuleStates — сохраняем только label, enabled, selected_outbound
-	state.SelectableRuleStates = make([]wizardmodels.PersistedSelectableRuleState, 0, len(p.model.SelectableRuleStates))
-	for _, ruleState := range p.model.SelectableRuleStates {
-		persisted := wizardmodels.ToPersistedSelectableRuleState(ruleState)
-		state.SelectableRuleStates = append(state.SelectableRuleStates, persisted)
-	}
+	state.RulesLibraryMerged = p.model.RulesLibraryMerged
+	state.SelectableRuleStates = nil
 
 	// Преобразуем CustomRules — сохраняем полную структуру
 	state.CustomRules = make([]wizardmodels.PersistedCustomRule, 0, len(p.model.CustomRules))
@@ -217,11 +212,12 @@ func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) err
 	// Восстановление DNS вкладки (шаг 4b)
 	p.restoreDNS(stateFile)
 
-	// Восстановление SelectableRuleStates (шаг 5)
-	p.restoreSelectableRuleStates(stateFile.SelectableRuleStates)
-
-	// Восстановление CustomRules (шаг 6)
+	hadRulesLibraryMerged := stateFile.RulesLibraryMerged
+	wizardbusiness.ApplyRulesLibraryMigration(stateFile, p.model.TemplateData, p.model.ExecDir)
+	p.model.RulesLibraryMerged = stateFile.RulesLibraryMerged
+	p.model.SelectableRuleStates = nil
 	p.restoreCustomRules(stateFile.CustomRules)
+	wizardbusiness.EnsureCustomRulesDefaultOutbounds(p.model)
 
 	// Установка флага для парсинга (шаг 7)
 	p.model.PreviewNeedsParse = true
@@ -233,8 +229,17 @@ func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) err
 	// Обновляем опции outbound для правил (включая селекторы)
 	p.RefreshOutboundOptions()
 
-	// Сбрасываем флаг изменений
-	p.MarkAsSaved()
+	// Сразу записать мигрированный state.json, иначе повторное открытие снова склеит selectable+custom
+	if !hadRulesLibraryMerged {
+		if err := p.getStateStore().SaveWizardState(stateFile, stateFile.ID); err != nil {
+			debuglog.WarnLog("LoadState: persist rules library migration: %v", err)
+			p.MarkAsChanged()
+		} else {
+			p.MarkAsSaved()
+		}
+	} else {
+		p.MarkAsSaved()
+	}
 
 	return nil
 }
@@ -256,46 +261,6 @@ func (p *WizardPresenter) restoreParserConfig(stateFile *wizardmodels.WizardStat
 	p.model.ParserConfigJSON = parserConfigJSON
 
 	return nil
-}
-
-// restoreSelectableRuleStates восстанавливает SelectableRuleStates из состояния (шаг 5).
-// Сопоставляет сохранённые состояния с правилами из шаблона по label.
-// Правила без совпадения в шаблоне игнорируются (могли быть удалены из шаблона).
-// Правила из шаблона без сохранённого состояния получают значения по умолчанию.
-func (p *WizardPresenter) restoreSelectableRuleStates(persistedRules []wizardmodels.PersistedSelectableRuleState) {
-	debuglog.DebugLog("restoreSelectableRuleStates: restoring %d rules", len(persistedRules))
-
-	// Создаём индекс сохранённых состояний по label
-	savedByLabel := make(map[string]wizardmodels.PersistedSelectableRuleState)
-	for _, pr := range persistedRules {
-		savedByLabel[pr.Label] = pr
-		debuglog.DebugLog("restoreSelectableRuleStates: saved rule label=%s, enabled=%v, selected_outbound=%s", pr.Label, pr.Enabled, pr.SelectedOutbound)
-	}
-
-	// Для каждого правила из шаблона ищем сохранённое состояние
-	templateRules := p.model.TemplateData.SelectableRules
-	p.model.SelectableRuleStates = make([]*wizardmodels.RuleState, 0, len(templateRules))
-	for i := range templateRules {
-		rule := &templateRules[i]
-		rs := &wizardmodels.RuleState{
-			Rule: *rule,
-		}
-
-		if saved, ok := savedByLabel[rule.Label]; ok {
-			rs.Enabled = saved.Enabled
-			rs.SelectedOutbound = saved.SelectedOutbound
-			debuglog.DebugLog("restoreSelectableRuleStates: matched rule label=%s, enabled=%v, selected_outbound=%s", rule.Label, saved.Enabled, saved.SelectedOutbound)
-		} else {
-			rs.Enabled = rule.IsDefault
-			rs.SelectedOutbound = rule.DefaultOutbound
-		}
-
-		if !services.AllSRSDownloaded(p.model.ExecDir, rule.RuleSets) {
-			rs.Enabled = false
-		}
-
-		p.model.SelectableRuleStates = append(p.model.SelectableRuleStates, rs)
-	}
 }
 
 // restoreCustomRules восстанавливает CustomRules из состояния (шаг 6).

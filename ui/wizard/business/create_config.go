@@ -6,7 +6,7 @@
 //  1. Нормализует ParserConfig (версия, last_updated)
 //  2. Для каждой секции config из шаблона:
 //     - outbounds: вставляет сгенерированные outbounds перед статическими
-//     - route: добавляет включённые selectable rules, custom rules, rule_set и устанавливает final
+//     - route: база из шаблона (статические rules/rule_set, final из шаблона), затем правила и rule_set из custom_rules модели
 //     - остальные секции: форматирует как есть
 //  3. Оборачивает всё в JSONC с блоком @ParserConfig
 //
@@ -273,7 +273,7 @@ func buildRouteSection(model *wizardmodels.WizardModel, raw json.RawMessage, tim
 	start := time.Now()
 	defer func() { timing.LogTiming("build route", time.Since(start)) }()
 
-	merged, err := MergeRouteSection(raw, model.SelectableRuleStates, model.CustomRules, model.SelectedFinalOutbound, model.ExecDir,
+	merged, err := MergeRouteSection(raw, model.CustomRules, model.SelectedFinalOutbound, model.ExecDir,
 		model.DefaultDomainResolver, model.DefaultDomainResolverUnset)
 	if err != nil {
 		return "", fmt.Errorf("route merge failed: %w", err)
@@ -286,16 +286,16 @@ func buildRouteSection(model *wizardmodels.WizardModel, raw json.RawMessage, tim
 	return formatted, nil
 }
 
-// MergeRouteSection объединяет selectable rules, custom rules и rule_set в секцию route.
+// MergeRouteSection объединяет custom rules (единый список) и rule_set в секцию route.
 // execDir — директория исполняемого файла; для SRS rule-set при наличии локального файла
 // подставляется type: local, path (для шаблонных правил и пользовательских SRS).
-func MergeRouteSection(raw json.RawMessage, states []*wizardmodels.RuleState, customRules []*wizardmodels.RuleState, finalOutbound string, execDir string, defaultDomainResolver string, omitDefaultDomainResolver bool) (json.RawMessage, error) {
+func MergeRouteSection(raw json.RawMessage, customRules []*wizardmodels.RuleState, finalOutbound string, execDir string, defaultDomainResolver string, omitDefaultDomainResolver bool) (json.RawMessage, error) {
 	var route map[string]interface{}
 	if err := json.Unmarshal(raw, &route); err != nil {
 		return nil, err
 	}
 
-	// Существующие rules из шаблона
+	// Базовые rules из шаблона (например hijack-dns); далее append только из custom_rules.
 	var rules []interface{}
 	if existing, ok := route["rules"]; ok {
 		if arr, ok := existing.([]interface{}); ok {
@@ -303,7 +303,6 @@ func MergeRouteSection(raw json.RawMessage, states []*wizardmodels.RuleState, cu
 		}
 	}
 
-	// Существующие rule_set из шаблона
 	var ruleSets []interface{}
 	if existing, ok := route["rule_set"]; ok {
 		if arr, ok := existing.([]interface{}); ok {
@@ -331,7 +330,6 @@ func MergeRouteSection(raw json.RawMessage, states []*wizardmodels.RuleState, cu
 		}
 	}
 
-	// Обработка правил (selectable + custom)
 	processRule := func(ruleState *wizardmodels.RuleState) {
 		if !ruleState.Enabled {
 			return
@@ -360,9 +358,6 @@ func MergeRouteSection(raw json.RawMessage, states []*wizardmodels.RuleState, cu
 		}
 	}
 
-	for _, state := range states {
-		processRule(state)
-	}
 	for _, customRule := range customRules {
 		processRule(customRule)
 	}

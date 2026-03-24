@@ -277,7 +277,7 @@ singbox-launcher/
 │       │   │   │   - EnsureDefaultOutbound()            # Установка дефолтного outbound
 │       │   │   │
 │       │   ├── wizard_state_file.go # Модель состояния визарда
-│       │   │   │   - WizardStateFile struct                  # Сериализуемое состояние визарда (version 2)
+│       │   │   │   - WizardStateFile struct                  # Сериализуемое состояние (save: v3; load: v2..v3, rules_library_merged)
 │       │   │   │   - PersistedSelectableRuleState struct     # Упрощённое состояние правила (label, enabled, selected_outbound)
 │       │   │   │   - PersistedCustomRule struct              # Полное определение пользовательского правила (type, params, rule_set для srs)
 │       │   │   │   - DetermineRuleType()                     # Вывод типа правила из rule при загрузке (ips, urls, processes, srs, raw)
@@ -359,19 +359,15 @@ singbox-launcher/
 │       │   │   │   - showSourceEditWindow()                  # Диалог правки одного ProxySource
 │       │   │   │
 │       │   ├── rules_tab.go    # Вкладка правил
-│       │   │   │   - CreateRulesTab()                        # Создание вкладки правил (основная функция)
-│       │   │   │   - createSelectableRulesUI()               # UI для selectable rules из шаблона
-│       │   │   │   - createCustomRulesUI()                  # UI для пользовательских правил
-│       │   │   │   - createFinalOutboundSelect()           # Селектор финального outbound
-│       │   │   │   - createOutboundSelectorForSelectableRule() # Селектор outbound для правила
-│       │   │   │   - createSelectableRuleCheckWithContent() # Check + подпись (fynewidget), описание в тултипе
-│       │   │   │   - createCustomRuleCheckWithContent()    # То же для пользовательского правила
-│       │   │   │   - createOutboundSelectorForCustomRule()  # Селектор outbound для custom rule
-│       │   │   │   - createCustomRuleActionButtons()        # Кнопки редактирования/удаления
-│       │   │   │   - deleteCustomRule()                     # Удаление пользовательского правила
-│       │   │   │   - createAddRuleButton()                  # Кнопка добавления правила
-│       │   │   │   - buildRulesTabContainer()               # Финальный контейнер таба
-│       │   │   │   - CreateRulesScroll()                    # Создание прокручиваемого списка правил
+│       │   │   │   - CreateRulesTab()                        # Список custom_rules, toolbar Add / Add from library, SRS, Final
+│       │   │   │   - buildCustomRuleRows()                   # Строки: отдельный enable Check, label (тултип), outbound Select, ↑↓ Edit Del
+│       │   │   │   - createFinalOutboundSelect()             # Селектор финального outbound
+│       │   │   │   - createOutboundSelectorForCustomRule()   # Селектор outbound для правила
+│       │   │   │   - createCustomRuleActionButtons()         # ↑↓ Edit Del
+│       │   │   │   - deleteCustomRule() / moveCustomRuleUp|Down
+│       │   │   │   - buildRulesTabContainer() / CreateRulesScroll()  # Прокрутка с gutter
+│       │   ├── library_rules_dialog.go  # Модалка пресетов шаблона
+│       │   │   │   - ShowRulesLibraryDialog()                # Чекбоксы, подсветка строк, Add selected → append в CustomRules
 │       │   │   │
 │       │   └── preview_tab.go  # Вкладка превью
 │       │       │   - createPreviewTab()                      # Создание вкладки превью
@@ -413,7 +409,10 @@ singbox-launcher/
 │       │   │   │   - BuildTemplateConfig()                   # Построение конфигурации
 │       │   │   │   - BuildParserOutboundsBlock()             # Построение блока outbounds
 │       │   │   │   - buildEndpointsSection()                  # Блок endpoints (WireGuard) @ParserSTART_E/@ParserEND_E
-│       │   │   │   - MergeRouteSection()                      # Объединение route секции
+│       │   │   │   - MergeRouteSection()                      # route: база из шаблона + append из custom_rules (+ final / default_domain_resolver)
+│       │   │   │
+│       │   ├── rules_library.go  # Клон пресета → RuleState, миграция selectable → custom_rules
+│       │   │   │   - CloneTemplateSelectableToRuleState(), ClonePresetWithSRSGuard(), AppendClonedPresetsToCustomRules(), ApplyRulesLibraryMigration(), EnsureCustomRulesDefaultOutbounds()
 │       │   │   │
 │       │   ├── formatting.go   # Форматирование и константы
 │       │   │   │   - IndentBase const                         # Базовый отступ (2 пробела)
@@ -775,7 +774,7 @@ singbox-launcher/
   - `GetEffectiveOutbound()` - получение эффективного outbound для правила
   - `EnsureDefaultOutbound()` - установка дефолтного outbound
 - `wizard_state_file.go`:
-  - `WizardStateFile` struct - сериализуемое состояние визарда (version 2, метаданные, ParserConfig, ConfigParams, правила)
+  - `WizardStateFile` struct - сериализуемое состояние визарда (version **3** при сохранении; чтение **2..3**, метаданные, ParserConfig, ConfigParams, **`rules_library_merged`**, правила)
   - `PersistedSelectableRuleState` struct - упрощённое состояние правила из шаблона (только label, enabled, selected_outbound)
   - `PersistedCustomRule` struct - полное определение пользовательского правила (label, type, rule, enabled и т.д.)
   - `WizardStateMetadata` struct - метаданные состояния для списка
@@ -826,7 +825,7 @@ singbox-launcher/
   - `HasUnsavedChanges()` - проверка наличия несохранённых изменений
   - `MarkAsChanged()` - установка флага изменений
   - `MarkAsSaved()` - сброс флага изменений
-  - **Хранение и загрузка state:** состояние хранится в `bin/wizard_states/state.json` (текущее) и в `bin/wizard_states/<id>.json` (именованные). При сохранении презентер вызывает `CreateStateFromModel()` (внутри — `SyncGUIToModel`), затем state_store записывает файл. При загрузке state_store читает файл, вызывается `LoadState()`: миграции (MigrateCustomRules, MigrateSelectableRuleStates), восстановление custom_rules через `ToRuleState()` (тип при отсутствии/старом формате выводится из rule через DetermineRuleType; params и rule_set восстанавливаются в модель), восстановление DNS (`restoreDNS`: **`dns_options`** (правила — JSON-массив **`rules`**), при необходимости миграция старого **`route.default_domain_resolver`** из `config_params`, затем **`wizardbusiness.ApplyWizardDNSTemplate`**). Резолвер по умолчанию в state — только в **`dns_options`**, не в `config_params`. Полный порядок чтения шаблона и state (включая смену снимка по Read) — **docs/WIZARD_STATE.md** (разделы **«Резюме по блокам (чтение)»** и **«Поток чтения»**); DNS — там же (**«Поток DNS»**, **`dns_options`**).
+  - **Хранение и загрузка state:** состояние хранится в `bin/wizard_states/state.json` (текущее) и в `bin/wizard_states/<id>.json` (именованные). При сохранении презентер вызывает `CreateStateFromModel()` (внутри — `SyncGUIToModel`), затем state_store записывает файл. При загрузке state_store читает файл, вызывается `LoadState()`: миграции JSON (MigrateCustomRules, MigrateSelectableRuleStates), затем **`ApplyRulesLibraryMigration`**, **`SelectableRuleStates` в модели всегда nil**, **`restoreCustomRules`**, **`EnsureCustomRulesDefaultOutbounds`** (outbound после миграции), DNS (`restoreDNS` / **`ApplyWizardDNSTemplate`**). При первой миграции library успешная запись state на диск сбрасывает dirty-флаг. Резолвер по умолчанию в state — только в **`dns_options`**. Подробно — **docs/WIZARD_STATE.md**.
 - `presenter_rules.go`:
   - `RefreshRulesTab()` - обновление содержимого таба Rules (принимает функцию создания вкладки)
   - `RefreshRulesTabAfterLoadState()` - пересоздание вкладки Rules после LoadState (использует сохранённую функцию через DI)
@@ -847,9 +846,10 @@ singbox-launcher/
 - `source_edit_window.go`:
   - `showSourceEditWindow()` — диалог одного `ProxySource`: вкладки **Настройки**, **Просмотр** (локальные outbounds + ноды), **JSON** (read-only `proxies[i]`); `exclude_from_global` / `expose_group_tags_to_global`; `business` для маркеров **WIZARD:** в `proxies[].outbounds`; обновление Preview/JSON при смене настроек, если вкладка активна
 - `rules_tab.go`:
-  - `createTemplateTab()` - создание вкладки правил
-  - `createRulesScroll()` - создание прокручиваемого списка правил
-  - UI компоненты вкладки правил
+  - `CreateRulesTab()` — единый список **`CustomRules`**, пустое состояние, SRS-кнопки по типу правила
+  - `CreateRulesScroll()` — прокрутка с gutter
+- `library_rules_dialog.go`:
+  - `ShowRulesLibraryDialog()` — пресеты **`TemplateData.SelectableRules`**, выбор строк, **Add selected**
 - `preview_tab.go`:
   - `createPreviewTab()` - создание вкладки превью
   - UI компоненты вкладки превью конфигурации
@@ -870,7 +870,7 @@ singbox-launcher/
   - `downloadGetFreeJSON()` - скачивание get_free.json с GitHub
   - `loadGetFreeJSON()` - загрузка и парсинг get_free.json
   - `convertGetFreeDataToStateFile()` - преобразование в WizardStateFile
-  - Работа с упрощенным форматом: parser_config, selectable_rules (без дефолтов)
+  - Работа с упрощенным форматом: parser_config, selectable_rules (в JSON); при **`LoadState`** срабатывает та же миграция library, что и для обычного state
   - Использует фабрику `wizardmodels.NewWizardStateFile()` для инкапсуляции логики
   - Применяет конфигурацию через `presenter.LoadState()` (та же логика, что и для state.json)
 - `rule_dialog.go`:
@@ -898,7 +898,7 @@ singbox-launcher/
   - `BuildTemplateConfig()` - построение финальной конфигурации из шаблона и модели
   - `BuildParserOutboundsBlock()` - формирование блока outbounds из сгенерированных outbounds
   - `buildEndpointsSection()` - формирование блока endpoints (WireGuard) между @ParserSTART_E и @ParserEND_E
-  - `MergeRouteSection()` - объединение правил маршрутизации из шаблона и пользовательских правил
+  - `MergeRouteSection()` - слияние секции **`route`**: базовые **`rules`** / **`rule_set`** из шаблона, затем включённые правила из **`custom_rules`** модели (пресеты шаблона в `route` отдельно не подмешиваются — только через **`custom_rules`**)
   - `FormatSectionJSON()`, `IndentMultiline()` - вспомогательные функции форматирования JSON
 - `validator.go`:
   - `ValidateParserConfig()` - валидация структуры и содержимого ParserConfig
