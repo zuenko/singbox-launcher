@@ -14,6 +14,7 @@ import (
 
 	internaldialogs "singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/fynewidget"
 	"singbox-launcher/internal/locale"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
@@ -84,8 +85,15 @@ func ShowRulesLibraryDialog(p *wizardpresentation.WizardPresenter, showAddRuleDi
 			refreshAddBtn(addBtn)
 		})
 
+		labelTap := fynewidget.NewTapWrap(lbl, func() {
+			if chk.Disabled() {
+				return
+			}
+			chk.SetChecked(!chk.Checked)
+		})
+
 		// Border: чекбокс слева, подпись в центре получает оставшуюся ширину (HBox даёт лейблу ~0 → только «…»).
-		rowLeft := container.NewBorder(nil, nil, chk, nil, lbl)
+		rowLeft := container.NewBorder(nil, nil, chk, nil, labelTap)
 		padded := container.NewPadded(rowLeft)
 		row := container.NewMax(bg, padded)
 		listBox.Add(row)

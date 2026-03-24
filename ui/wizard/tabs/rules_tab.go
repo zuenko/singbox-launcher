@@ -283,15 +283,21 @@ func buildCustomRuleRows(
 		leftLead := container.NewHBox(checkbox, moveUpButton, moveDownButton)
 		rightCluster := container.NewHBox(editButton, deleteButton, outboundSelect)
 
-		var center fyne.CanvasObject = label
+		labelTap := fynewidget.NewTapWrap(label, func() {
+			if checkbox.Disabled() {
+				return
+			}
+			checkbox.SetChecked(!checkbox.Checked)
+		})
+		var center fyne.CanvasObject = labelTap
 		if srsButton != nil {
-			center = container.NewBorder(nil, nil, nil, srsButton, label)
+			center = container.NewBorder(nil, nil, nil, srsButton, labelTap)
 		}
 		rulesBox.Add(container.NewBorder(nil, nil, leftLead, rightCluster, center))
 	}
 }
 
-// createRuleEnableCheckbox — только чекбокс вкл/выкл (кликабельная зона отделена от подписи).
+// createRuleEnableCheckbox — чекбокс вкл/выкл; подпись правила обёрнута в TapWrap и тоже переключает состояние.
 func createRuleEnableCheckbox(
 	presenter *wizardpresentation.WizardPresenter,
 	model *wizardmodels.WizardModel,
