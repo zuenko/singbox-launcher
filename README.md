@@ -3,7 +3,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-Leadaxe%2Fsingbox--launcher-blue)](https://github.com/Leadaxe/singbox-launcher)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.24%2B-blue)](https://golang.org/)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/Leadaxe/singbox-launcher/releases)
+[![Version](https://img.shields.io/badge/version-0.8.5-blue)](https://github.com/Leadaxe/singbox-launcher/releases)
 
 Cross-platform GUI launcher for [sing-box](https://github.com/SagerNet/sing-box) - universal proxy client.
 
@@ -99,7 +99,9 @@ This launcher solves all of that. Everything is controlled from one clean GUI:
 ## 📋 Requirements
 
 ### Windows
-- Windows 10/11 (x64)
+- **Recommended systems:** Windows 10/11 (x64)
+- **Compatibility mode:** Windows 7 (x86/x64) via a separate legacy build `singbox-launcher-<version>-win7-32.zip`  
+  In this mode the launcher uses a fixed legacy `sing-box` version (1.13.2, 32-bit) and 32-bit `wintun.dll`, both working on Win7 x86 and Win7 x64.
 - [sing-box](https://github.com/SagerNet/sing-box/releases) (executable file)
 - [WinTun](https://www.wintun.net/) (wintun.dll) - MIT license, can be distributed
 
@@ -124,15 +126,17 @@ If you can help test on Linux, please open an issue or pull request on GitHub!
 
 ### Windows
 
-1. Download the latest release from [GitHub Releases](https://github.com/Leadaxe/singbox-launcher/releases)
+1. Download the latest release from [GitHub Releases](https://github.com/Leadaxe/singbox-launcher/releases)  
+   - for Windows 10/11 (x64) — regular Windows release archive;
+   - for Windows 7 (x86/x64) — `singbox-launcher-<version>-win7-32.zip` legacy build.
 2. Extract the archive to any folder (e.g., `C:\Program Files\singbox-launcher`)
 3. Place `config.json` in the `bin\` folder:
    - Copy `config.example.json` to `config.json` and configure it
 4. Run `singbox-launcher.exe`
 5. **Automatic download** (recommended):
    - Go to the **"Core"** tab
-   - Click **"Download"** to download `sing-box.exe` (automatically downloads the correct version for your system)
-   - Click **"Download wintun.dll"** if needed (automatically downloads the correct architecture)
+   - Click **"Download"** to download `sing-box.exe` (the launcher will automatically choose a compatible binary for your platform; on Windows 7 it always uses the fixed 32-bit 1.13.2 legacy build)
+   - Click **"Download wintun.dll"** if needed (automatically downloads the correct architecture; on Windows 7 — 32-bit `wintun.dll`)
    - The launcher will automatically download from GitHub or SourceForge mirror if GitHub is unavailable
 
 ### macOS
@@ -164,10 +168,10 @@ The script will automatically:
 **Install Specific Version:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scripts/install-macos.sh | bash -s -- v0.8.0
+curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scripts/install-macos.sh | bash -s -- v0.8.5
 ```
 
-Replace `v0.8.0` with the version you want to install.
+Replace `v0.8.5` with the version you want to install.
 
 #### Option 2: Manual Installation
 
@@ -270,6 +274,7 @@ Replace `v0.8.0` with the version you want to install.
 - **Load Proxies** - Load proxy list from selected group
 - Switch between proxy servers
 - Check latency (ping) for each proxy
+- **Copy link** (right-click a proxy row): first menu line is the Clash API **`type`** in **lowercase** (e.g. `selector`, `direct`, `vless`), then **Copy link**; builds a share URI from the matching outbound in `config.json`, or from **WireGuard** in **`endpoints[]`** if the tag is not an outbound (see **docs/ParserConfig.md** — *Share URI*)
 - **Auto-loaders**: Automatically loads proxies when sing-box starts
 - Tab is visually disabled (grayed out) when sing-box is not running
 
@@ -410,7 +415,7 @@ When a rule has an `outbound` field, the wizard provides a dropdown with the fol
 
 **Example Template Structure:**
 
-```json
+```jsonc
 {
   "parser_config": {
     "ParserConfig": {
@@ -471,7 +476,7 @@ In addition to template rules, users can create their own rules directly in the 
 
 Custom rules are saved in the standard sing-box rule format:
 
-```json
+```jsonc
 {
   "route": {
     "rules": [
@@ -739,18 +744,45 @@ chmod +x build/build_darwin.sh
 ./build/build_darwin.sh universal
 ```
 
-2. **Intel-only binary** (for older Macs):
-   - Supports Intel Macs only
-   - Requires macOS 10.15+ (Catalina or newer)
-   - Useful if you need to support older Intel Macs
+2. **Apple Silicon only** (`arm64`, faster — one `go build`, no `lipo`):
+   - For M-series Macs only; minimum macOS 11.0+
 
 ```bash
-# Build Intel-only binary
+./build/build_darwin.sh arm64
+```
+
+3. **Intel-only binary** (`intel`, amd64, macOS 11.0+):
+   - Single-architecture build (no universal merge)
+
+```bash
 ./build/build_darwin.sh intel
 ```
 
+4. **Catalina Intel** (`catalina`):
+   - amd64 with minimum macOS 10.15
+
+```bash
+./build/build_darwin.sh catalina
+```
+
+**Install / update in /Applications** (`-i`):
+
+- If `singbox-launcher.app` is **already** in `/Applications`, only **`Contents/MacOS/singbox-launcher`** is replaced — your **`Contents/MacOS/bin/`** (e.g. `config.json`) and **`logs/`** stay.
+- If the app is **not** there yet, the **full** `.app` is copied (first install).
+- The **`singbox-launcher.app` in the project directory is deleted** after a successful `-i` (nothing left in the repo tree from this build).
+
+```bash
+./build/build_darwin.sh -i arm64
+# or: ./build/build_darwin.sh -i universal
+```
+
+Avoid `cp -R` over the whole `.app` if you care about data: the launcher stores config next to the binary (`…/Contents/MacOS/bin/`).
+
+See `./build/build_darwin.sh --help` for all options.
+
 **Build script features:**
-- Automatically creates universal binary (arm64 + x86_64) or Intel-only binary
+- Universal (`arm64` + `amd64`), or single-arch `arm64` / `intel` / `catalina`
+- Optional `-i` to install/update in `/Applications` (binary-only update when the app already exists)
 - Creates proper `.app` bundle structure with Info.plist
 - Sets correct `LSMinimumSystemVersion` and architecture priorities
 - Includes application icon if available
@@ -762,28 +794,48 @@ GOOS=darwin GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -o singbox-la
 
 ### Linux
 
-**⚠️ Note**: Linux builds are not available. The build process and functionality need testing. Help is welcome!
+**⚠️ Note**: Linux builds are not distributed. Build from source; the process needs testing. Help is welcome!
 
-**Linux:**
+**Required system packages** (OpenGL + X11 for Fyne/GLFW). Install before building:
+
+- **Debian/Ubuntu:**
+  ```bash
+  sudo apt-get update && sudo apt-get install -y \
+    build-essential pkg-config libgl1-mesa-dev libxcursor-dev \
+    libxrandr-dev libxi-dev libxinerama-dev libxft-dev \
+    libxkbcommon-x11-dev libxxf86vm-dev libwayland-dev
+  ```
+- **Fedora/RHEL:** `mesa-libGL-devel libXcursor-devel libXrandr-devel libXi-devel libXinerama-devel libXft-devel libxkbcommon-x11-devel libXxf86vm-devel libwayland-devel` (install via `dnf`).
+
+**Build:**
 ```bash
 # Clone the repository
 git clone https://github.com/Leadaxe/singbox-launcher.git
 cd singbox-launcher
 
-# Install dependencies
 go mod download
 
-# Build the project
 chmod +x build/build_linux.sh
 ./build/build_linux.sh
 ```
 
-Or manually:
+The script checks for the required packages and prints install commands if something is missing.
+
+**Alternative: build in Docker** (no local dev packages needed):
+```bash
+# From repository root
+docker build -f build/Dockerfile.linux --target export -o type=local,dest=. .
+chmod +x singbox-launcher
+```
+
+Or manually (after installing the packages above):
 ```bash
 GOOS=linux GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -o singbox-launcher
 ```
 
-**Help Wanted**: If you can test builds on Linux, please share your feedback on [GitHub Issues](https://github.com/Leadaxe/singbox-launcher/issues)!
+Detailed instructions and troubleshooting: [docs/BUILD_LINUX.md](docs/BUILD_LINUX.md).
+
+**Help Wanted**: If you can test on Linux (e.g. Ubuntu 22.04/24.04, Debian), please share feedback on [GitHub Issues](https://github.com/Leadaxe/singbox-launcher/issues)!
 
 ## 🤝 Contributing
 

@@ -18,8 +18,10 @@
 package presentation
 
 import (
-	"singbox-launcher/core/services"
+	"time"
+
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/locale"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 )
@@ -81,8 +83,48 @@ func (p *WizardPresenter) CancelSaveOperation() {
 	})
 }
 
+const outboundOptionsRefreshDebounce = 300 * time.Millisecond
+
+func (p *WizardPresenter) cancelOutboundOptionsDebounce() {
+	p.outboundOptionsDebounceMu.Lock()
+	defer p.outboundOptionsDebounceMu.Unlock()
+	if p.outboundOptionsDebounceTimer != nil {
+		p.outboundOptionsDebounceTimer.Stop()
+		p.outboundOptionsDebounceTimer = nil
+	}
+}
+
+// CancelDebouncedOutboundRefresh отменяет отложенное обновление outbound-селектов (например при закрытии визарда).
+func (p *WizardPresenter) CancelDebouncedOutboundRefresh() {
+	p.cancelOutboundOptionsDebounce()
+}
+
+// ScheduleRefreshOutboundOptionsDebounced планирует RefreshOutboundOptions после паузы ввода.
+// При наборе ParserConfig или tag prefix на каждый символ иначе вызываются json.Unmarshal (в GetAvailableOutbounds) и обход всех RuleOutboundSelect — сильно тормозит UI.
+//
+// Контракт вызовов RefreshOutboundOptions (немедленно):
+//   - смена вкладки на Rules (wizard.go), завершение ParseAndPreview, Save после парсинга, LoadState;
+//   - Apply конфигуратора, Del источника, правки prefix (после debounce — через таймер);
+//   - presenter_sync после успешного применения ParserConfig из Entry.
+// Debounce только для потокового ввода в multi-line JSON и prefix Entry (source_tab).
+func (p *WizardPresenter) ScheduleRefreshOutboundOptionsDebounced() {
+	p.outboundOptionsDebounceMu.Lock()
+	if p.outboundOptionsDebounceTimer != nil {
+		p.outboundOptionsDebounceTimer.Stop()
+	}
+	p.outboundOptionsDebounceTimer = time.AfterFunc(outboundOptionsRefreshDebounce, func() {
+		p.outboundOptionsDebounceMu.Lock()
+		p.outboundOptionsDebounceTimer = nil
+		p.outboundOptionsDebounceMu.Unlock()
+		p.RefreshOutboundOptions()
+	})
+	p.outboundOptionsDebounceMu.Unlock()
+}
+
 // RefreshOutboundOptions обновляет опции outbound для всех правил.
 func (p *WizardPresenter) RefreshOutboundOptions() {
+	p.cancelOutboundOptionsDebounce()
+
 	options := wizardbusiness.EnsureDefaultAvailableOutbounds(wizardbusiness.GetAvailableOutbounds(p.model))
 	optionsMap := make(map[string]bool, len(options))
 	for _, opt := range options {
@@ -105,10 +147,13 @@ func (p *WizardPresenter) RefreshOutboundOptions() {
 
 	wizardbusiness.EnsureFinalSelected(p.model, options)
 
-	p.guiState.UpdatingOutboundOptions = true
-	debuglog.DebugLog("RefreshOutboundOptions: UpdatingOutboundOptions set to true")
-
 	p.UpdateUI(func() {
+		// Флаг только здесь, не до UpdateUI: иначе applyWizardWidgetsFromModel() (SyncModelToGUI
+		// сразу после создания табов) успевает выставить false до этого колбэка — SetSelected вызовет
+		// OnChanged и ложный MarkAsChanged при закрытии визарда без правок.
+		p.guiState.UpdatingOutboundOptions = true
+		debuglog.DebugLog("RefreshOutboundOptions: UpdatingOutboundOptions set to true")
+
 		for _, ruleWidget := range p.guiState.RuleOutboundSelects {
 			if ruleWidget.RuleState == nil {
 				continue
@@ -133,43 +178,31 @@ func (p *WizardPresenter) RefreshOutboundOptions() {
 		// This must be done inside UpdateUI() because UpdateUI() executes asynchronously via fyne.Do
 		p.guiState.UpdatingOutboundOptions = false
 		debuglog.DebugLog("RefreshOutboundOptions: UpdatingOutboundOptions reset to false")
-
-		// Reset hasChanges flag after all SetSelected() callbacks have completed
-		// This ensures that any callbacks that fired during initialization don't set the flag
-		p.hasChanges = false
-		debuglog.DebugLog("RefreshOutboundOptions: hasChanges reset to false")
 	})
 }
 
-// InitializeTemplateState инициализирует состояние шаблона.
-// Создаёт RuleState для каждого selectable rule из шаблона (если ещё не загружены из state.json).
+// InitializeTemplateState — правила маршрута только в CustomRules; selectable-слой не используется.
+// Первый запуск без state: засев пресетов с default:true из шаблона; затем outbound/final.
 func (p *WizardPresenter) InitializeTemplateState() {
 	if p.model.TemplateData == nil {
 		return
 	}
 
+	p.model.SelectableRuleStates = nil
 	options := wizardbusiness.EnsureDefaultAvailableOutbounds(wizardbusiness.GetAvailableOutbounds(p.model))
 
-	if len(p.model.SelectableRuleStates) == 0 {
-		for _, rule := range p.model.TemplateData.SelectableRules {
-			outbound := rule.DefaultOutbound
-			if outbound == "" {
-				outbound = options[0]
+	if !p.model.RulesLibraryMerged && len(p.model.CustomRules) == 0 {
+		for i := range p.model.TemplateData.SelectableRules {
+			tr := &p.model.TemplateData.SelectableRules[i]
+			if rs := wizardbusiness.ClonePresetWithSRSGuard(p.model, tr, tr.IsDefault, options); rs != nil {
+				p.model.CustomRules = append(p.model.CustomRules, rs)
 			}
-			enabled := rule.IsDefault
-			if !services.AllSRSDownloaded(p.model.ExecDir, rule.RuleSets) {
-				enabled = false
-			}
-			p.model.SelectableRuleStates = append(p.model.SelectableRuleStates, &wizardmodels.RuleState{
-				Rule:             rule,
-				SelectedOutbound: outbound,
-				Enabled:          enabled,
-			})
 		}
-	} else {
-		for _, ruleState := range p.model.SelectableRuleStates {
-			wizardmodels.EnsureDefaultOutbound(ruleState, options)
-		}
+		p.model.RulesLibraryMerged = true
+	}
+
+	for _, ruleState := range p.model.CustomRules {
+		wizardmodels.EnsureDefaultOutbound(ruleState, options)
 	}
 
 	wizardbusiness.EnsureFinalSelected(p.model, options)
@@ -199,9 +232,9 @@ func (p *WizardPresenter) SetTemplatePreviewText(text string) {
 	// For large texts (>50KB) show loading message before insertion
 	if len(text) > 50000 {
 		p.UpdateUI(func() {
-			p.guiState.TemplatePreviewEntry.SetText("Loading large preview...")
+			p.guiState.TemplatePreviewEntry.SetText(locale.T("wizard.preview.loading_large"))
 			if p.guiState.TemplatePreviewStatusLabel != nil {
-				p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Loading large preview...")
+				p.guiState.TemplatePreviewStatusLabel.SetText(locale.T("wizard.preview.status_loading_large"))
 			}
 		})
 

@@ -1,6 +1,6 @@
 module singbox-launcher
 
-go 1.24.4
+go 1.25.0
 
 require (
 	fyne.io/fyne/v2 v2.7.3
@@ -9,6 +9,7 @@ require (
 	github.com/muhammadmuzzammil1998/jsonc v1.0.0
 	github.com/pion/stun v0.6.1
 	github.com/txthinking/socks5 v0.0.0-20251011041537-5c31f201a10e
+	golang.org/x/sys v0.42.0
 )
 
 require (
@@ -46,7 +47,6 @@ require (
 	golang.org/x/crypto v0.33.0 // indirect
 	golang.org/x/image v0.24.0 // indirect
 	golang.org/x/net v0.35.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

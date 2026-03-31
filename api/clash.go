@@ -3,20 +3,26 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/platform"
+	"singbox-launcher/internal/textnorm"
 
 	"github.com/muhammadmuzzammil1998/jsonc"
 )
+
+// ErrPlatformInterrupt is returned when a request is aborted due to system sleep (platform cancelled the context).
+var ErrPlatformInterrupt = errors.New("platform: interrupt")
 
 // LoadClashAPIConfig reads the Clash API URL and token from the sing-box config.json
 func LoadClashAPIConfig(configPath string) (baseURL, token string, err error) {
@@ -61,6 +67,9 @@ const (
 	httpRequestTimeoutSeconds = 20 // Increased to 20 seconds for better reliability
 )
 
+// httpIdleConnTimeout limits connection reuse; avoids stale connections after sleep/hibernation.
+const httpIdleConnTimeoutSec = 30
+
 // PingTestEndpoint describes a single HTTP endpoint that Clash uses
 // for delay measurement via /proxies/{name}/delay (url query param).
 type PingTestEndpoint struct {
@@ -93,6 +102,28 @@ var (
 // It is process-wide and can be overridden at runtime from the UI.
 var pingTestURL = PingTestEndpointGoogle.URL
 
+// pingTestAllConcurrency is the worker count for bulk "ping all" on the Servers tab (see UI options).
+var pingTestAllConcurrency = 20
+
+func normalizePingTestAllConcurrency(n int) int {
+	switch n {
+	case 1, 5, 10, 20, 50, 100:
+		return n
+	default:
+		return 20
+	}
+}
+
+// GetPingTestAllConcurrency returns the number of parallel delay requests for ping-all.
+func GetPingTestAllConcurrency() int {
+	return pingTestAllConcurrency
+}
+
+// SetPingTestAllConcurrency sets parallel workers for ping-all; invalid values become 20.
+func SetPingTestAllConcurrency(n int) {
+	pingTestAllConcurrency = normalizePingTestAllConcurrency(n)
+}
+
 // GetPingTestURL returns the current endpoint used for delay checks.
 func GetPingTestURL() string {
 	return pingTestURL
@@ -108,14 +139,45 @@ func SetPingTestURL(url string) {
 	pingTestURL = url
 }
 
-// Global HTTP client with timeout for all HTTP requests
-var httpClient = &http.Client{
-	Timeout: time.Duration(httpRequestTimeoutSeconds) * time.Second,
-	Transport: &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout: time.Duration(httpDialTimeoutSeconds) * time.Second,
-		}).DialContext,
-	},
+// clashHTTPClient creates a new HTTP client for Clash API with timeouts and idle connection limit.
+// Used at init and when resetting transport after system resume (Windows sleep/hibernation).
+func clashHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: time.Duration(httpRequestTimeoutSeconds) * time.Second,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout: time.Duration(httpDialTimeoutSeconds) * time.Second,
+			}).DialContext,
+			IdleConnTimeout: httpIdleConnTimeoutSec * time.Second,
+		},
+	}
+}
+
+var (
+	httpClientMu sync.Mutex
+	httpClient   = clashHTTPClient()
+)
+
+// getHTTPClient returns the current Clash API HTTP client (safe for concurrent use).
+func getHTTPClient() *http.Client {
+	httpClientMu.Lock()
+	defer httpClientMu.Unlock()
+	return httpClient
+}
+
+// ResetClashHTTPTransport replaces the global Clash API HTTP client with a new one and closes
+// idle connections of the old transport. Call after system resume from sleep/hibernation
+// so that stale TCP connections are not reused.
+func ResetClashHTTPTransport() {
+	httpClientMu.Lock()
+	old := httpClient
+	httpClient = clashHTTPClient()
+	httpClientMu.Unlock()
+	if old != nil && old.Transport != nil {
+		if t, ok := old.Transport.(*http.Transport); ok {
+			t.CloseIdleConnections()
+		}
+	}
 }
 
 // apiLogFile is the target for API request logging (api.log). Set via SetAPILogFile.
@@ -162,22 +224,42 @@ func writeLog(level debuglog.Level, format string, args ...interface{}) {
 	}
 }
 
-// TestAPIConnection attempts to connect to the Clash API.
+// requestContext returns the platform power context for an outgoing request, or ErrPlatformInterrupt if the system is sleeping.
+func requestContext() (context.Context, error) {
+	if platform.IsSleeping() {
+		return nil, ErrPlatformInterrupt
+	}
+	return platform.PowerContext(), nil
+}
+
+// normalizeRequestError maps context.Canceled (e.g. sleep) to ErrPlatformInterrupt; other errors unchanged.
+func normalizeRequestError(err error) error {
+	if err != nil && errors.Is(err, context.Canceled) {
+		return ErrPlatformInterrupt
+	}
+	return err
+}
+
+// TestAPIConnection attempts to connect to the Clash API. Aborts with ErrPlatformInterrupt when the system is sleeping or context is cancelled.
 func TestAPIConnection(baseURL, token string) error {
+	ctx, err := requestContext()
+	if err != nil {
+		return err
+	}
 	logMessage := fmt.Sprintf("[%s] GET /version request started for API test.\n", time.Now().Format("2006-01-02 15:04:05"))
 	writeLog(debuglog.LevelVerbose, "%s", logMessage)
 
 	url := fmt.Sprintf("%s/version", baseURL)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(httpRequestTimeoutSeconds)*time.Second)
+	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(httpRequestTimeoutSeconds)*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(reqCtx, "GET", url, nil)
 	if err != nil {
 		writeLog(debuglog.LevelInfo, "[%s] Error creating API test request: %v\n", time.Now().Format("2006-01-02 15:04:05"), err)
 		return fmt.Errorf("failed to create API test request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	resp, err := httpClient.Do(req)
+	resp, err := getHTTPClient().Do(req)
 	defer func() {
 		if resp != nil {
 			debuglog.RunAndLog("TestAPIConnection: close response body", resp.Body.Close)
@@ -185,16 +267,14 @@ func TestAPIConnection(baseURL, token string) error {
 	}()
 	if err != nil {
 		writeLog(debuglog.LevelInfo, "[%s] Error executing API test request: %v\n", time.Now().Format("2006-01-02 15:04:05"), err)
-		// Проверяем тип ошибки для более понятного сообщения
+		if e := normalizeRequestError(err); e != err {
+			return e
+		}
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			return fmt.Errorf("network timeout: connection timed out")
 		}
 		if opErr, ok := err.(*net.OpError); ok && opErr.Op == "dial" {
 			return fmt.Errorf("network error: cannot connect to server")
-		}
-		// Проверяем Windows-специфичные ошибки (connectex, actively refused) - только на Windows
-		if runtime.GOOS == "windows" {
-			return fmt.Errorf("failed to execute API test request: %w \n Please wait 15 seconds and try again", err)
 		}
 		return fmt.Errorf("failed to execute API test request: %w", err)
 	}
@@ -212,13 +292,43 @@ func TestAPIConnection(baseURL, token string) error {
 
 // ProxyInfo holds the proxy name and traffic usage.
 type ProxyInfo struct {
-	Name    string
-	Traffic [2]int64 // [up, down]
-	Delay   int64    // Last known delay in ms
+	// Name is the exact tag from the Clash API (used for /proxies/... requests).
+	Name string
+	// DisplayName is normalized for UI (UTF-8 repair, angle quotes → " > "). Empty means callers may fall back to Name.
+	DisplayName string
+	// ClashType is the proxy "type" from GET /proxies (e.g. Selector, URLTest, VLESS). Empty if the API omits it.
+	ClashType string
+	Traffic   [2]int64 // [up, down]
+	Delay     int64    // Last known delay in ms
 }
 
-// GetProxiesInGroup retrieves proxies from a group, their traffic stats, and last delay from the Clash API.
+// DisplayOrName returns DisplayName when set, otherwise a normalized form of Name for UI.
+func (p ProxyInfo) DisplayOrName() string {
+	if p.DisplayName != "" {
+		return p.DisplayName
+	}
+	d := textnorm.NormalizeProxyDisplay(p.Name)
+	if d == "" {
+		return p.Name
+	}
+	return d
+}
+
+// ContextMenuTypeLine returns ClashType in lowercase for the Servers tab context menu, or unknownLabel if empty.
+func (p ProxyInfo) ContextMenuTypeLine(unknownLabel string) string {
+	t := strings.TrimSpace(p.ClashType)
+	if t == "" {
+		return unknownLabel
+	}
+	return strings.ToLower(t)
+}
+
+// GetProxiesInGroup retrieves proxies from a group, their traffic stats, and last delay from the Clash API. Returns ErrPlatformInterrupt when the system is sleeping or context is cancelled.
 func GetProxiesInGroup(baseURL, token, groupName string) ([]ProxyInfo, string, error) {
+	ctx, err := requestContext()
+	if err != nil {
+		return nil, "", err
+	}
 	logMsg := func(level debuglog.Level, format string, a ...interface{}) {
 		timestamp := time.Now().Format("2006-01-02 15:04:05")
 		writeLog(level, "[%s] "+format+"\n", append([]interface{}{timestamp}, a...)...)
@@ -229,16 +339,16 @@ func GetProxiesInGroup(baseURL, token, groupName string) ([]ProxyInfo, string, e
 	url := fmt.Sprintf("%s/proxies", baseURL)
 	logMsg(debuglog.LevelTrace, "GetProxiesInGroup: Request URL: %s", url)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(httpRequestTimeoutSeconds)*time.Second)
+	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(httpRequestTimeoutSeconds)*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(reqCtx, "GET", url, nil)
 	if err != nil {
 		logMsg(debuglog.LevelInfo, "GetProxiesInGroup: ERROR: Failed to create request: %v", err)
 		return nil, "", fmt.Errorf("failed to create /proxies request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	resp, err := httpClient.Do(req)
+	resp, err := getHTTPClient().Do(req)
 	defer func() {
 		if resp != nil {
 			debuglog.RunAndLog("GetProxiesInGroup: close response body", resp.Body.Close)
@@ -246,7 +356,9 @@ func GetProxiesInGroup(baseURL, token, groupName string) ([]ProxyInfo, string, e
 	}()
 	if err != nil {
 		logMsg(debuglog.LevelInfo, "GetProxiesInGroup: ERROR: Failed to execute request: %v", err)
-		// Проверяем тип ошибки для более понятного сообщения
+		if e := normalizeRequestError(err); e != err {
+			return nil, "", e
+		}
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			return nil, "", fmt.Errorf("network timeout: connection timed out")
 		}
@@ -319,8 +431,15 @@ func GetProxiesInGroup(baseURL, token, groupName string) ([]ProxyInfo, string, e
 		if !ok {
 			continue
 		}
-		pi := ProxyInfo{Name: name}
+		disp := textnorm.NormalizeProxyDisplay(name)
+		if disp == "" {
+			disp = name
+		}
+		pi := ProxyInfo{Name: name, DisplayName: disp}
 		if node, ok := proxiesMap[name].(map[string]interface{}); ok {
+			if t, ok := node["type"].(string); ok {
+				pi.ClashType = t
+			}
 			// Парсим трафик (остается на случай, если он появится)
 			if f, ok := node["up"].(float64); ok {
 				pi.Traffic[0] = int64(f)
@@ -347,18 +466,25 @@ func GetProxiesInGroup(baseURL, token, groupName string) ([]ProxyInfo, string, e
 	return proxies, nowProxy, nil
 }
 
-// SwitchProxy switches the active proxy within the specified group.
+// SwitchProxy switches the active proxy within the specified group. Returns ErrPlatformInterrupt when the system is sleeping or context is cancelled.
 func SwitchProxy(baseURL, token, group, proxy string) error {
-	payloadStr := fmt.Sprintf("{\"name\":\"%s\"}", proxy)
-	logMessage := fmt.Sprintf("[%s] PUT /proxies/%s request started with payload: %s\n", time.Now().Format("2006-01-02 15:04:05"), group, payloadStr)
+	ctx, err := requestContext()
+	if err != nil {
+		return err
+	}
+	payloadBytes, err := json.Marshal(map[string]string{"name": proxy})
+	if err != nil {
+		return fmt.Errorf("failed to marshal switch payload: %w", err)
+	}
+	logMessage := fmt.Sprintf("[%s] PUT /proxies/%s request started with payload: %s\n", time.Now().Format("2006-01-02 15:04:05"), group, string(payloadBytes))
 	writeLog(debuglog.LevelVerbose, "%s", logMessage)
 
-	url := fmt.Sprintf("%s/proxies/%s", baseURL, group)
-	payload := strings.NewReader(payloadStr)
+	reqURL := fmt.Sprintf("%s/proxies/%s", baseURL, url.PathEscape(group))
+	payload := strings.NewReader(string(payloadBytes))
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(httpRequestTimeoutSeconds)*time.Second)
+	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(httpRequestTimeoutSeconds)*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "PUT", url, payload)
+	req, err := http.NewRequestWithContext(reqCtx, "PUT", reqURL, payload)
 	if err != nil {
 		writeLog(debuglog.LevelInfo, "[%s] Error creating switch request for %s/%s: %v\n", time.Now().Format("2006-01-02 15:04:05"), group, proxy, err)
 		return fmt.Errorf("failed to create switch request: %w", err)
@@ -367,7 +493,7 @@ func SwitchProxy(baseURL, token, group, proxy string) error {
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := httpClient.Do(req)
+	resp, err := getHTTPClient().Do(req)
 	defer func() {
 		if resp != nil {
 			debuglog.RunAndLog("SwitchProxy: close response body", resp.Body.Close)
@@ -375,7 +501,9 @@ func SwitchProxy(baseURL, token, group, proxy string) error {
 	}()
 	if err != nil {
 		writeLog(debuglog.LevelInfo, "[%s] Error executing switch request for %s/%s: %v\n", time.Now().Format("2006-01-02 15:04:05"), group, proxy, err)
-		// Проверяем тип ошибки для более понятного сообщения
+		if e := normalizeRequestError(err); e != err {
+			return e
+		}
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			return fmt.Errorf("network timeout: connection timed out")
 		}
@@ -396,20 +524,20 @@ func SwitchProxy(baseURL, token, group, proxy string) error {
 	return nil
 }
 
-// GetDelay asks Clash to measure latency for the specified proxy node
-// using the currently configured ping test endpoint (GetPingTestURL).
+// GetDelay asks Clash to measure latency for the specified proxy node (GetPingTestURL). Returns ErrPlatformInterrupt when the system is sleeping or context is cancelled.
 func GetDelay(baseURL, token, proxyName string) (int64, error) {
+	ctx, err := requestContext()
+	if err != nil {
+		return 0, err
+	}
 	logMessage := fmt.Sprintf("[%s] GET /proxies/%s/delay request started.\n", time.Now().Format("2006-01-02 15:04:05"), proxyName)
 	writeLog(debuglog.LevelVerbose, "%s", logMessage)
 
-	// url param: connectivity check endpoint (configurable via SetPingTestURL).
-	// Default endpoints:
-	// - DefaultPingTestURLGStatic = "http://www.gstatic.com/generate_204"
-	// - DefaultPingTestURLGoogle  = "https://www.google.com/generate_204"
-	url := fmt.Sprintf("%s/proxies/%s/delay?timeout=5000&url=%s", baseURL, proxyName, GetPingTestURL())
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(httpRequestTimeoutSeconds)*time.Second)
+	encName := url.PathEscape(proxyName)
+	delayURL := fmt.Sprintf("%s/proxies/%s/delay?timeout=5000&url=%s", baseURL, encName, url.QueryEscape(GetPingTestURL()))
+	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(httpRequestTimeoutSeconds)*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(reqCtx, "GET", delayURL, nil)
 	if err != nil {
 		writeLog(debuglog.LevelInfo, "[%s] Error creating delay request for %s: %v\n", time.Now().Format("2006-01-02 15:04:05"), proxyName, err)
 		return 0, fmt.Errorf("failed to create delay request: %w", err)
@@ -417,7 +545,7 @@ func GetDelay(baseURL, token, proxyName string) (int64, error) {
 
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	resp, err := httpClient.Do(req)
+	resp, err := getHTTPClient().Do(req)
 	defer func() {
 		if resp != nil {
 			debuglog.RunAndLog("GetDelay: close response body", resp.Body.Close)
@@ -425,7 +553,9 @@ func GetDelay(baseURL, token, proxyName string) (int64, error) {
 	}()
 	if err != nil {
 		writeLog(debuglog.LevelInfo, "[%s] Error executing delay request for %s: %v\n", time.Now().Format("2006-01-02 15:04:05"), proxyName, err)
-		// Проверяем тип ошибки для более понятного сообщения
+		if e := normalizeRequestError(err); e != err {
+			return 0, e
+		}
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			return 0, fmt.Errorf("network timeout: connection timed out")
 		}

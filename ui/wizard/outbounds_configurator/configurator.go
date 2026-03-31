@@ -11,12 +11,16 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"singbox-launcher/core/config"
+	"singbox-launcher/internal/fynewidget"
+	"singbox-launcher/internal/locale"
 	wizardmodels "singbox-launcher/ui/wizard/models"
+	wizardutils "singbox-launcher/ui/wizard/utils"
+
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 // OutboundEditPresenter is used to register the Edit/Add window with the wizard overlay (single instance, focus redirect).
@@ -44,11 +48,9 @@ func collectRows(pc *config.ParserConfig) []outboundRow {
 	for si, proxy := range pc.ParserConfig.Proxies {
 		label := proxy.Source
 		if label == "" {
-			label = "Source " + strconv.Itoa(si+1)
+			label = locale.T("wizard.outbound.label_source") + strconv.Itoa(si+1)
 		}
-		if len(label) > 40 {
-			label = label[:37] + "..."
-		}
+		label = wizardutils.TruncateStringEllipsis(label, wizardutils.MaxLabelRunes, "...")
 		for i := range proxy.Outbounds {
 			rows = append(rows, outboundRow{
 				IsGlobal:     false,
@@ -157,29 +159,38 @@ func moveOutboundDown(parserConfig *config.ParserConfig, r outboundRow) {
 // ParserConfig is taken from the model (editPresenter.Model()) so the configurator always edits the current config.
 // onApply is called after each mutation (Edit/Add/Delete/Up/Down) so the caller can serialize and sync.
 // editPresenter is required (Model() is used to get ParserConfig); when set, the Edit/Add window is registered for overlay.
-func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresenter, onApply func()) fyne.CanvasObject {
+// The returned refresh function rebuilds the list from the current model (call after ParserConfig changes outside the list, e.g. Sources → Edit).
+func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresenter, onApply func()) (fyne.CanvasObject, func()) {
 	listContent := container.NewVBox()
 
 	var refreshList func()
 	refreshList = func() {
 		parserConfig := getParserConfig(editPresenter.Model())
 		if parserConfig == nil {
+			listContent.Objects = nil
+			listContent.Refresh()
 			return
 		}
 		rows := collectRows(parserConfig)
 		items := make([]fyne.CanvasObject, 0, len(rows))
+		setReorderBtnTip := func(w fyne.CanvasObject, tip string) {
+			if tb, ok := interface{}(w).(interface{ SetToolTip(string) }); ok {
+				tb.SetToolTip(tip)
+			}
+		}
 		for rowIdx, r := range rows {
 			r := r
 			rowIdx := rowIdx
-			label := r.Outbound.Tag + " (" + r.Outbound.Type + ") — " + r.SourceLabel
-			const maxLabelLen = 56
-			if len(label) > maxLabelLen {
-				label = label[:maxLabelLen-3] + "..."
-			}
+			var row *fynewidget.HoverRow
+			rowGetter := func() *fynewidget.HoverRow { return row }
+
+			rawLine := r.Outbound.Tag + " (" + r.Outbound.Type + ") — " + r.SourceLabel
+			rawLine = strings.ToValidUTF8(rawLine, "")
+			displayLine := wizardutils.TruncateStringEllipsis(rawLine, wizardutils.MaxLabelRunes, "...")
 			canUp := rowIdx > 0 && sameScope(rows[rowIdx], rows[rowIdx-1])
 			canDown := rowIdx < len(rows)-1 && sameScope(rows[rowIdx], rows[rowIdx+1])
 
-			upBtn := widget.NewButton("↑", func() {
+			upBtn := fynewidget.NewHoverForwardButton("↑", func() {
 				parserConfig := getParserConfig(editPresenter.Model())
 				if parserConfig == nil {
 					return
@@ -197,12 +208,15 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 				if onApply != nil {
 					onApply()
 				}
-			})
+			}, rowGetter)
 			if !canUp {
 				upBtn.Disable()
+				setReorderBtnTip(upBtn, locale.T("wizard.outbound.reorder_up_off"))
+			} else {
+				setReorderBtnTip(upBtn, locale.T("wizard.outbound.reorder_up"))
 			}
 
-			downBtn := widget.NewButton("↓", func() {
+			downBtn := fynewidget.NewHoverForwardButton("↓", func() {
 				parserConfig := getParserConfig(editPresenter.Model())
 				if parserConfig == nil {
 					return
@@ -220,12 +234,15 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 				if onApply != nil {
 					onApply()
 				}
-			})
+			}, rowGetter)
 			if !canDown {
 				downBtn.Disable()
+				setReorderBtnTip(downBtn, locale.T("wizard.outbound.reorder_down_off"))
+			} else {
+				setReorderBtnTip(downBtn, locale.T("wizard.outbound.reorder_down"))
 			}
 
-			editBtn := widget.NewButtonWithIcon("Edit", theme.DocumentCreateIcon(), func() {
+			editBtn := fynewidget.NewHoverForwardButtonWithIcon(locale.T("wizard.shared.button_edit"), theme.DocumentCreateIcon(), func() {
 				parserConfig := getParserConfig(editPresenter.Model())
 				if parserConfig == nil {
 					return
@@ -266,9 +283,9 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 						onApply()
 					}
 				})
-			})
+			}, rowGetter)
 
-			delBtn := widget.NewButtonWithIcon("Del", theme.DeleteIcon(), func() {
+			delBtn := fynewidget.NewHoverForwardButtonWithIcon(locale.T("wizard.shared.button_del"), theme.DeleteIcon(), func() {
 				parserConfig := getParserConfig(editPresenter.Model())
 				if parserConfig == nil {
 					return
@@ -289,14 +306,22 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 				if onApply != nil {
 					onApply()
 				}
-			})
+			}, rowGetter)
 
-			// Add fixed 30px transparent padding on the right inside the row,
-			// so scrollbar has its own visual strip without increasing label width.
+			// Add transparent padding on the right so the list scrollbar has a visual strip.
 			rightPadding := canvas.NewRectangle(color.Transparent)
 			rightPadding.SetMinSize(fyne.NewSize(10, 0))
 
-			row := container.NewHBox(upBtn, downBtn, widget.NewLabel(label), layout.NewSpacer(), editBtn, delBtn, rightPadding)
+			// Border + ellipsis (same idea as Sources list): HBox would give the label its full text min width → horizontal scroll.
+			nameLabel := ttwidget.NewLabel(displayLine)
+			nameLabel.Wrapping = fyne.TextWrapOff
+			nameLabel.Truncation = fyne.TextTruncateEllipsis
+			nameLabel.SetToolTip(rawLine)
+			leftArrows := container.NewHBox(upBtn, downBtn)
+			rightControls := container.NewHBox(editBtn, delBtn, rightPadding)
+			rowInner := container.NewBorder(nil, nil, leftArrows, rightControls, nameLabel)
+			row = fynewidget.NewHoverRow(rowInner, fynewidget.HoverRowConfig{})
+			row.WireTooltipLabelHover(nameLabel)
 			items = append(items, row)
 		}
 		listContent.Objects = items
@@ -305,7 +330,7 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 
 	refreshList()
 
-	addBtn := widget.NewButton("Add", func() {
+	addBtn := widget.NewButton(locale.T("wizard.outbound.button_add"), func() {
 		parserConfig := getParserConfig(editPresenter.Model())
 		if parserConfig == nil {
 			return
@@ -330,11 +355,11 @@ func NewConfiguratorContent(parent fyne.Window, editPresenter OutboundEditPresen
 	scroll := container.NewScroll(listContent)
 	scroll.SetMinSize(fyne.NewSize(0, 280))
 
-	top := container.NewBorder(nil, nil, nil, addBtn, widget.NewLabel("Outbounds:"))
+	top := container.NewBorder(nil, nil, nil, addBtn, widget.NewLabel(locale.T("wizard.outbound.configurator_label")))
 	return container.NewBorder(
 		top,
 		nil,
 		nil, nil,
 		scroll,
-	)
+	), refreshList
 }

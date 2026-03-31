@@ -9,21 +9,21 @@
 //
 // Асинхронные операции имеют отдельную ответственность от синхронных методов.
 // Содержат сложную логику управления состоянием прогресса и блокировками.
-// Обрабатывают ошибки асинхронных операций и показывают диалоги пользователю.
+// Ошибки парсинга в TriggerParseForPreview пишутся в лог; UpdateTemplatePreviewAsync может отразить ошибку в тексте preview.
 //
 // Используется в:
-//   - wizard.go - UpdateTemplatePreviewAsync вызывается при изменении данных, требующих обновления preview
-//   - presenter_save.go - TriggerParseForPreview вызывается при сохранении, если нужен парсинг
-//   - tabs/source_tab.go - UpdateTemplatePreviewAsync вызывается после успешного парсинга
+//   - wizard.go — TriggerParseForPreview при смене вкладок; UpdateTemplatePreviewAsync при необходимости обновить preview
+//   - tabs/source_tab.go — UpdateTemplatePreviewAsync после успешного парсинга
+// Сохранение конфига ждёт/запускает парсинг через presenter_save.ensureOutboundsParsed, не через TriggerParseForPreview.
 package presentation
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
 	"singbox-launcher/core"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/locale"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 )
 
@@ -38,19 +38,19 @@ func (p *WizardPresenter) TriggerParseForPreview() {
 	if p.guiState.SourceURLEntry == nil || p.guiState.ParserConfigEntry == nil {
 		return
 	}
-	p.SyncGUIToModel()
+	p.MergeGUIToModel()
 	// Only ParserConfig is required; SourceURLs is not used (sources come from ParserConfig.Proxies).
 	if strings.TrimSpace(p.model.ParserConfigJSON) == "" {
 		return
 	}
 
 	p.model.AutoParseInProgress = true
-	// Keep Save button visible; if user clicks Save during parse, save flow will wait (waitForParsingIfNeeded)
+	// Save остаётся доступной; при нажатии Save ensureOutboundsParsed ждёт окончания AutoParseInProgress.
 	if p.guiState.TemplatePreviewStatusLabel != nil {
-		p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Parsing subscriptions and generating outbounds...")
+		p.guiState.TemplatePreviewStatusLabel.SetText(locale.T("wizard.preview.status_parsing"))
 	}
 	if p.guiState.TemplatePreviewEntry != nil {
-		p.SetTemplatePreviewText("Parsing configuration... Please wait.")
+		p.SetTemplatePreviewText(locale.T("wizard.preview.text_parsing"))
 	}
 
 	go func() {
@@ -63,9 +63,37 @@ func (p *WizardPresenter) TriggerParseForPreview() {
 		}
 		if err := wizardbusiness.ParseAndPreview(p, configService); err != nil {
 			debuglog.ErrorLog("TriggerParseForPreview: ParseAndPreview failed: %v", err)
+			SafeFyneDo(p.guiState.Window, func() {
+				if p.guiState.TemplatePreviewEntry != nil {
+					p.SetTemplatePreviewText(locale.Tf("wizard.preview.error", err))
+				}
+				if p.guiState.TemplatePreviewStatusLabel != nil {
+					p.guiState.TemplatePreviewStatusLabel.SetText(locale.Tf("wizard.preview.status_error", err))
+				}
+				if p.guiState.ShowPreviewButton != nil {
+					p.guiState.ShowPreviewButton.Enable()
+				}
+			})
 			return
 		}
 		p.RefreshOutboundOptions()
+		// ParseAndPreview выставляет TemplatePreviewNeedsUpdate после успеха, но OnChanged вкладки Preview
+		// уже отработал раньше — иначе preview остаётся на «Parsing…» до любого следующего клика.
+		if p.model.TemplatePreviewNeedsUpdate {
+			p.UpdateTemplatePreviewAsync()
+		} else {
+			SafeFyneDo(p.guiState.Window, func() {
+				if p.guiState.TemplatePreviewStatusLabel != nil {
+					p.guiState.TemplatePreviewStatusLabel.SetText(locale.T("wizard.preview.status_click_show"))
+				}
+				if p.guiState.ShowPreviewButton != nil {
+					p.guiState.ShowPreviewButton.Enable()
+				}
+				if p.guiState.TemplatePreviewEntry != nil {
+					p.SetTemplatePreviewText(locale.T("wizard.preview.placeholder"))
+				}
+			})
+		}
 	}()
 }
 
@@ -85,9 +113,9 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 	}
 
 	p.model.PreviewGenerationInProgress = true
-	p.SetTemplatePreviewText("Building preview...")
+	p.SetTemplatePreviewText(locale.T("wizard.preview.text_building"))
 	if p.guiState.TemplatePreviewStatusLabel != nil {
-		p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Building preview configuration...")
+		p.guiState.TemplatePreviewStatusLabel.SetText(locale.T("wizard.preview.status_building"))
 	}
 
 	go func() {
@@ -104,7 +132,7 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 
 		SafeFyneDo(p.guiState.Window, func() {
 		if p.guiState.TemplatePreviewStatusLabel != nil {
-			p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Parsing ParserConfig...")
+			p.guiState.TemplatePreviewStatusLabel.SetText(locale.T("wizard.preview.status_parsing_config"))
 		}
 		})
 
@@ -115,12 +143,12 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 		if err != nil {
 			goroutineTiming.LogTiming("BuildTemplateConfig", buildDuration)
 			debuglog.ErrorLog("UpdateTemplatePreviewAsync: BuildTemplateConfig failed: %v", err)
-			errorText := fmt.Sprintf("Preview error: %v", err)
+			errorText := locale.Tf("wizard.preview.error", err)
 			p.SetTemplatePreviewText(errorText)
 			p.model.TemplatePreviewNeedsUpdate = false
 			SafeFyneDo(p.guiState.Window, func() {
 			if p.guiState.TemplatePreviewStatusLabel != nil {
-				p.guiState.TemplatePreviewStatusLabel.SetText(fmt.Sprintf("❌ Error: %v", err))
+				p.guiState.TemplatePreviewStatusLabel.SetText(locale.Tf("wizard.preview.status_error", err))
 			}
 			})
 			return
@@ -134,7 +162,7 @@ func (p *WizardPresenter) UpdateTemplatePreviewAsync() {
 		if !isLargeText {
 			SafeFyneDo(p.guiState.Window, func() {
 			if p.guiState.TemplatePreviewStatusLabel != nil {
-				p.guiState.TemplatePreviewStatusLabel.SetText("✅ Preview ready")
+				p.guiState.TemplatePreviewStatusLabel.SetText(locale.T("wizard.preview.status_ready"))
 			}
 			if p.guiState.ShowPreviewButton != nil {
 				p.guiState.ShowPreviewButton.Enable()

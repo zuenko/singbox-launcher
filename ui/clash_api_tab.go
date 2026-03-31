@@ -1,28 +1,57 @@
 package ui
 
 import (
-	"fmt"
+	"errors"
 	"image/color"
 	"sort"
+	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 
 	"singbox-launcher/api"
 	"singbox-launcher/core"
 	"singbox-launcher/core/config"
+	"singbox-launcher/core/config/subscription"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/fynewidget"
+	"singbox-launcher/internal/locale"
+	"singbox-launcher/internal/platform"
+	"singbox-launcher/internal/textnorm"
 )
 
-// Maximum number of concurrent ping requests for "test" button.
-const pingAllConcurrency = 20
+// serversListRowScrollbarGutterWidth — отступ справа внутри каждой строки списка прокси (после кнопок),
+// чтобы полоса прокрутки списка не наезжала на Ping / Switch (а не поле снаружи скролла).
+const serversListRowScrollbarGutterWidth = 10
+
+// keyModifiers returns held keyboard modifiers (desktop); 0 on mobile or if driver has no support.
+func keyModifiers() fyne.KeyModifier {
+	d, ok := fyne.CurrentApp().Driver().(desktop.Driver)
+	if !ok {
+		return 0
+	}
+	return d.CurrentKeyModifiers()
+}
+
+// clashAPITestMaxAttempts / clashAPITestRetryInterval — повторы GET /version при проверке Clash API:
+// диалог об ошибке только после исчерпания попыток (см. onTestAPIConnection).
+const (
+	clashAPITestMaxAttempts   = 5
+	clashAPITestRetryInterval = 5 * time.Second
+)
+
+var pingAllConcurrencyOptions = []string{"1", "5", "10", "20", "50", "100"}
 
 // reorderWithPinned moves special proxies to the top of the list while
 // preserving relative order of the rest:
@@ -81,8 +110,8 @@ func reorderWithPinned(ac *core.AppController, list []api.ProxyInfo) []api.Proxy
 
 // CreateClashAPITab creates and returns the content for the "Clash API" tab.
 func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
-	ac.UIService.ApiStatusLabel = widget.NewLabel("Status: Not checked")
-	status := widget.NewLabel("Click 'Load Proxies'")
+	ac.UIService.ApiStatusLabel = widget.NewLabel(locale.T("servers.status_not_checked"))
+	status := widget.NewLabel(locale.T("servers.status_click_load"))
 	ac.UIService.ListStatusLabel = status
 
 	selectorOptions, defaultSelector, err := config.GetSelectorGroupsFromConfig(ac.FileService.ConfigPath)
@@ -108,23 +137,32 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	}
 
 	var (
-		groupSelect            *widget.Select
-		suppressSelectCallback bool
-		applySavedSort         func() // Объявляем переменную заранее, значение будет присвоено позже
+		groupSelect                      *widget.Select
+		suppressSelectCallback           bool
+		applySavedSort                   func()                      // Объявляем переменную заранее, значение будет присвоено позже
+		pingAllGeneration                uint64                      // инкремент при новом «ping all» — устаревшие воркеры не трогают UI
+		selectedProxyNames               = make(map[string]struct{}) // выделение по тегу (устойчиво к фильтру/сортировке)
+		selectionAnchorVis               = -1                        // якорь для Shift+клик (индекс в текущем отображаемом списке)
+		hidePingErrors                   bool                        // скрывать в списке прокси с Delay == -1 (ошибка пинга)
+		reconcileListSelection           func()
+		applyServersPointerSelection     func(rowID int, proxyName string, tapMods fyne.KeyModifier)
+		refreshServersProxySelectionUI   func()
+		exportShareURIsButton            *ttwidget.Button
+		syncExportShareURIsButtonTooltip func()
 	)
 
 	// --- Логика обновления и сброса ---
 
 	onLoadAndRefreshProxies := func() {
 		if ac.APIService == nil {
-			ShowErrorText(ac.UIService.MainWindow, "Clash API", "API service is not initialized")
+			ShowErrorText(ac.UIService.MainWindow, "Clash API", locale.T("servers.error_api_not_initialized"))
 			return
 		}
 		_, _, clashAPIEnabled := ac.APIService.GetClashAPIConfig()
 		if !clashAPIEnabled {
-			ShowErrorText(ac.UIService.MainWindow, "Clash API", "API is disabled: config error")
+			ShowErrorText(ac.UIService.MainWindow, "Clash API", locale.T("servers.error_api_disabled"))
 			if ac.UIService.ListStatusLabel != nil {
-				ac.UIService.ListStatusLabel.SetText("Clash API disabled due to config error")
+				ac.UIService.ListStatusLabel.SetText(locale.T("servers.status_clash_api_disabled"))
 			}
 			return
 		}
@@ -134,9 +172,12 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			return
 		}
 		if ac.UIService.ListStatusLabel != nil {
-			ac.UIService.ListStatusLabel.SetText(fmt.Sprintf("Loading proxies for '%s'...", group))
+			ac.UIService.ListStatusLabel.SetText(locale.Tf("servers.status_loading", group))
 		}
 		go func(group string) {
+			if platform.IsSleeping() {
+				return
+			}
 			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
 			proxies, now, err := api.GetProxiesInGroup(baseURL, token, group)
 			fyne.Do(func() {
@@ -172,10 +213,14 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 				if ac.UIService.ProxiesListWidget != nil {
 					ac.UIService.ProxiesListWidget.Refresh()
+					ac.UIService.ProxiesListWidget.ScrollToTop()
+				}
+				if reconcileListSelection != nil {
+					reconcileListSelection()
 				}
 
 				if ac.UIService.ListStatusLabel != nil {
-					ac.UIService.ListStatusLabel.SetText(fmt.Sprintf("Proxies loaded for '%s'. Active: %s", group, now))
+					ac.UIService.ListStatusLabel.SetText(locale.Tf("servers.status_loaded", group, textnorm.NormalizeProxyDisplay(now)))
 				}
 
 				// Update tray menu with new proxy list
@@ -221,25 +266,43 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 	onTestAPIConnection := func() {
 		if ac.APIService == nil {
-			ShowErrorText(ac.UIService.MainWindow, "Clash API", "API service is not initialized")
+			ShowErrorText(ac.UIService.MainWindow, "Clash API", locale.T("servers.error_api_not_initialized"))
 			return
 		}
 		_, _, clashAPIEnabled := ac.APIService.GetClashAPIConfig()
 		if !clashAPIEnabled {
-			ac.UIService.ApiStatusLabel.SetText("❌ ClashAPI Off (Config Error)")
-			ShowErrorText(ac.UIService.MainWindow, "Clash API", "API is disabled: config error")
+			ac.UIService.ApiStatusLabel.SetText(locale.T("servers.status_clash_api_off_config"))
+			ShowErrorText(ac.UIService.MainWindow, "Clash API", locale.T("servers.error_api_disabled"))
 			return
 		}
 		go func() {
+			if platform.IsSleeping() {
+				return
+			}
 			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
-			err := api.TestAPIConnection(baseURL, token)
+			var err error
+			for attempt := 0; attempt < clashAPITestMaxAttempts; attempt++ {
+				if platform.IsSleeping() {
+					return
+				}
+				err = api.TestAPIConnection(baseURL, token)
+				if err == nil {
+					break
+				}
+				if errors.Is(err, api.ErrPlatformInterrupt) {
+					return
+				}
+				if attempt < clashAPITestMaxAttempts-1 {
+					time.Sleep(clashAPITestRetryInterval)
+				}
+			}
 			fyne.Do(func() {
 				if err != nil {
-					ac.UIService.ApiStatusLabel.SetText("❌ Clash API Off (Error)")
+					ac.UIService.ApiStatusLabel.SetText(locale.T("servers.status_clash_api_off_error"))
 					ShowError(ac.UIService.MainWindow, err)
 					return
 				}
-				ac.UIService.ApiStatusLabel.SetText("✅ Clash API On")
+				ac.UIService.ApiStatusLabel.SetText(locale.T("servers.status_clash_api_on"))
 				// Обновить список селекторов после успешного подключения (sing-box запущен, конфиг загружен)
 				updateSelectorList()
 				onLoadAndRefreshProxies()
@@ -252,15 +315,20 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		ac.SetProxiesList([]api.ProxyInfo{})
 		ac.SetActiveProxyName("")
 		ac.SetSelectedIndex(-1)
+		selectedProxyNames = make(map[string]struct{})
+		selectionAnchorVis = -1
 		fyne.Do(func() {
 			if ac.UIService.ApiStatusLabel != nil {
-				ac.UIService.ApiStatusLabel.SetText("Status: Not running")
+				ac.UIService.ApiStatusLabel.SetText(locale.T("servers.status_not_running"))
 			}
 			if ac.UIService.ListStatusLabel != nil {
-				ac.UIService.ListStatusLabel.SetText("Sing-box is stopped.")
+				ac.UIService.ListStatusLabel.SetText(locale.T("servers.status_singbox_stopped"))
 			}
 			if ac.UIService.ProxiesListWidget != nil {
 				ac.UIService.ProxiesListWidget.Refresh()
+			}
+			if syncExportShareURIsButtonTooltip != nil {
+				syncExportShareURIsButtonTooltip()
 			}
 			// Update tray menu when API state is reset
 			if ac.UIService != nil && ac.UIService.UpdateTrayMenuFunc != nil {
@@ -279,6 +347,9 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	// Delay in ProxyInfo: >0 = ms, 0 = not pinged, -1 = error (so updateItem shows correct text after list refresh).
 	pingProxy := func(proxyName string, button interface{ SetText(string) }) {
 		go func() {
+			if platform.IsSleeping() {
+				return
+			}
 			fyne.Do(func() { button.SetText("...") })
 			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
 			delay, err := api.GetDelay(baseURL, token, proxyName)
@@ -291,29 +362,49 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 							if ac.APIService != nil {
 								ac.APIService.SetLastPingError(proxyName, err.Error())
 							}
-							button.SetText("Error")
+							button.SetText(locale.T("servers.ping_button_error"))
 							// Set tooltip immediately so hover shows error without needing a list refresh.
 							if tb, ok := button.(interface{ SetToolTip(string) }); ok && ac.APIService != nil {
 								tb.SetToolTip(ac.APIService.GetLastPingError(proxyName))
 							}
-							status.SetText("Delay error: " + err.Error())
+							status.SetText(locale.Tf("servers.status_delay_error", err.Error()))
 						} else {
 							proxies[i].Delay = delay
 							if ac.APIService != nil {
 								ac.APIService.SetLastPingError(proxyName, "")
 							}
-							button.SetText(fmt.Sprintf("%d ms", delay))
+							button.SetText(locale.Tf("servers.ping_format_ms", delay))
 							if tb, ok := button.(interface{ SetToolTip(string) }); ok {
 								tb.SetToolTip("")
 							}
-							status.SetText(fmt.Sprintf("Delay: %d ms for %s", delay, proxyName))
+							status.SetText(locale.Tf("servers.status_delay_format", delay, textnorm.NormalizeProxyDisplay(proxyName)))
 						}
 						ac.SetProxiesList(proxies)
 						break
 					}
 				}
+				if reconcileListSelection != nil {
+					reconcileListSelection()
+				}
 			})
 		}()
+	}
+
+	// Срез для отображения в списке (полный или без прокси с ошибкой пинга).
+	// Выбранная строка не скрывается, чтобы не терять контекст при фильтре.
+	proxiesForListView := func() []api.ProxyInfo {
+		all := ac.GetProxiesList()
+		if !hidePingErrors {
+			return all
+		}
+		out := make([]api.ProxyInfo, 0, len(all))
+		for i := range all {
+			_, sel := selectedProxyNames[all[i].Name]
+			if all[i].Delay != -1 || sel {
+				out = append(out, all[i])
+			}
+		}
+		return out
 	}
 
 	// --- Создание виджета списка ---
@@ -322,31 +413,37 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		background := canvas.NewRectangle(color.Transparent)
 		background.CornerRadius = 5
 
-		nameLabel := widget.NewLabel("Proxy Name")
+		nameLabel := widget.NewLabel(locale.T("servers.label_proxy_name"))
 		nameLabel.TextStyle.Bold = true
 
-		pingButton := ttwidget.NewButton("Ping", nil)
+		pingButton := ttwidget.NewButton(locale.T("servers.button_ping"), nil)
 		switchButton := widget.NewButton("▶️", nil)
+
+		rowGutter := canvas.NewRectangle(color.Transparent)
+		rowGutter.SetMinSize(fyne.NewSize(serversListRowScrollbarGutterWidth, 0))
 
 		content := container.NewHBox(
 			nameLabel,
 			layout.NewSpacer(),
 			pingButton,
 			switchButton,
+			rowGutter,
 		)
 
 		paddedContent := container.NewPadded(content)
-		return container.NewStack(background, paddedContent)
+		stack := container.NewStack(background, paddedContent)
+		return fynewidget.NewSecondaryTapWrap(stack)
 	}
 
 	updateItem := func(id int, o fyne.CanvasObject) {
-		proxies := ac.GetProxiesList()
+		proxies := proxiesForListView()
 		if id < 0 || id >= len(proxies) {
 			return
 		}
 		proxyInfo := proxies[id]
 
-		stack := o.(*fyne.Container)
+		wrap := o.(*fynewidget.SecondaryTapWrap)
+		stack := wrap.Content.(*fyne.Container)
 		background := stack.Objects[0].(*canvas.Rectangle)
 		paddedContent := stack.Objects[1].(*fyne.Container)
 		content := paddedContent.Objects[0].(*fyne.Container)
@@ -360,21 +457,21 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		}
 		switchButton := content.Objects[3].(*widget.Button)
 
-		nameLabel.SetText(proxyInfo.Name)
+		nameLabel.SetText(proxyInfo.DisplayOrName())
 
 		if proxyInfo.Delay > 0 {
-			pingButton.SetText(fmt.Sprintf("%d ms", proxyInfo.Delay))
+			pingButton.SetText(locale.Tf("servers.ping_format_ms", proxyInfo.Delay))
 		} else if proxyInfo.Delay == -1 {
-			pingButton.SetText("Error")
+			pingButton.SetText(locale.T("servers.ping_button_error"))
 		} else {
-			pingButton.SetText("Ping")
+			pingButton.SetText(locale.T("servers.button_ping"))
 		}
 
 		// Обновляем фон
 		if proxyInfo.Name == ac.GetActiveProxyName() {
 			background.FillColor = color.NRGBA{R: 144, G: 238, B: 144, A: 128} // Зеленый для активного
-		} else if id == ac.GetSelectedIndex() {
-			background.FillColor = color.NRGBA{R: 135, G: 206, B: 250, A: 128} // Синий оттенок для выделенного
+		} else if _, sel := selectedProxyNames[proxyInfo.Name]; sel {
+			background.FillColor = color.NRGBA{R: 135, G: 206, B: 250, A: 128} // Синий для выделенных (один или несколько)
 		} else {
 			background.FillColor = color.Transparent
 		}
@@ -382,6 +479,31 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 		// Обновляем колбэки кнопок
 		proxyNameForCallback := proxyInfo.Name
+		rowID := id
+
+		wrap.OnPrimary = func(tapMods fyne.KeyModifier) {
+			if applyServersPointerSelection != nil {
+				applyServersPointerSelection(rowID, proxyNameForCallback, tapMods)
+			}
+		}
+		wrap.OnSecondary = func(pe *fyne.PointEvent) {
+			if ac.UIService == nil || ac.UIService.MainWindow == nil {
+				return
+			}
+			_, inSet := selectedProxyNames[proxyInfo.Name]
+			if len(selectedProxyNames) <= 1 || !inSet {
+				selectedProxyNames = map[string]struct{}{proxyInfo.Name: {}}
+				selectionAnchorVis = rowID
+			}
+			if refreshServersProxySelectionUI != nil {
+				refreshServersProxySelectionUI()
+			}
+
+			win := ac.UIService.MainWindow
+			menu := serversProxyContextMenu(ac, status, win, proxyInfo)
+			pop := widget.NewPopUpMenu(menu, win.Canvas())
+			pop.ShowAtPosition(pe.AbsolutePosition)
+		}
 
 		pingButton.OnTapped = func() {
 			pingProxy(proxyNameForCallback, pingButton)
@@ -389,12 +511,12 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 		switchButton.OnTapped = func() {
 			if ac.APIService == nil {
-				ShowErrorText(ac.UIService.MainWindow, "Clash API", "API service is not initialized")
+				ShowErrorText(ac.UIService.MainWindow, "Clash API", locale.T("servers.error_api_not_initialized"))
 				return
 			}
 			_, _, clashAPIEnabled := ac.APIService.GetClashAPIConfig()
 			if !clashAPIEnabled {
-				ShowErrorText(ac.UIService.MainWindow, "Clash API", "API is disabled: config error")
+				ShowErrorText(ac.UIService.MainWindow, "Clash API", locale.T("servers.error_api_disabled"))
 				return
 			}
 			go func(group string) {
@@ -402,13 +524,20 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				fyne.Do(func() {
 					if err != nil {
 						ShowError(ac.UIService.MainWindow, err)
-						status.SetText("Switch error: " + err.Error())
+						status.SetText(locale.Tf("servers.status_switch_error", err.Error()))
 					} else {
-						ac.SetActiveProxyName(proxyNameForCallback)
-						ac.UIService.ProxiesListWidget.Refresh()
+						// Active name already set in APIService.SwitchProxy; pin active row to top like after API load.
+						ac.SetProxiesList(reorderWithPinned(ac, ac.GetProxiesList()))
+						if ac.UIService.ProxiesListWidget != nil {
+							ac.UIService.ProxiesListWidget.Refresh()
+							ac.UIService.ProxiesListWidget.ScrollToTop()
+						}
+						if reconcileListSelection != nil {
+							reconcileListSelection()
+						}
 						pingProxy(proxyNameForCallback, pingButton)
 						if ac.UIService.ListStatusLabel != nil {
-							ac.UIService.ListStatusLabel.SetText(fmt.Sprintf("Switched '%s' to %s", group, proxyNameForCallback))
+							ac.UIService.ListStatusLabel.SetText(locale.Tf("servers.status_switched", group, textnorm.NormalizeProxyDisplay(proxyNameForCallback)))
 						}
 					}
 				})
@@ -416,19 +545,159 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		}
 	}
 
-	proxiesListWidget := widget.NewList(
-		func() int { return len(ac.GetProxiesList()) },
+	var proxiesListWidget *widget.List
+	proxiesListWidget = widget.NewList(
+		func() int { return len(proxiesForListView()) },
 		createItem,
 		updateItem,
 	)
 
-	proxiesListWidget.OnSelected = func(id int) {
-		ac.SetSelectedIndex(id)
-		proxies := ac.GetProxiesList()
-		if id >= 0 && id < len(proxies) {
-			status.SetText("Selected: " + proxies[id].Name)
+	syncServersListWidgetFromSelection := func() {
+		if proxiesListWidget == nil {
+			return
 		}
+		vis := proxiesForListView()
+		n := len(selectedProxyNames)
+		if n == 0 {
+			ac.SetSelectedIndex(-1)
+			proxiesListWidget.UnselectAll()
+			return
+		}
+		if n == 1 {
+			var onlyName string
+			for k := range selectedProxyNames {
+				onlyName = k
+				break
+			}
+			for i := range vis {
+				if vis[i].Name == onlyName {
+					proxiesListWidget.Select(i)
+					ac.SetSelectedIndex(i)
+					return
+				}
+			}
+			ac.SetSelectedIndex(-1)
+			proxiesListWidget.UnselectAll()
+			return
+		}
+		ac.SetSelectedIndex(-1)
+		proxiesListWidget.UnselectAll()
+	}
+
+	refreshServersSelectionStatus := func() {
+		n := len(selectedProxyNames)
+		if n == 0 {
+			status.SetText(locale.T("servers.status_selected_none"))
+			return
+		}
+		if n == 1 {
+			var name string
+			for k := range selectedProxyNames {
+				name = k
+				break
+			}
+			for _, p := range ac.GetProxiesList() {
+				if p.Name == name {
+					status.SetText(locale.Tf("servers.status_selected", p.DisplayOrName()))
+					return
+				}
+			}
+			status.SetText(locale.Tf("servers.status_selected", textnorm.NormalizeProxyDisplay(name)))
+			return
+		}
+		status.SetText(locale.Tf("servers.status_selected_multi", n))
+	}
+
+	refreshServersProxySelectionUI = func() {
+		syncServersListWidgetFromSelection()
+		refreshServersSelectionStatus()
 		proxiesListWidget.Refresh()
+		if syncExportShareURIsButtonTooltip != nil {
+			syncExportShareURIsButtonTooltip()
+		}
+	}
+
+	applyServersPointerSelection = func(rowID int, proxyName string, tapMods fyne.KeyModifier) {
+		if ac.UIService == nil || proxiesListWidget == nil {
+			return
+		}
+		vis := proxiesForListView()
+		if rowID < 0 || rowID >= len(vis) {
+			return
+		}
+		mods := tapMods
+		if mods == 0 {
+			mods = keyModifiers()
+		}
+		shift := mods&fyne.KeyModifierShift != 0
+		toggle := (mods&fyne.KeyModifierControl != 0) || (mods&fyne.KeyModifierSuper != 0)
+
+		if shift && selectionAnchorVis >= 0 && selectionAnchorVis < len(vis) {
+			lo, hi := selectionAnchorVis, rowID
+			if lo > hi {
+				lo, hi = hi, lo
+			}
+			selectedProxyNames = make(map[string]struct{})
+			for i := lo; i <= hi && i < len(vis); i++ {
+				selectedProxyNames[vis[i].Name] = struct{}{}
+			}
+		} else if toggle {
+			if _, ok := selectedProxyNames[proxyName]; ok {
+				delete(selectedProxyNames, proxyName)
+			} else {
+				selectedProxyNames[proxyName] = struct{}{}
+			}
+			selectionAnchorVis = rowID
+		} else {
+			selectedProxyNames = map[string]struct{}{proxyName: {}}
+			selectionAnchorVis = rowID
+		}
+
+		refreshServersProxySelectionUI()
+	}
+
+	proxiesListWidget.OnSelected = func(id int) {
+		vis := proxiesForListView()
+		if id >= 0 && id < len(vis) {
+			selectedProxyNames = map[string]struct{}{vis[id].Name: {}}
+			selectionAnchorVis = id
+			ac.SetSelectedIndex(id)
+		} else {
+			selectedProxyNames = make(map[string]struct{})
+			selectionAnchorVis = -1
+			ac.SetSelectedIndex(-1)
+		}
+		refreshServersProxySelectionUI()
+	}
+
+	reconcileListSelection = func() {
+		if proxiesListWidget == nil {
+			return
+		}
+		all := ac.GetProxiesList()
+		for name := range selectedProxyNames {
+			found := false
+			for i := range all {
+				if all[i].Name == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				delete(selectedProxyNames, name)
+			}
+		}
+		disp := proxiesForListView()
+		if selectionAnchorVis < 0 || selectionAnchorVis >= len(disp) {
+			selectionAnchorVis = -1
+			for i := range disp {
+				if _, ok := selectedProxyNames[disp[i].Name]; ok {
+					selectionAnchorVis = i
+					break
+				}
+			}
+		}
+		refreshServersProxySelectionUI()
 	}
 
 	ac.UIService.ProxiesListWidget = proxiesListWidget
@@ -453,14 +722,14 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		// Сортировка по имени
 		if ascending {
 			sort.Slice(sorted, func(i, j int) bool {
-				return sorted[i].Name < sorted[j].Name
+				return sorted[i].DisplayOrName() < sorted[j].DisplayOrName()
 			})
-			status.SetText("Sorted by name (A-Z)")
+			status.SetText(locale.T("servers.status_sorted_name_az"))
 		} else {
 			sort.Slice(sorted, func(i, j int) bool {
-				return sorted[i].Name > sorted[j].Name
+				return sorted[i].DisplayOrName() > sorted[j].DisplayOrName()
 			})
-			status.SetText("Sorted by name (Z-A)")
+			status.SetText(locale.T("servers.status_sorted_name_za"))
 		}
 		currentSortType = "name"
 		savedSortNameAscending = ascending // Сохраняем направление для восстановления
@@ -468,6 +737,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		if ac.UIService.ProxiesListWidget != nil {
 			ac.UIService.ProxiesListWidget.Refresh()
 		}
+		reconcileListSelection()
 	}
 
 	// Функция сортировки по задержке с указанным направлением
@@ -493,7 +763,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				}
 				return delayI < delayJ
 			})
-			status.SetText("Sorted by delay (fastest first)")
+			status.SetText(locale.T("servers.status_sorted_delay_fast"))
 		} else {
 			// Сортировка по задержке (больше - выше), прокси без задержки в начало
 			sort.Slice(sorted, func(i, j int) bool {
@@ -508,7 +778,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				}
 				return delayI > delayJ
 			})
-			status.SetText("Sorted by delay (slowest first)")
+			status.SetText(locale.T("servers.status_sorted_delay_slow"))
 		}
 
 		currentSortType = "delay"
@@ -517,6 +787,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		if ac.UIService.ProxiesListWidget != nil {
 			ac.UIService.ProxiesListWidget.Refresh()
 		}
+		reconcileListSelection()
 	}
 
 	// Функция для применения сохраненной сортировки (присваиваем значение переменной, объявленной ранее)
@@ -534,22 +805,23 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	// --- Функция массового пинга всех прокси ---
 	pingAllProxies := func() {
 		if ac.APIService == nil {
-			ShowErrorText(ac.UIService.MainWindow, "Clash API", "API service is not initialized")
+			ShowErrorText(ac.UIService.MainWindow, "Clash API", locale.T("servers.error_api_not_initialized"))
 			return
 		}
 		_, _, clashAPIEnabled := ac.APIService.GetClashAPIConfig()
 		if !clashAPIEnabled {
-			ShowErrorText(ac.UIService.MainWindow, "Clash API", "API is disabled: config error")
+			ShowErrorText(ac.UIService.MainWindow, "Clash API", locale.T("servers.error_api_disabled"))
 			return
 		}
 		proxies := ac.GetProxiesList()
 		if len(proxies) == 0 {
-			status.SetText("No proxies to ping")
+			status.SetText(locale.T("servers.status_no_proxies"))
 			return
 		}
-		status.SetText(fmt.Sprintf("Pinging %d proxies...", len(proxies)))
+		status.SetText(locale.Tf("servers.status_pinging", len(proxies)))
 
 		go func() {
+			gen := atomic.AddUint64(&pingAllGeneration, 1)
 			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
 
 			type pingJob struct {
@@ -560,7 +832,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			done := make(chan struct{})
 			total := len(proxies)
 			completed := 0
-			concurrency := pingAllConcurrency
+			concurrency := api.GetPingTestAllConcurrency()
 			if concurrency <= 0 {
 				concurrency = 1
 			}
@@ -572,6 +844,9 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				for job := range jobs {
 					delay, err := api.GetDelay(baseURL, token, job.Name)
 					fyne.Do(func() {
+						if atomic.LoadUint64(&pingAllGeneration) != gen {
+							return
+						}
 						updatedProxies := ac.GetProxiesList()
 						for j := range updatedProxies {
 							if updatedProxies[j].Name == job.Name {
@@ -593,8 +868,9 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 						if ac.UIService.ProxiesListWidget != nil {
 							ac.UIService.ProxiesListWidget.Refresh()
 						}
+						reconcileListSelection()
 						completed++
-						status.SetText(fmt.Sprintf("Pinging %d/%d...", completed, total))
+						status.SetText(locale.Tf("servers.status_pinging_progress", completed, total))
 					})
 				}
 				done <- struct{}{}
@@ -614,7 +890,10 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			}
 
 			fyne.Do(func() {
-				status.SetText(fmt.Sprintf("Ping test completed for %d proxies", len(proxies)))
+				if atomic.LoadUint64(&pingAllGeneration) != gen {
+					return
+				}
+				status.SetText(locale.Tf("servers.status_ping_completed", len(proxies)))
 			})
 		}()
 	}
@@ -624,8 +903,8 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	scrollContainer.SetMinSize(fyne.NewSize(0, 300))
 
 	// Кнопка сортировки по алфавиту (слева)
-	var sortByNameButton *widget.Button
-	sortByNameButton = widget.NewButton("↑", func() {
+	var sortByNameButton *ttwidget.Button
+	sortByNameButton = ttwidget.NewButton("↑", func() {
 		// Применяем сортировку с текущим направлением (сохранит его в savedSortNameAscending)
 		sortByName(sortNameAscending)
 		// Переключаем направление для следующего раза
@@ -637,11 +916,88 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			sortByNameButton.SetText("↓")
 		}
 	})
-	sortNameLabel := widget.NewLabel("A…Z")
+	sortByNameButton.SetToolTip(locale.T("servers.tooltip_sort_by_name"))
+	sortNameLabel := widget.NewLabel(locale.T("servers.label_sort_by_name"))
+
+	exportShareURIsButton = ttwidget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
+		if ac.UIService == nil || ac.UIService.MainWindow == nil {
+			return
+		}
+		win := ac.UIService.MainWindow
+		if ac.FileService == nil || strings.TrimSpace(ac.FileService.ConfigPath) == "" {
+			ShowErrorText(win, locale.T("app.tab.servers"), locale.T("servers.error_export_no_config"))
+			return
+		}
+		allProxies := ac.GetProxiesList()
+		if len(allProxies) == 0 {
+			status.SetText(locale.T("servers.status_no_proxies"))
+			return
+		}
+		visible := proxiesForListView()
+		if len(visible) == 0 {
+			status.SetText(locale.T("servers.status_export_nothing_visible"))
+			return
+		}
+		var rowsForExport []api.ProxyInfo
+		if len(selectedProxyNames) > 1 {
+			for _, p := range visible {
+				if _, ok := selectedProxyNames[p.Name]; ok {
+					rowsForExport = append(rowsForExport, p)
+				}
+			}
+			if len(rowsForExport) == 0 {
+				status.SetText(locale.T("servers.status_export_nothing_selected"))
+				return
+			}
+		} else {
+			rowsForExport = visible
+		}
+		tags := make([]string, 0, len(rowsForExport))
+		for _, p := range rowsForExport {
+			if proxyClashTypeSkippedForShareExport(p) {
+				continue
+			}
+			tags = append(tags, p.Name)
+		}
+		cfgPath := ac.FileService.ConfigPath
+		go func() {
+			fyne.Do(func() {
+				status.SetText(locale.T("servers.status_export_uris_building"))
+			})
+			lines, err := config.BuildShareURILinesForOutboundTags(cfgPath, tags)
+			fyne.Do(func() {
+				if err != nil {
+					ShowError(win, err)
+					return
+				}
+				if len(lines) == 0 {
+					ShowErrorText(win, locale.T("app.tab.servers"), locale.T("servers.status_export_uris_none"))
+					return
+				}
+				// One line per server URI; full block to clipboard.
+				clipboardText := strings.Join(lines, "\n")
+				if app := fyne.CurrentApp(); app != nil && app.Clipboard() != nil {
+					app.Clipboard().SetContent(clipboardText)
+				}
+				status.SetText(locale.Tf("servers.status_export_uris_done", len(lines)))
+			})
+		}()
+	})
+	syncExportShareURIsButtonTooltip = func() {
+		if exportShareURIsButton == nil {
+			return
+		}
+		if len(selectedProxyNames) > 1 {
+			exportShareURIsButton.SetToolTip(locale.T("servers.tooltip_export_uris_selected"))
+		} else {
+			exportShareURIsButton.SetToolTip(locale.T("servers.tooltip_export_uris"))
+		}
+	}
+	syncExportShareURIsButtonTooltip()
 
 	// Кнопки пинга и сортировки по задержке (справа)
-	var sortByDelayButton *widget.Button
-	sortByDelayButton = widget.NewButton("↑", func() {
+	var sortByDelayButton *ttwidget.Button
+	sortByDelayButton = ttwidget.NewButton("↑", func() {
 		// Применяем сортировку с текущим направлением (сохранит его в savedSortDelayAscending)
 		sortByDelay(sortDelayAscending)
 		// Переключаем направление для следующего раза
@@ -653,10 +1009,46 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			sortByDelayButton.SetText("↓")
 		}
 	})
-	pingAllButton := widget.NewButton("test", pingAllProxies)
+	sortByDelayButton.SetToolTip(locale.T("servers.tooltip_sort_by_delay"))
+
+	filterPingErrorsButton := ttwidget.NewButtonWithIcon("", theme.VisibilityOffIcon(), nil)
+	// Default (medium) importance — same gray style as sort arrows and Test in this row.
+	updatePingErrorsFilterButton := func() {
+		if hidePingErrors {
+			filterPingErrorsButton.SetIcon(theme.VisibilityIcon())
+			filterPingErrorsButton.SetText("")
+			filterPingErrorsButton.SetToolTip(locale.T("servers.tooltip_show_ping_errors"))
+		} else {
+			filterPingErrorsButton.SetIcon(theme.VisibilityOffIcon())
+			filterPingErrorsButton.SetText("")
+			filterPingErrorsButton.SetToolTip(locale.T("servers.tooltip_hide_ping_errors"))
+		}
+	}
+	updatePingErrorsFilterButton()
+	setListFilterStatus := func() {
+		all := ac.GetProxiesList()
+		total := len(all)
+		avail := 0
+		for i := range all {
+			if all[i].Delay != -1 {
+				avail++
+			}
+		}
+		status.SetText(locale.Tf("servers.status_list_counts", total, avail))
+	}
+	filterPingErrorsButton.OnTapped = func() {
+		hidePingErrors = !hidePingErrors
+		updatePingErrorsFilterButton()
+		reconcileListSelection()
+		proxiesListWidget.Refresh()
+		setListFilterStatus()
+	}
+
+	pingAllButton := ttwidget.NewButton(locale.T("servers.button_test"), pingAllProxies)
+	pingAllButton.SetToolTip(locale.T("servers.tooltip_ping_all"))
 
 	// Настройки Ping test (endpoint для delay).
-	pingSettingsButton := widget.NewButton("⚙", func() {
+	pingSettingsButton := ttwidget.NewButton("⚙", func() {
 		currentURL := api.GetPingTestURL()
 
 		// Predefined endpoints with titles from api package.
@@ -667,7 +1059,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			api.PingTestEndpointYaStaticICO,
 		}
 
-		const customMode = "Custom"
+		customMode := locale.T("servers.ping_option_custom")
 
 		options := make([]string, 0, len(endpoints)+1)
 		selected := customMode
@@ -689,15 +1081,27 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			urlEntry.Disable()
 		}
 
+		parallelChosen := strconv.Itoa(api.GetPingTestAllConcurrency())
+		parallelSelect := widget.NewSelect(pingAllConcurrencyOptions, func(v string) {
+			parallelChosen = v
+		})
+		parallelSelect.SetSelected(parallelChosen)
+
+		parallelRow := container.NewHBox(
+			widget.NewLabel(locale.T("servers.ping_label_parallel")),
+			parallelSelect,
+		)
+
 		content := container.NewVBox(
-			widget.NewLabel("Ping test URL"),
+			widget.NewLabel(locale.T("servers.ping_label_url")),
 			radio,
-			widget.NewLabel("Custom URL:"),
+			widget.NewLabel(locale.T("servers.ping_label_custom_url")),
 			urlEntry,
+			parallelRow,
 			widget.NewLabel(" "),
 		)
 
-		d := dialog.NewCustomConfirm("Ping test settings", "Save", "Cancel", content, func(ok bool) {
+		d := dialog.NewCustomConfirm(locale.T("servers.dialog_ping_settings_title"), locale.T("servers.ping_button_save"), locale.T("servers.ping_button_cancel"), content, func(ok bool) {
 			if !ok {
 				return
 			}
@@ -718,7 +1122,21 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			}
 
 			api.SetPingTestURL(newURL)
-			status.SetText(fmt.Sprintf("Ping test URL updated: %s", newURL))
+			n, _ := strconv.Atoi(parallelChosen)
+			if n == 0 && parallelSelect.Selected != "" {
+				n, _ = strconv.Atoi(parallelSelect.Selected)
+			}
+			api.SetPingTestAllConcurrency(n)
+
+			binDir := platform.GetBinDir(ac.FileService.ExecDir)
+			st := locale.LoadSettings(binDir)
+			st.PingTestURL = api.GetPingTestURL()
+			st.PingTestAllConcurrency = api.GetPingTestAllConcurrency()
+			if err := locale.SaveSettings(binDir, st); err != nil {
+				debuglog.WarnLog("ping settings: failed to save settings.json: %v", err)
+			}
+
+			status.SetText(locale.Tf("servers.status_ping_url_updated", newURL))
 		}, ac.UIService.MainWindow)
 
 		radio.OnChanged = func(val string) {
@@ -731,12 +1149,15 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 		d.Show()
 	})
+	pingSettingsButton.SetToolTip(locale.T("servers.tooltip_ping_settings"))
 
 	// Группа кнопок: слева сортировка, справа пинг, настройки и сортировка по задержке
 	buttonsRow := container.NewHBox(
 		sortByNameButton,
 		sortNameLabel,
+		exportShareURIsButton,
 		layout.NewSpacer(),
+		filterPingErrorsButton,
 		sortByDelayButton,
 		pingAllButton,
 		pingSettingsButton,
@@ -745,12 +1166,12 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	// Mapping button for showing selector -> currently active outbound (queried from Clash API)
 	mapButton := widget.NewButton("⇄", func() {
 		if ac.APIService == nil {
-			ShowErrorText(ac.UIService.MainWindow, "Clash API", "API service is not initialized")
+			ShowErrorText(ac.UIService.MainWindow, "Clash API", locale.T("servers.error_api_not_initialized"))
 			return
 		}
 		baseURL, token, enabled := ac.APIService.GetClashAPIConfig()
 		if !enabled {
-			ShowErrorText(ac.UIService.MainWindow, "Clash API", "API is disabled: config error")
+			ShowErrorText(ac.UIService.MainWindow, "Clash API", locale.T("servers.error_api_disabled"))
 			return
 		}
 
@@ -778,13 +1199,13 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 			for _, sel := range currentSelectorOptions {
 				_, now, err := api.GetProxiesInGroup(baseURL, token, sel)
 				if err != nil {
-					results = append(results, fmt.Sprintf("%s → error: %v", sel, err))
+					results = append(results, locale.Tf("servers.selector_error", sel, err))
 					continue
 				}
 				if now == "" {
-					results = append(results, fmt.Sprintf("%s → (no active outbound)", sel))
+					results = append(results, locale.Tf("servers.selector_no_active", sel))
 				} else {
-					results = append(results, fmt.Sprintf("%s → %s", sel, now))
+					results = append(results, locale.Tf("servers.selector_active", sel, textnorm.NormalizeProxyDisplay(now)))
 				}
 			}
 
@@ -797,7 +1218,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 				}
 				scroll := container.NewVScroll(content)
 				scroll.SetMinSize(fyne.NewSize(480, 260))
-				dlg := dialogs.NewCustom("Selector → Active Outbound", scroll, nil, "Close", ac.UIService.MainWindow)
+				dlg := dialogs.NewCustom(locale.T("servers.dialog_selector_active_title"), scroll, nil, locale.T("servers.dialog_selector_close"), ac.UIService.MainWindow)
 				dlg.Show()
 			})
 		}()
@@ -819,9 +1240,9 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		// Update status to show selected group and last used proxy for the group (if any)
 		lastUsed := ac.GetLastSelectedProxyForGroup(value)
 		if lastUsed != "" {
-			status.SetText(fmt.Sprintf("Selected group '%s'. Last used proxy: %s", value, lastUsed))
+			status.SetText(locale.Tf("servers.status_selected_group", value, textnorm.NormalizeProxyDisplay(lastUsed)))
 		} else {
-			status.SetText(fmt.Sprintf("Selected group '%s'.", value))
+			status.SetText(locale.Tf("servers.status_selected_group_only", value))
 		}
 		// Update tray menu when group changes
 		if ac.UIService != nil && ac.UIService.UpdateTrayMenuFunc != nil {
@@ -833,7 +1254,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		}
 		onLoadAndRefreshProxies()
 	})
-	groupSelect.PlaceHolder = "Select selector group"
+	groupSelect.PlaceHolder = locale.T("servers.placeholder_select_group")
 	if selectedGroup != "" {
 		suppressSelectCallback = true
 		groupSelect.SetSelected(selectedGroup)
@@ -842,7 +1263,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 
 	topControls := container.NewVBox(
 		ac.UIService.ApiStatusLabel,
-		container.NewHBox(widget.NewLabel("Selector group:"), groupSelect, mapButton),
+		container.NewHBox(widget.NewLabel(locale.T("servers.label_selector_group")), groupSelect, mapButton),
 		widget.NewSeparator(),
 		buttonsRow,
 	)
@@ -863,4 +1284,49 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	)
 
 	return contentContainer
+}
+
+// proxyClashTypeSkippedForShareExport skips selector/urltest/direct (routing outbounds), not leaf share links.
+func proxyClashTypeSkippedForShareExport(p api.ProxyInfo) bool {
+	switch strings.ToLower(strings.TrimSpace(p.ClashType)) {
+	case "selector", "urltest", "direct":
+		return true
+	default:
+		return false
+	}
+}
+
+// serversProxyContextMenu is the ПКМ menu for one proxy row: type line (Action nil → desktop does not dismiss; not Disabled → normal text color) + Copy link.
+func serversProxyContextMenu(ac *core.AppController, status *widget.Label, win fyne.Window, proxy api.ProxyInfo) *fyne.Menu {
+	hint := proxy.ContextMenuTypeLine(locale.T("servers.menu_context_type_unknown"))
+	return fyne.NewMenu("",
+		fyne.NewMenuItem(hint, nil),
+		fyne.NewMenuItem(locale.T("servers.menu_copy_link"), func() {
+			serversRunCopyShareURIToClipboard(ac, status, win, proxy.Name)
+		}),
+	)
+}
+
+func serversRunCopyShareURIToClipboard(ac *core.AppController, status *widget.Label, win fyne.Window, tag string) {
+	cfgPath := ac.FileService.ConfigPath
+	go func() {
+		fyne.Do(func() {
+			status.SetText(locale.T("servers.copy_link_resolving"))
+		})
+		line, err := config.ShareProxyURIForOutboundTag(cfgPath, tag)
+		fyne.Do(func() {
+			if err != nil {
+				if errors.Is(err, subscription.ErrShareURINotSupported) {
+					ShowErrorText(win, locale.T("app.tab.servers"), locale.T("servers.copy_link_not_supported"))
+				} else {
+					ShowError(win, err)
+				}
+				return
+			}
+			if app := fyne.CurrentApp(); app != nil && app.Clipboard() != nil {
+				app.Clipboard().SetContent(line)
+			}
+			status.SetText(locale.T("servers.copy_link_done"))
+		})
+	}()
 }

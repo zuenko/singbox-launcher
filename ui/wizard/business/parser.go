@@ -8,7 +8,7 @@
 //
 // Файл работает в контексте визарда (использует WizardModel и UIUpdater для обновления GUI).
 // Координирует вызовы реальных парсеров из core/config/subscription и core/config.
-// Интегрирован с GUI через UIUpdater (обновляет GUI прогресс, статусы и preview).
+// Интегрирован с GUI через UIUpdater (статусы/preview шаблона, текст кнопки Save; без отдельного прогресс-бара парсинга на вкладке Outbounds).
 //
 // Реальная логика парсинга находится в:
 //   - core/config/parser - парсинг @ParserConfig блоков из файлов
@@ -19,8 +19,11 @@ package business
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"singbox-launcher/core/config"
 	"singbox-launcher/core/config/subscription"
@@ -40,7 +43,7 @@ func ParseAndPreview(ctx UIUpdater, configService ConfigService) error {
 		model.AutoParseInProgress = false
 	}()
 
-	// Save button stays visible; save flow waits for parse if needed (waitForParsingIfNeeded)
+	// Save остаётся доступной; при сохранении presenter_save.ensureOutboundsParsed ждёт AutoParseInProgress и при необходимости вызывает ParseAndPreview.
 
 	// Parse ParserConfig from field
 	parseStartTime := time.Now()
@@ -96,7 +99,7 @@ func ParseAndPreview(ctx UIUpdater, configService ConfigService) error {
 			return
 		}
 		lastProgressUpdate = now
-		// Progress no longer shown in UI (Outbounds preview removed)
+		// Колбэк прогресса от генератора не выводится отдельным UI на вкладке Outbounds (только throttling по времени).
 		_ = s
 	}
 
@@ -107,6 +110,18 @@ func ParseAndPreview(ctx UIUpdater, configService ConfigService) error {
 		debuglog.DebugLog("parseAndPreview: Failed to generate outbounds: %v", err)
 		updater.UpdateSaveButtonText("Save")
 		return fmt.Errorf("failed to generate outbounds: %w", err)
+	}
+
+	// Риск: пока шла генерация, пользователь мог изменить ParserConfig (OnChanged → MergeGUIToModel).
+	// Запись outbounds от старого снимка при новом JSON даёт несогласованный config при Save
+	// (ensureOutboundsParsed увидит непустые outbounds и не перепарсит).
+	if strings.TrimSpace(model.ParserConfigJSON) != parserConfigJSON {
+		debuglog.InfoLog("parseAndPreview: ParserConfigJSON changed during generation, discarding outbound results")
+		model.GeneratedOutbounds = nil
+		model.GeneratedEndpoints = nil
+		model.PreviewNeedsParse = true
+		updater.UpdateSaveButtonText("Save")
+		return nil
 	}
 
 	subscription.LogDuplicateTagStatistics(tagCounts, "ConfigWizard")
@@ -354,8 +369,13 @@ func buildProxiesFromInputs(
 			}
 			restoreTagPrefixAndPostfix(&proxySource, item.Subscription, existingProps, fmt.Sprintf("subscription: %s", item.Subscription))
 			if proxySource.TagPrefix == "" {
-				proxySource.TagPrefix = GenerateTagPrefix(nextIndex)
-				debuglog.DebugLog("applyURLToParserConfig: Added default tag_prefix '%s' for subscription: %s", proxySource.TagPrefix, item.Subscription)
+				if p := tagPrefixFromSubscriptionFragment(item.Subscription); p != "" {
+					proxySource.TagPrefix = p
+					debuglog.DebugLog("applyURLToParserConfig: tag_prefix from URL fragment '%s' for subscription: %s", proxySource.TagPrefix, item.Subscription)
+				} else {
+					proxySource.TagPrefix = GenerateTagPrefix(nextIndex)
+					debuglog.DebugLog("applyURLToParserConfig: Added default tag_prefix '%s' for subscription: %s", proxySource.TagPrefix, item.Subscription)
+				}
 			}
 			result = append(result, proxySource)
 			continue
@@ -487,6 +507,31 @@ func updateAndSerializeParserConfig(
 	return nil
 }
 
+// noopParseTiming is used when calling parseParserConfigForApply without debug timings.
+type noopParseTiming struct{}
+
+func (noopParseTiming) LogTiming(string, time.Duration) {}
+
+// EnsureWizardModelParserConfig parses ParserConfigJSON into model.ParserConfig when the struct is nil
+// but JSON is non-empty (same idea as preview cache). No-op if ParserConfig is already set.
+func EnsureWizardModelParserConfig(model *wizardmodels.WizardModel) error {
+	if model == nil {
+		return fmt.Errorf("wizard model is nil")
+	}
+	if model.ParserConfig != nil {
+		return nil
+	}
+	if strings.TrimSpace(model.ParserConfigJSON) == "" {
+		return fmt.Errorf("ParserConfigJSON is empty")
+	}
+	pc, err := parseParserConfigForApply(model.ParserConfigJSON, noopParseTiming{})
+	if err != nil {
+		return err
+	}
+	model.ParserConfig = pc
+	return nil
+}
+
 // SerializeParserConfig serializes ParserConfig to JSON string.
 func SerializeParserConfig(parserConfig *config.ParserConfig) (string, error) {
 	if parserConfig == nil {
@@ -511,4 +556,58 @@ func SerializeParserConfig(parserConfig *config.ParserConfig) (string, error) {
 // Index is shared across all sources (subscriptions then connection-only blocks).
 func GenerateTagPrefix(index int) string {
 	return fmt.Sprintf("%d:", index)
+}
+
+// tagPrefixFromSubscriptionFragment returns a tag_prefix derived from the URL fragment (part after #),
+// e.g. https://host/sub.json#abvpn → "abvpn:". Empty string if there is no usable fragment.
+func tagPrefixFromSubscriptionFragment(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if !subscription.IsSubscriptionURL(raw) {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	frag := strings.TrimSpace(u.Fragment)
+	if frag == "" {
+		return ""
+	}
+	if dec, err := url.PathUnescape(frag); err == nil {
+		frag = strings.TrimSpace(dec)
+	}
+	frag = sanitizeTagPrefixFromURLFragment(frag)
+	if frag == "" {
+		return ""
+	}
+	if !strings.HasSuffix(frag, ":") {
+		frag += ":"
+	}
+	return frag
+}
+
+const maxURLFragmentTagPrefixRunes = 120
+
+// sanitizeTagPrefixFromURLFragment strips control characters and limits length for a safe tag_prefix.
+func sanitizeTagPrefixFromURLFragment(s string) string {
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(utf8.RuneCountInString(s))
+	n := 0
+	for _, r := range s {
+		if n >= maxURLFragmentTagPrefixRunes {
+			break
+		}
+		if r == '\t' || r == '\n' || r == '\r' {
+			r = ' '
+		}
+		if unicode.IsControl(r) {
+			continue
+		}
+		b.WriteRune(r)
+		n++
+	}
+	return strings.TrimSpace(b.String())
 }

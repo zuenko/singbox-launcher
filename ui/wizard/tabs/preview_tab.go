@@ -30,6 +30,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 
+	"singbox-launcher/internal/locale"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
 )
 
@@ -38,7 +39,7 @@ func CreatePreviewTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	guiState := presenter.GUIState()
 
 	guiState.TemplatePreviewEntry = widget.NewMultiLineEntry()
-	guiState.TemplatePreviewEntry.SetPlaceHolder("Preview will appear here")
+	guiState.TemplatePreviewEntry.SetPlaceHolder(locale.T("wizard.preview.placeholder"))
 	guiState.TemplatePreviewEntry.Wrapping = fyne.TextWrapOff
 	guiState.TemplatePreviewEntry.OnChanged = func(text string) {
 		// Read-only field, do nothing on change
@@ -47,7 +48,7 @@ func CreatePreviewTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 		canvas.NewRectangle(color.Transparent),
 		guiState.TemplatePreviewEntry,
 	)
-	presenter.SetTemplatePreviewText("Preview will appear here")
+	presenter.SetTemplatePreviewText(locale.T("wizard.preview.placeholder"))
 
 	previewScroll := container.NewVScroll(previewWithHeight)
 	maxHeight := guiState.Window.Canvas().Size().Height * 0.7
@@ -57,10 +58,10 @@ func CreatePreviewTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	previewScroll.SetMinSize(fyne.NewSize(0, maxHeight))
 
 	// Create status label and button for generating preview
-	guiState.TemplatePreviewStatusLabel = widget.NewLabel("Click 'Show Preview' to generate preview (this may take a long time for large configurations)")
+	guiState.TemplatePreviewStatusLabel = widget.NewLabel(locale.T("wizard.preview.status_click_show"))
 	guiState.TemplatePreviewStatusLabel.Wrapping = fyne.TextWrapWord
 
-	guiState.ShowPreviewButton = widget.NewButton("Show Preview", func() {
+	guiState.ShowPreviewButton = widget.NewButton(locale.T("wizard.preview.button_show"), func() {
 		if guiState.ShowPreviewButton != nil {
 			guiState.ShowPreviewButton.Disable()
 		}
@@ -76,7 +77,7 @@ func CreatePreviewTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 	)
 
 	return container.NewVBox(
-		widget.NewLabel("Preview"),
+		widget.NewLabel(locale.T("wizard.preview.label")),
 		previewScroll,
 		statusRow,
 	)

@@ -10,12 +10,23 @@
 
 - **TestIsDirectLink** - проверка определения прямых ссылок (VLESS, VMess, Trojan, Shadowsocks)
 - **TestParseNode_VLESS** - парсинг VLESS узлов с различными параметрами (Reality, TLS, порты)
-- **TestParseNode_VMess** - парсинг VMess узлов из base64 формата
+- **TestParseNode_VMess** - парсинг VMess (base64 JSON, legacy, фрагмент `#`, транспорты в т.ч. httpupgrade/h2)
 - **TestParseNode_Trojan** - парсинг Trojan узлов
 - **TestParseNode_Shadowsocks** - парсинг Shadowsocks узлов (SIP002 формат)
 - **TestParseNode_SkipFilters** - тестирование фильтров пропуска узлов (по тегу, хосту, regex)
 - **TestParseNode_RealWorldExamples** - парсинг реальных примеров из подписки
 - **TestBuildOutbound** - генерация outbound конфигураций для различных типов узлов
+- **TestParseNode_VLESS_TransportAndTLS** - VLESS: ws/grpc/http/httpupgrade, `peer`, `obfsParam`, TLS/Reality
+- **TestParseNode_Trojan_WebSocket** - Trojan + WebSocket и TLS (`peer` и др.)
+- **TestParseNode_Hysteria2** / **TestBuildOutbound_Hysteria2** - Hysteria2 URI и outbound (TLS, pinSHA256, fp)
+- **TestParseNode_SSH**, **TestBuildOutbound_SSH** - SSH
+- **TestParseNode_SOCKS5**, **TestParseNode_Wireguard** - SOCKS5, WireGuard
+- **TestSanitizeForDisplay_stripsInvalidUTF8WithoutFFFD** - санитизация отображения
+
+**Дополнительно (обратная операция — outbound → share URI):**
+
+- **`core/config/subscription/share_uri_encode_test.go`** — `ShareURIFromOutbound`: round-trip VLESS/Trojan/Shadowsocks, `ErrShareURINotSupported` для `selector`, SOCKS из map; WireGuard round-trip и multi-peer → `ErrShareURINotSupported`
+- **`core/config/outbound_share_test.go`** — `ShareProxyURIForOutboundTag` по минимальному `config.json` (vless и WireGuard только в `endpoints[]`), ошибка поиска для несуществующего тега
 
 ### 2. Тесты парсера подписок (`core/config/subscription/subscription_parser_test.go`)
 
@@ -43,11 +54,14 @@
 Покрывают логику мастера конфигурации:
 
 - **TestValidateParserConfig** (`validator_test.go`) - валидация ParserConfig
-- **TestMergeRouteSection** (`generator_test.go`) - объединение правил маршрутизации
+- **TestMergeRouteSection** (`generator_test.go`) — слияние секции **`route`** (база шаблона + **`custom_rules`**)
+- **`rules_library_test.go`** — клон пресета, миграция library, **`EnsureCustomRulesDefaultOutbounds`**
 - **TestApplyURLToParserConfig_Logic** (`parser_test.go`) - классификация строк на подписки и connections (применение URL использует buildProxiesFromInputs)
 - **TestLoadConfigFromFile** (`loader_test.go`) - загрузка конфигурации из файла
 - **TestDefaultWizardFlow_NextNextFinish** (`wizard_integration_test.go`) - интеграционный тест полного wizard flow
 - **TestWizardFlowWithCustomRules** (`wizard_integration_test.go`) - wizard flow с кастомными правилами
+- **`parser_stale_test.go`** — смена **`ParserConfigJSON`** во время мок-генерации outbounds: результаты не применяются; без смены — применяются
+- **`TestGetAvailableOutbounds_MemoJSONPath`** (`outbound_test.go`) — мемо по JSON и сброс через **`InvalidatePreviewCache`**
 
 ### 5. Интеграционные тесты (`core/integration_test.go`)
 
@@ -273,7 +287,7 @@ go test ./core/config/subscription -v -run TestParseNode_VLESS
 ./test.sh
 
 # Везде
-go test ./core/config/... ./ui/wizard/business/... ./ui/wizard/models/...
+go test ./core/config/... ./internal/wizardsync/... ./ui/wizard/business/... ./ui/wizard/models/...
 ```
 
 **Полное тестирование (с CGO):**

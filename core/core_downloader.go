@@ -20,6 +20,10 @@ import (
 	"singbox-launcher/internal/platform"
 )
 
+// Win7LegacyVersion — фиксированная версия sing-box для Windows 7 (legacy build).
+// Используется только для Win7-сборки лаунчера (GOOS=windows, GOARCH=386).
+const Win7LegacyVersion = "1.13.2"
+
 // ReleaseInfo contains information about GitHub release
 type ReleaseInfo struct {
 	TagName string  `json:"tag_name"`
@@ -45,6 +49,11 @@ type DownloadProgress struct {
 func (ac *AppController) DownloadCore(ctx context.Context, version string, progressChan chan DownloadProgress) {
 	defer close(progressChan)
 
+	// For Windows 7 (32-bit launcher build) always use fixed legacy core version.
+	if runtime.GOOS == "windows" && runtime.GOARCH == "386" {
+		version = Win7LegacyVersion
+	}
+
 	// 1. Get release information
 	progressChan <- DownloadProgress{Progress: 5, Message: "Getting release information...", Status: "downloading"}
 	release, err := ac.getReleaseInfo(ctx, version)
@@ -63,7 +72,7 @@ func (ac *AppController) DownloadCore(ctx context.Context, version string, progr
 
 	// 3. Create temporary directory
 	tempDir := filepath.Join(ac.FileService.ExecDir, "temp")
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
+	if err := os.MkdirAll(tempDir, platform.DefaultDirMode); err != nil {
 		progressChan <- DownloadProgress{Progress: 0, Message: fmt.Sprintf("Failed to create temp dir: %v", err), Status: "error", Error: fmt.Errorf("DownloadCore: failed to create temp dir: %w", err)}
 		return
 	}
@@ -198,6 +207,8 @@ func (ac *AppController) buildSourceForgeAssets(version string) []Asset {
 			fileName = fmt.Sprintf("sing-box-%s-windows-amd64.zip", version)
 		} else if runtime.GOARCH == "arm64" {
 			fileName = fmt.Sprintf("sing-box-%s-windows-arm64.zip", version)
+		} else if runtime.GOARCH == "386" {
+			fileName = fmt.Sprintf("sing-box-%s-windows-386-legacy-windows-7.zip", version)
 		}
 	case "linux":
 		if runtime.GOARCH == "amd64" {
@@ -241,6 +252,9 @@ func SingboxAssetSuffix() string {
 		}
 		if runtime.GOARCH == "arm64" {
 			return "windows-arm64.zip"
+		}
+		if runtime.GOARCH == "386" {
+			return "windows-386-legacy-windows-7.zip"
 		}
 		return ""
 	case "linux":
@@ -510,11 +524,8 @@ func (ac *AppController) extractZip(archivePath, destDir string) (string, error)
 				return "", fmt.Errorf("extractZip: failed to copy file: %w", err)
 			}
 
-			// Set execute permissions (for Unix-like systems)
-			if runtime.GOOS != "windows" {
-				if err := os.Chmod(binaryPath, 0755); err != nil {
-					debuglog.WarnLog("extractZip: failed to chmod %s: %v", binaryPath, err)
-				}
+			if err := platform.ChmodExecutable(binaryPath); err != nil {
+				debuglog.WarnLog("extractZip: failed to chmod %s: %v", binaryPath, err)
 			}
 
 			return binaryPath, nil
@@ -566,8 +577,7 @@ func (ac *AppController) extractTarGz(archivePath, destDir string) (string, erro
 				return "", fmt.Errorf("extractTarGz: failed to copy file: %w", err)
 			}
 
-			// Set execute permissions
-			if err := os.Chmod(binaryPath, 0755); err != nil {
+			if err := platform.ChmodExecutable(binaryPath); err != nil {
 				debuglog.WarnLog("extractTarGz: failed to chmod %s: %v", binaryPath, err)
 			}
 
@@ -582,7 +592,7 @@ func (ac *AppController) extractTarGz(archivePath, destDir string) (string, erro
 func (ac *AppController) installBinary(sourcePath, destPath string) error {
 	// Create bin directory if it doesn't exist
 	binDir := filepath.Dir(destPath)
-	if err := os.MkdirAll(binDir, 0755); err != nil {
+	if err := os.MkdirAll(binDir, platform.DefaultDirMode); err != nil {
 		return fmt.Errorf("installBinary: failed to create bin directory: %w", err)
 	}
 
@@ -615,11 +625,8 @@ func (ac *AppController) installBinary(sourcePath, destPath string) error {
 		return fmt.Errorf("installBinary: failed to copy file: %w", err)
 	}
 
-	// Set execute permissions (for Unix)
-	if runtime.GOOS != "windows" {
-		if err := os.Chmod(destPath, 0755); err != nil {
-			debuglog.WarnLog("installBinary: failed to chmod %s: %v", destPath, err)
-		}
+	if err := platform.ChmodExecutable(destPath); err != nil {
+		debuglog.WarnLog("installBinary: failed to chmod %s: %v", destPath, err)
 	}
 
 	// Remove old backup

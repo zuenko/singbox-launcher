@@ -7,7 +7,7 @@
 //   - SourceURLs — поле ввода для добавления новых URL (кнопка Add); не источник истины для существующих источников
 //   - Сгенерированные outbounds (GeneratedOutbounds, OutboundStats)
 //   - Template данные (TemplateData)
-//   - Правила (SelectableRuleStates, CustomRules, SelectedFinalOutbound)
+//   - Правила маршрута: CustomRules (единый список); SelectedFinalOutbound; SelectableRuleStates не используется (027)
 //   - Флаги состояния бизнес-операций (AutoParseInProgress, PreviewGenerationInProgress)
 //
 // GUI-состояние (виджеты Fyne, UI-флаги) находится в presentation/GUIState.
@@ -18,6 +18,8 @@
 package models
 
 import (
+	"encoding/json"
+
 	"singbox-launcher/core/config"
 	wizardtemplate "singbox-launcher/ui/wizard/template"
 )
@@ -57,9 +59,10 @@ type WizardModel struct {
 	// Template данные
 	TemplateData *wizardtemplate.TemplateData
 
-	// Правила
+	// Правила (маршрут — только CustomRules; SelectableRuleStates не используется после 027)
 	SelectableRuleStates   []*RuleState
 	CustomRules            []*RuleState
+	RulesLibraryMerged     bool // true после миграции/засева; сериализуется в state.json
 	SelectedFinalOutbound  string
 	EnableTunForMacOS      bool // на darwin при сборке конфига: true — добавлять TUN inbound (требует пароль при Start/Stop)
 
@@ -76,8 +79,23 @@ type WizardModel struct {
 	PreviewNodes         []*config.ParsedNode
 	PreviewNodesBySource map[int][]*config.ParsedNode
 
+	// Мемо для GetAvailableOutbounds при чтении только из ParserConfigJSON (ParserConfig == nil); сброс в InvalidatePreviewCache.
+	AvailableOutboundsMemoKey  string   `json:"-"`
+	AvailableOutboundsMemoTags []string `json:"-"`
+
 	// ExecDir — директория исполняемого файла (для путей к SRS и т.д.)
 	ExecDir string
+
+	// DNS tab (sing-box config.dns + route.default_domain_resolver)
+	DNSServers                 []json.RawMessage
+	// DNSLockedTags — теги из config.dns.servers шаблона: строки не удаляются и не редактируются (json не сериализуется).
+	DNSLockedTags              map[string]struct{} `json:"-"`
+	DNSRulesText               string
+	DNSFinal                   string
+	DNSStrategy                string
+	DNSIndependentCache        *bool
+	DefaultDomainResolver      string
+	DefaultDomainResolverUnset bool // user chose "not set"; omit route.default_domain_resolver in output
 }
 
 // NewWizardModel создает новую модель визарда с начальными значениями.

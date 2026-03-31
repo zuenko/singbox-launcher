@@ -20,6 +20,7 @@
 package presentation
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -27,7 +28,6 @@ import (
 	"time"
 
 	"singbox-launcher/core"
-	"singbox-launcher/core/services"
 	"singbox-launcher/internal/debuglog"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
@@ -35,7 +35,7 @@ import (
 
 // HasUnsavedChanges проверяет наличие несохранённых изменений.
 // hasChanges отслеживается как поле структуры WizardPresenter.
-// Устанавливается в true при изменении данных через SyncGUIToModel (если данные реально изменились).
+// Устанавливается в true через MarkAsChanged из табов и через SyncGUIToModel при расхождении виджетов с моделью (MergeGUIToModel флаг не трогает).
 // Сбрасывается в false при сохранении состояния или загрузке нового состояния.
 func (p *WizardPresenter) HasUnsavedChanges() bool {
 	return p.hasChanges
@@ -75,12 +75,8 @@ func (p *WizardPresenter) CreateStateFromModel(comment, id string) *wizardmodels
 	// Извлекаем config_params из модели
 	state.ConfigParams = p.extractConfigParams()
 
-	// Преобразуем SelectableRuleStates — сохраняем только label, enabled, selected_outbound
-	state.SelectableRuleStates = make([]wizardmodels.PersistedSelectableRuleState, 0, len(p.model.SelectableRuleStates))
-	for _, ruleState := range p.model.SelectableRuleStates {
-		persisted := wizardmodels.ToPersistedSelectableRuleState(ruleState)
-		state.SelectableRuleStates = append(state.SelectableRuleStates, persisted)
-	}
+	state.RulesLibraryMerged = p.model.RulesLibraryMerged
+	state.SelectableRuleStates = nil
 
 	// Преобразуем CustomRules — сохраняем полную структуру
 	state.CustomRules = make([]wizardmodels.PersistedCustomRule, 0, len(p.model.CustomRules))
@@ -89,7 +85,28 @@ func (p *WizardPresenter) CreateStateFromModel(comment, id string) *wizardmodels
 		state.CustomRules = append(state.CustomRules, persisted)
 	}
 
+	dnsState := &wizardmodels.PersistedDNSState{
+		Servers:          append([]json.RawMessage(nil), p.model.DNSServers...),
+		Rules:            wizardbusiness.PersistedDNSRulesForState(p.model.DNSRulesText),
+		Final:            p.model.DNSFinal,
+		Strategy:         p.model.DNSStrategy,
+		IndependentCache: copyBoolPtrForState(p.model.DNSIndependentCache),
+		ResolverUnset:    p.model.DefaultDomainResolverUnset,
+	}
+	if !p.model.DefaultDomainResolverUnset && strings.TrimSpace(p.model.DefaultDomainResolver) != "" {
+		dnsState.DefaultDomainResolver = strings.TrimSpace(p.model.DefaultDomainResolver)
+	}
+	state.DNSOptions = dnsState
+
 	return state
+}
+
+func copyBoolPtrForState(p *bool) *bool {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
 }
 
 // extractConfigParams извлекает параметры конфигурации из модели.
@@ -118,15 +135,15 @@ func (p *WizardPresenter) extractConfigParams() []wizardmodels.ConfigParam {
 		params = append(params, wizardmodels.ConfigParam{Name: "enable_tun_macos", Value: v})
 	}
 
+	// route.default_domain_resolver не дублируем в config_params — только dns_options в state.json (см. docs/WIZARD_STATE.md).
+
 	return params
 }
 
 // SaveCurrentState сохраняет текущее состояние в state.json.
 func (p *WizardPresenter) SaveCurrentState() error {
 	debuglog.InfoLog("SaveCurrentState: called")
-	// Синхронизируем GUI в модель перед сохранением
-	p.SyncGUIToModel()
-
+	// CreateStateFromModel вызывает SyncGUIToModel — не дублировать.
 	state := p.CreateStateFromModel("", "")
 	stateStore := p.getStateStore()
 
@@ -192,11 +209,15 @@ func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) err
 	// Восстановление config_params (шаг 4)
 	p.restoreConfigParams(stateFile.ConfigParams)
 
-	// Восстановление SelectableRuleStates (шаг 5)
-	p.restoreSelectableRuleStates(stateFile.SelectableRuleStates)
+	// Восстановление DNS вкладки (шаг 4b)
+	p.restoreDNS(stateFile)
 
-	// Восстановление CustomRules (шаг 6)
+	hadRulesLibraryMerged := stateFile.RulesLibraryMerged
+	wizardbusiness.ApplyRulesLibraryMigration(stateFile, p.model.TemplateData, p.model.ExecDir)
+	p.model.RulesLibraryMerged = stateFile.RulesLibraryMerged
+	p.model.SelectableRuleStates = nil
 	p.restoreCustomRules(stateFile.CustomRules)
+	wizardbusiness.EnsureCustomRulesDefaultOutbounds(p.model)
 
 	// Установка флага для парсинга (шаг 7)
 	p.model.PreviewNeedsParse = true
@@ -208,8 +229,17 @@ func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) err
 	// Обновляем опции outbound для правил (включая селекторы)
 	p.RefreshOutboundOptions()
 
-	// Сбрасываем флаг изменений
-	p.MarkAsSaved()
+	// Сразу записать мигрированный state.json, иначе повторное открытие снова склеит selectable+custom
+	if !hadRulesLibraryMerged {
+		if err := p.getStateStore().SaveWizardState(stateFile, stateFile.ID); err != nil {
+			debuglog.WarnLog("LoadState: persist rules library migration: %v", err)
+			p.MarkAsChanged()
+		} else {
+			p.MarkAsSaved()
+		}
+	} else {
+		p.MarkAsSaved()
+	}
 
 	return nil
 }
@@ -233,46 +263,6 @@ func (p *WizardPresenter) restoreParserConfig(stateFile *wizardmodels.WizardStat
 	return nil
 }
 
-// restoreSelectableRuleStates восстанавливает SelectableRuleStates из состояния (шаг 5).
-// Сопоставляет сохранённые состояния с правилами из шаблона по label.
-// Правила без совпадения в шаблоне игнорируются (могли быть удалены из шаблона).
-// Правила из шаблона без сохранённого состояния получают значения по умолчанию.
-func (p *WizardPresenter) restoreSelectableRuleStates(persistedRules []wizardmodels.PersistedSelectableRuleState) {
-	debuglog.DebugLog("restoreSelectableRuleStates: restoring %d rules", len(persistedRules))
-
-	// Создаём индекс сохранённых состояний по label
-	savedByLabel := make(map[string]wizardmodels.PersistedSelectableRuleState)
-	for _, pr := range persistedRules {
-		savedByLabel[pr.Label] = pr
-		debuglog.DebugLog("restoreSelectableRuleStates: saved rule label=%s, enabled=%v, selected_outbound=%s", pr.Label, pr.Enabled, pr.SelectedOutbound)
-	}
-
-	// Для каждого правила из шаблона ищем сохранённое состояние
-	templateRules := p.model.TemplateData.SelectableRules
-	p.model.SelectableRuleStates = make([]*wizardmodels.RuleState, 0, len(templateRules))
-	for i := range templateRules {
-		rule := &templateRules[i]
-		rs := &wizardmodels.RuleState{
-			Rule: *rule,
-		}
-
-		if saved, ok := savedByLabel[rule.Label]; ok {
-			rs.Enabled = saved.Enabled
-			rs.SelectedOutbound = saved.SelectedOutbound
-			debuglog.DebugLog("restoreSelectableRuleStates: matched rule label=%s, enabled=%v, selected_outbound=%s", rule.Label, saved.Enabled, saved.SelectedOutbound)
-		} else {
-			rs.Enabled = rule.IsDefault
-			rs.SelectedOutbound = rule.DefaultOutbound
-		}
-
-		if !services.AllSRSDownloaded(p.model.ExecDir, rule.RuleSets) {
-			rs.Enabled = false
-		}
-
-		p.model.SelectableRuleStates = append(p.model.SelectableRuleStates, rs)
-	}
-}
-
 // restoreCustomRules восстанавливает CustomRules из состояния (шаг 6).
 func (p *WizardPresenter) restoreCustomRules(persistedRules []wizardmodels.PersistedCustomRule) {
 	p.model.CustomRules = make([]*wizardmodels.RuleState, 0, len(persistedRules))
@@ -280,24 +270,6 @@ func (p *WizardPresenter) restoreCustomRules(persistedRules []wizardmodels.Persi
 		ruleState := persistedRules[i].ToRuleState()
 		p.model.CustomRules = append(p.model.CustomRules, ruleState)
 	}
-}
-
-// extractSourceURLsFromParserConfig derives a single string from model (p.model.ParserConfig.Proxies).
-// Combines Source and Connections from all ProxySource; for display/export only, not used to overwrite config.
-func (p *WizardPresenter) extractSourceURLsFromParserConfig() string {
-	if p.model.ParserConfig == nil || len(p.model.ParserConfig.ParserConfig.Proxies) == 0 {
-		return ""
-	}
-
-	lines := make([]string, 0)
-	for _, proxySource := range p.model.ParserConfig.ParserConfig.Proxies {
-		if proxySource.Source != "" {
-			lines = append(lines, proxySource.Source)
-		}
-		lines = append(lines, proxySource.Connections...)
-	}
-
-	return strings.Join(lines, "\n")
 }
 
 // restoreConfigParams восстанавливает config_params и маппинг в модель.
@@ -315,6 +287,26 @@ func (p *WizardPresenter) restoreConfigParams(configParams []wizardmodels.Config
 	if v := p.findConfigParamValue(configParams, "enable_tun_macos"); v != "" {
 		p.model.EnableTunForMacOS = v == "true"
 	}
+
+	// Резолвер по умолчанию — только из dns_options (+ миграция из config_params в restoreDNS для старых файлов).
+}
+
+// restoreDNS loads dns_options from state (if any) and merges with the current wizard_template.json.
+func (p *WizardPresenter) restoreDNS(sf *wizardmodels.WizardStateFile) {
+	if sf == nil {
+		return
+	}
+	if sf.DNSOptions != nil {
+		wizardbusiness.LoadPersistedWizardDNS(p.model, sf.DNSOptions)
+	}
+	// Старые state.json: до отказа от дублирования тег лежал только в config_params.
+	if !p.model.DefaultDomainResolverUnset && strings.TrimSpace(p.model.DefaultDomainResolver) == "" {
+		if dr := p.findConfigParamValue(sf.ConfigParams, "route.default_domain_resolver"); dr != "" {
+			p.model.DefaultDomainResolver = dr
+			p.model.DefaultDomainResolverUnset = false
+		}
+	}
+	wizardbusiness.ApplyWizardDNSTemplate(p.model)
 }
 
 // findConfigParamValue ищет значение параметра по имени.
@@ -337,12 +329,7 @@ func (p *WizardPresenter) getDefaultFinalOutbound() string {
 }
 
 // GetStateStore создает новый StateStore для работы с состояниями.
-// Публичный метод для использования в диалогах и других компонентах.
-//
-// Примечание: FileServiceAdapter определён в business/file_service_adapter.go (без build tag).
-// но это не проблема, так как весь визард компилируется с cgo.
 func (p *WizardPresenter) GetStateStore() *wizardbusiness.StateStore {
-	// FileServiceAdapter в business/file_service_adapter.go (без cgo tag)
 	ac := core.GetController()
 	fileServiceAdapter := &wizardbusiness.FileServiceAdapter{FileService: ac.FileService}
 	return wizardbusiness.NewStateStore(fileServiceAdapter)

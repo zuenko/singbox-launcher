@@ -67,8 +67,17 @@ import "C"
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"syscall"
 	"unsafe"
+)
+
+// Имена файлов привилегированного запуска (macOS TUN).
+const (
+	PrivilegedScriptName  = "start-singbox-privileged.sh"
+	PrivilegedPidFileName = "singbox.pid"
+	PrivilegedPkillPattern = "sing-box run|start-singbox-privileged"
 )
 
 // RunWithPrivileges runs the given tool with elevated privileges using the macOS
@@ -100,6 +109,31 @@ func RunWithPrivileges(toolPath string, args []string) (scriptPID, singboxPID in
 		return 0, 0, fmt.Errorf("privileged execution failed with status %d (authorization may have been cancelled)", code)
 	}
 	return int(cScriptPid), int(cSingboxPid), nil
+}
+
+// WritePrivilegedStartScript создаёт скрипт запуска sing-box с правами (echo PID, cd, run в фоне, echo sing-box PID, wait).
+func WritePrivilegedStartScript(scriptPath, pidFilePath, binDir, singboxPath, configName, logPath string) error {
+	scriptBody := fmt.Sprintf(`#!/bin/sh
+echo $$
+cd %s
+%s run -c %s >> %s 2>&1 &
+echo $!
+exec 1>>%s 2>&1
+wait
+`, strconv.Quote(binDir), strconv.Quote(singboxPath), strconv.Quote(configName), strconv.Quote(logPath), strconv.Quote(logPath))
+	return os.WriteFile(scriptPath, []byte(scriptBody), 0700)
+}
+
+// KillPrivilegedProcess sends SIGTERM to the script and sing-box PIDs and removes the pid file.
+// Used to stop the privileged sing-box (TUN) or to trigger restart via watcher. Darwin only.
+func KillPrivilegedProcess(scriptPID, singboxPID int, pidFile string) error {
+	killScript := fmt.Sprintf("kill -TERM %d 2>/dev/null", scriptPID)
+	if singboxPID > 0 {
+		killScript += fmt.Sprintf("; kill -TERM %d 2>/dev/null", singboxPID)
+	}
+	killScript += fmt.Sprintf("; rm -f %s", strconv.Quote(pidFile))
+	_, _, err := RunWithPrivileges("/bin/sh", []string{"-c", killScript})
+	return err
 }
 
 // WaitForPrivilegedExit waits for the process pid to exit (reaps it to avoid zombie). Darwin only.

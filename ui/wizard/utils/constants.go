@@ -53,6 +53,9 @@ const (
 	PreviewTextThreshold = 10
 	// MaxPreviewLines is the maximum number of lines in preview
 	MaxPreviewLines = 10
+	// MaxLabelRunes is the maximum visible length (Unicode code points) for source URLs and
+	// similar labels in lists before appending "..."; truncation is rune-safe (UTF-8).
+	MaxLabelRunes = 60
 )
 
 // UI spacing and sizing

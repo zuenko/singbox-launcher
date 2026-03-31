@@ -7,6 +7,8 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+
+	"singbox-launcher/internal/locale"
 )
 
 // ErrorBanner displays a red error banner in the UI
@@ -44,7 +46,7 @@ func (eb *ErrorBanner) GetContainer() *fyne.Container {
 
 // SetMessage updates the error message
 func (eb *ErrorBanner) SetMessage(message string) {
-	eb.text.SetText("❌ " + message)
+	eb.text.SetText(locale.T("dialog.error_prefix") + message)
 	eb.container.Refresh()
 }
 

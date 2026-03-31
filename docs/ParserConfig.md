@@ -4,6 +4,62 @@
 
 Парсер обновляет файл `bin/config.json`, загружая подписки (поддерживаются протоколы: VLESS, VMess, Trojan, Shadowsocks, Hysteria2, SSH, WireGuard), фильтруя и группируя их в селекторы. Результат записывается в секции между маркерами `/** @ParserSTART */` и `/** @ParserEND */` (outbounds), а узлы WireGuard — между `/** @ParserSTART_E */` и `/** @ParserEND_E */` (endpoints). Секция **endpoints** (WireGuard) поддерживается в sing-box начиная с версии **1.11**.
 
+## Документы и исходный код парсера URI
+
+| Документ / место | Содержание |
+|------------------|------------|
+| **Этот файл** (`docs/ParserConfig.md`) | Форматы прямых ссылок в `connections`, Share URI, структура ParserConfig, пайплайн обновления. |
+| **`SPECS/023-F-C-SUBSCRIPTION_TRANSPORT_VLESS_TROJAN/SUBSCRIPTION_PARAMS_REPORT.md`** | Таблицы: query VLESS/Trojan → поля sing-box; примеры из публичных подписок; ключи query. |
+| **`SPECS/029-Q-С-SUBSCRIPTION_PARSER_CLASH_CONVERTOR_PARITY/SPEC.md`** | Расширения совместимости (029): `type=httpupgrade`, `peer`, `obfsParam`, VMess legacy / `httpupgrade` / `h2`, Hysteria2 TLS; сверка со схемой sing-box. |
+| Пакет **`core/config/subscription`** | `ParseNode`, `buildOutbound` — `node_parser.go`; VLESS/Trojan transport+TLS — `node_parser_transport.go`; VMess — `node_parser_vmess.go` (`parseVMessDecoded`, `parseVMessJSON`, `parseVMessLegacyCleartext`); Hysteria2 — `node_parser_hysteria2.go`; WireGuard / SSH — `node_parser_wireguard.go`, `node_parser_ssh.go`; share URI — `share_uri_encode.go`. |
+
+## Share URI из outbound и WireGuard endpoint (обратно к ссылке)
+
+Спецификация фичи (ПКМ на вкладке Servers, контекстное меню, детали реализации): **`SPECS/025-F-C-SERVERS_CONTEXT_MENU_SHARE_URI/`** (SPEC, PLAN, IMPLEMENTATION_REPORT).
+
+Парсер переводит **строку подписки** (`ParseNode` → `buildOutbound` или для WireGuard — объект в `endpoints[]`) в JSON sing-box. Обратная операция — **сборка share URI из уже записанного outbound или WireGuard endpoint** в `config.json`, чтобы делиться ссылкой без хранения исходной строки подписки.
+
+### Принцип и соответствие форматам
+
+- **Вход кодировщика:** один элемент массива `outbounds` **или** один элемент `endpoints[]` с `type: wireguard` (тот же набор полей, что даёт `parseWireGuardURI` / `GenerateEndpointJSON`).
+- **Выход:** одна строка URI в форматах, которые снова понимает этот проект: `vless://`, `vmess://` (base64 JSON), `trojan://`, `ss://` (SIP002), `socks5://`, `hysteria2://`, `ssh://`, **`wireguard://`**.
+- **Query / transport / TLS:** для VLESS и Trojan при кодировании используются те же соглашения, что и при разборе (`uriTransportFromQuery`, `vlessTLSFromNode`, `trojanTLSFromNode` в `node_parser_transport.go`). VMess при разборе не использует стандартный URI-query в основном формате (JSON в base64); legacy и поля JSON — в `node_parser_vmess.go`. Подробный справочник VLESS/Trojan: **`SUBSCRIPTION_PARAMS_REPORT.md`** (023); расширения 029 — спека **`029-Q-С-…/SPEC.md`** и разделы URI ниже.
+
+### API в коде
+
+| Функция | Пакет | Назначение |
+|--------|--------|------------|
+| `ShareURIFromOutbound(out map[string]interface{})` | `core/config/subscription` (`share_uri_encode.go`) | Кодирование из JSON-объекта outbound; для `type: wireguard` делегирует в `ShareURIFromWireGuardEndpoint` |
+| `ShareURIFromWireGuardEndpoint(ep map[string]interface{})` | `core/config/subscription` (`share_uri_encode.go`) | Кодирование `wireguard://` из одного endpoint (один peer в `peers[]`) |
+| `GetOutboundMapByTag(configPath, tag)` | `core/config` (`outbound_share.go`) | Поиск outbound по полю `tag` в `config.json` |
+| `GetEndpointMapByTag(configPath, tag)` | `core/config` (`outbound_share.go`) | Поиск endpoint по полю `tag` в `endpoints[]` |
+| `ShareProxyURIForOutboundTag(configPath, tag)` | `core/config` (`outbound_share.go`) | Сначала outbound по тегу, иначе WireGuard в `endpoints[]` |
+
+Ошибка **`ErrShareURINotSupported`** (`subscription`) — тип outbound не кодируется в один URI или не хватает полей.
+
+### Поддерживаемые типы `outbound.type`
+
+| `type` в JSON | Схема URI | Замечания |
+|---------------|-----------|-----------|
+| `vless` | `vless://` | `encryption=none`, transport/TLS как в подписках |
+| `vmess` | `vmess://` + base64 | Поля JSON узла согласованы с `parseVMessJSON` |
+| `trojan` | `trojan://` | Пароль в userinfo |
+| `shadowsocks` | `ss://` | SIP002, base64(`method:password`) |
+| `socks` | `socks5://` | `version` 5; user/password при наличии |
+| `hysteria2` | `hysteria2://` | TLS SNI, `mport`, obfs и т.д. по возможности |
+| `ssh` | `ssh://` | **Нет** кодирования inline `private_key` в URI; путь к ключу и прочие поля — в query, как в документации SSH URI |
+| `wireguard` | `wireguard://` | Обычно узел только в `endpoints[]`; формат и query — раздел **WireGuard** ниже. **Один URI ↔ один удалённый peer:** при нескольких элементах в `peers[]` кодирование не поддерживается (`ErrShareURINotSupported`). |
+
+**Не кодируются в один share URI:** `selector`, `urltest`, `direct`, `block`, `dns`, произвольные служебные типы; WireGuard с **несколькими** `peers`.
+
+### GUI
+
+Вкладка **Servers** (список прокси Clash API): **ПКМ** по строке → `serversProxyContextMenu`: первая строка — **`api.ProxyInfo.ContextMenuTypeLine`** (нижний регистр поля **`type`** из API или `servers.menu_context_type_unknown`); затем **«Копировать ссылку»** (`servers.menu_copy_link`). Верхняя строка без `Disabled`, `Action: nil` (цвет текста как у обычного пункта меню). В буфер попадает строка через `config.ShareProxyURIForOutboundTag` и путь `FileService.ConfigPath`: сначала outbound по тегу, иначе WireGuard в `endpoints[]`. Правый клик по кнопкам Ping/Switch может не открыть меню (иерархия hit-test Fyne). Сообщения статуса: `servers.copy_link_resolving`, `servers.copy_link_done`, `servers.copy_link_not_supported`.
+
+### Тесты
+
+Round-trip и выборочные сценарии: `core/config/subscription/share_uri_encode_test.go`, интеграция с файлом конфига: `core/config/outbound_share_test.go`.
+
 ## Версионирование конфигурации
 
 Парсер использует систему версионирования для управления изменениями в структуре конфигурации:
@@ -45,7 +101,7 @@
       "proxies": [
         {
           // URL подписки (Base64 или plain-текст)
-          // Поддерживаются: VLESS, VMess, Trojan, Shadowsocks, Hysteria2, WireGuard
+          // Поддерживаются: VLESS, VMess, Trojan, Shadowsocks, Hysteria2, SOCKS5, WireGuard
           "source": "https://your-subscription-url.com/subscription",
           
           // Прямые ссылки на прокси-серверы (необязательно)
@@ -57,6 +113,7 @@
             "hysteria2://password@server.com:443?sni=example.com&insecure=1#🇺🇸 United States",
             "hy2://password@server.com:443?sni=example.com#🇺🇸 United States (short form)",
             "ssh://root:admin@127.0.0.1:22#Local SSH",
+            "socks5://user:pass@proxy.example.com:1080#Office SOCKS5",
             "wireguard://privatekey@10.0.0.1:51820?publickey=...&address=10.10.10.2/32&allowedips=0.0.0.0/0,::/0#WireGuard VPN"
           ],
           
@@ -186,12 +243,25 @@
 | Поле          | Тип      | Обязательное | Описание |
 |---------------|----------|--------------|----------|
 | `source`      | string   | Да           | URL подписки (поддерживаются протоколы: VLESS, VMess, Trojan, Shadowsocks, Hysteria2, SSH, WireGuard). Допускаются Base64 и plain-текст. |
-| `connections` | array    | Нет          | Массив прямых ссылок (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://, wireguard://). Можно комбинировать с подписками. Узлы WireGuard попадают в секцию `endpoints` конфига (требуется sing-box 1.11+). Подробнее о форматах URI см. раздел [Форматы URI для прямых ссылок](#форматы-uri-для-прямых-ссылок). |
+| `connections` | array    | Нет          | Массив прямых ссылок (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://, socks5:// или socks://, wireguard://). Можно комбинировать с подписками. Узлы WireGuard попадают в секцию `endpoints` конфига (требуется sing-box 1.11+). Подробнее о форматах URI см. раздел [Форматы URI для прямых ссылок](#форматы-uri-для-прямых-ссылок). |
 | `skip`        | array    | Нет          | Список фильтров. Если хотя бы один совпал — узел пропускается. |
 | `tag_prefix`  | string   | Нет          | Префикс, добавляемый ко всем тегам узлов из этого источника (версия 4). Применяется перед оригинальным тегом. Поддерживает переменные: `{$tag}`, `{$scheme}`, `{$protocol}`, `{$server}`, `{$port}`, `{$label}`, `{$comment}`, `{$num}`. Игнорируется, если указан `tag_mask`. |
 | `tag_postfix` | string   | Нет          | Постфикс, добавляемый ко всем тегам узлов из этого источника (версия 4). Применяется после оригинального тега. Поддерживает те же переменные, что и `tag_prefix`. Игнорируется, если указан `tag_mask`. |
 | `tag_mask`    | string   | Нет          | Маска для полной замены тега узла (версия 4). Если указан, полностью заменяет тег узла, игнорируя `tag_prefix` и `tag_postfix`. Поддерживает те же переменные, что и `tag_prefix`/`tag_postfix`. |
 | `outbounds`   | array    | Нет          | Локальные outbounds для этого источника (версия 4). Применяются только к узлам из этого источника. Теги локальных outbounds автоматически добавляются в список доступных outbounds на второй вкладке (Rules) визарда, что позволяет использовать их в правилах маршрутизации. |
+| `exclude_from_global` | bool | Нет | Если `true`, узлы этого источника **не** попадают в пул для **глобальных** записей `ParserConfig.outbounds` при генерации конфига. Локальные `proxies[i].outbounds` по-прежнему используют только узлы этого источника. Поле с `omitempty`; только поведение генератора, глобальный JSON не меняется. |
+| `expose_group_tags_to_global` | bool | Нет | Если `true`, при генерации теги **помеченных** визардом локальных групп (см. ниже) **добавляются** к эффективному списку исходящих **каждой** глобальной записи `ParserConfig.outbounds`. Сохранённый массив `outbounds[].addOutbounds` **не** переписывается. Строки из пользовательского `addOutbounds` по-прежнему **не** фильтруются через `filters`; подмешиваемые теги проходят те же `filters`, что и узлы (синтетическое сопоставление по `tag`/`comment`). |
+
+На первой вкладке визарда (**Sources**) кнопка **Edit** у источника открывает окно с подвкладками **Настройки** (префикс, локальные auto/select, оба флага), **Просмотр** (список локальных `proxies[i].outbounds` и узлов подписки) и **JSON** (только чтение: весь объект `proxies[i]`).
+
+#### Локальные группы визарда (`WIZARD:` в `comment`) и глобальная генерация
+
+Визард может создавать в `proxies[i].outbounds` записи с подстроками в поле **`comment`**:
+
+- **`WIZARD:auto`** — локальный urltest (тег обычно `trim(tag_prefix)+"auto"`).
+- **`WIZARD:select`** или **`WIZARD:selector`** — локальный selector с `default` на auto и `addOutbounds`, содержащим тег auto.
+
+Поля **`exclude_from_global`** и **`expose_group_tags_to_global`** независимы. **`expose`** учитывает только исходящие с указанными маркерами в `comment` и включённым флагом **`expose_group_tags_to_global`** на том же элементе `proxies[]`.
 
 #### Префиксы, постфиксы и маски тегов (версия 4)
 
@@ -203,11 +273,11 @@
 - Полной замены формата тегов через `tag_mask`
 
 **Автоматическое добавление префиксов:**
-При использовании визарда конфигурации автоматический `tag_prefix` добавляется только при выполнении следующих условий:
-1. В поле URL введено несколько подписок (больше одной)
-2. Для данной подписки не был установлен `tag_prefix` ранее (если `tag_prefix` уже был установлен, он сохраняется и не заменяется)
+При использовании визарда конфигурации, если для подписки ещё не задан `tag_prefix` (новый источник или не было сохранено в конфиге), порядок такой:
+1. **Фрагмент URL** — если в ссылке на подписку есть часть после `#` (например `https://host/list.json#abvpn`), визард подставляет `tag_prefix` из этого фрагмента: пробелы по краям и управляющие символы убираются, при необходимости применяется процент-декодирование; если строка не заканчивается на `:`, к ней добавляется `:` (как у числовых префиксов `1:`).
+2. Иначе — **порядковый номер** в формате `"1:"`, `"2:"`, `"3:"` и т.д. (общая нумерация по всем источникам: подписки, затем блок connections).
 
-Если оба условия выполнены, визард автоматически добавляет `tag_prefix` с порядковым номером в формате `"1:"`, `"2:"`, `"3:"` и т.д. для каждой подписки. Для одной подписки префикс не добавляется автоматически.
+Если `tag_prefix` для данного URL уже был в сохранённом `ParserConfig`, он **восстанавливается** и не заменяется ни фрагментом, ни номером.
 
 **Порядок применения:**
 1. Узел парсится с оригинальным тегом (например, `"🇷🇺 Moscow"`)
@@ -416,7 +486,7 @@
      - Скачивается содержимое подписки (поддерживаются Base64 и plain-текст)
      - Декодируется и парсится список прокси-серверов
    - Для каждой прямой ссылки из `proxies[].connections`:
-     - Парсится прямая ссылка (vless://, vmess://, trojan://, ss://, hysteria2:// или hy2://, ssh://, wireguard://) и добавляется в список прокси
+     - Парсится прямая ссылка (vless://, vmess://, trojan://, ss://, hysteria2:// или hy2://, ssh://, socks5:// или socks://, wireguard://) и добавляется в список прокси
 
 3. **Поддерживаемые протоколы**
    - ✅ VLESS
@@ -425,6 +495,7 @@
    - ✅ Shadowsocks (SS)
    - ✅ Hysteria2
    - ✅ SSH
+   - ✅ SOCKS5 (socks5://, socks:// — outbound type "socks")
    - ✅ WireGuard (попадает в секцию endpoints; sing-box 1.11+)
 
 4. **Извлечение информации**
@@ -439,7 +510,7 @@
    - Узлы с дублирующимися тегами автоматически переименовываются (добавляется суффикс `-2`, `-3` и т.д.)
 
 6. **Генерация JSON узлов**
-   - Узлы VLESS/VMess/Trojan/SS/Hysteria2/SSH сериализуются в outbounds; узлы WireGuard — в endpoints (sing-box 1.11+)
+   - Узлы VLESS/VMess/Trojan/SS/Hysteria2/SSH/SOCKS5 сериализуются в outbounds; узлы WireGuard — в endpoints (sing-box 1.11+)
    - Комментарии выводятся из `label`
    - Порядок полей оптимизирован для читаемости
 
@@ -463,19 +534,24 @@
 ### VLESS (`vless://`)
 Стандартный URI формат: `vless://uuid@server:port?params#tag`
 
-**Параметры query string:**
-- `encryption` - метод шифрования (например, `none`)
-- `flow` - поток (например, `xtls-rprx-vision`)
-- `security` - тип безопасности (например, `reality`, `tls`)
-- `sni` - Server Name Indication
-- `fp` - TLS fingerprint (например, `chrome`, `safari`, `random`)
-- `pbk` - Public key для Reality
-- `sid` - Short ID для Reality
-- `type` - тип транспорта (`tcp`, `ws`, `grpc`)
-- `path` - путь (для `ws`/`grpc`)
-- `host` - хост заголовок (для `ws`/`grpc`)
-- `serviceName` - имя сервиса (для `grpc`)
-- `mode` - режим (для `grpc`, например, `gun`)
+**Соответствие query → полям outbound sing-box** (TLS, [V2Ray transport](https://sing-box.sagernet.org/configuration/shared/v2ray-transport/), Reality, `security=none`, нормализация ключей): подробный справочник и таблицы — в репозитории `SPECS/023-F-C-SUBSCRIPTION_TRANSPORT_VLESS_TROJAN/SUBSCRIPTION_PARAMS_REPORT.md` (раздел «Справочник» и § 1а).
+
+**Параметры query string (типичные):**
+- `encryption` — в ссылках Xray часто `none`; в JSON outbound VLESS отдельным полем не дублируется
+- `flow` — подпротокол VLESS в sing-box (например `xtls-rprx-vision`), см. [доку VLESS](https://sing-box.sagernet.org/configuration/outbound/vless/). Если в ссылке **нет** `flow`, но задан **REALITY** (`pbk` + обычно `sid`) и транспорт **не** `ws` / `grpc` / `http` / `xhttp` / `httpupgrade` (только «голый» TCP), в outbound подставляется `flow: xtls-rprx-vision` — многие серверы без этого не поднимают сессию.
+- `security` — `none` | `tls` | `reality`; при `none` TLS в outbound не добавляется
+- `sni` — имя для SNI / проверки сертификата → `tls.server_name`; при пустом `sni` используется **`peer`** (тот же смысл в части подписок)
+- `fp`, **`fingerprint`** — отпечаток uTLS → `tls.utls.fingerprint`. Допустимые строки — как в [документации sing-box (TLS, utls, fingerprint)](https://sing-box.sagernet.org/configuration/shared/tls/#outbound): перечисление там в **нижнем регистре** (`chrome`, `firefox`, `qq`, `random`, `randomized`, …). Значения из ссылок и поле при **генерации** `config.json` приводятся к нижнему регистру, иначе sing-box может вернуть ошибку вида `unknown uTLS fingerprint` для вариантов вроде `QQ`.
+- `alpn` — список через запятую → `tls.alpn`
+- `insecure`, `allowInsecure` / `allowinsecure` — при `1` / `true` → `tls.insecure`
+- `pbk`, `sid` — Reality → `tls.reality.public_key`, `short_id`
+- `type` — транспорт: `tcp` / `raw`, `ws`, `grpc`, `http`, `xhttp`, **`httpupgrade`** (синоним `xhttp` → sing-box `httpupgrade`), реже `quic`
+- `path` — путь WebSocket / HTTP / httpupgrade или fallback имени сервиса для gRPC
+- `host` / `Host` — для WS → заголовок `Host`; если `host` и `sni` в query нет, для WS используется **`obfsParam`**. Если есть `host` или `sni`, они имеют приоритет. Для HTTP/httpupgrade — поле `host` транспорта (регистр ключа `Host` в query учитывается)
+- `headerType` — вместе с `type=raw` или `tcp` и значением `http` задаёт транспорт типа HTTP (обфускация), см. отчёт 023
+- `serviceName` / `service_name` — имя gRPC-сервиса → `transport.service_name`
+- `packetEncoding` — например `xudp` → поле outbound `packet_encoding`, см. [доку VLESS](https://sing-box.sagernet.org/configuration/outbound/vless/)
+- `mode`, `spx`, `extra`, `quicSecurity`, `authority` — часто встречаются в ссылках Xray/панелей; в документированный клиентский JSON sing-box **не переносятся**, на разбор ссылки не влияют
 
 **Пример:**
 ```
@@ -483,9 +559,9 @@ vless://uuid@server.com:443?encryption=none&flow=xtls-rprx-vision&security=reali
 ```
 
 ### VMess (`vmess://`)
-**⚠️ Особенность:** VMess использует base64-закодированный JSON, а не стандартный URI формат.
+**⚠️ Особенность:** обычно VMess — base64(JSON); поддерживается и **legacy**-строка после base64: `method:uuid@host:port` с опциональным `?query` (как в части клиентов). Фрагмент `#tag` отрезается **до** декодирования base64.
 
-Формат: `vmess://base64(json)`
+Формат: `vmess://base64(json)` или `vmess://base64(cleartext)#tag`
 
 JSON должен содержать поля:
 - `v` - версия (обычно `"2"`)
@@ -495,14 +571,19 @@ JSON должен содержать поля:
 - `id` - UUID клиента
 - `aid` - alterId (опционально)
 - `scy` - метод шифрования (опционально)
-- `net` - тип сети (`tcp`, `ws`, `http`, `grpc`)
+- `net` - тип сети (`tcp`, `ws`, `http`, `grpc`, **`xhttp`/`httpupgrade`** → sing-box transport `httpupgrade`; **`h2`** → transport `http` + TLS по схеме sing-box)
 - `type` - тип заголовка (для `tcp`)
-- `host` - хост (для `ws`/`http`)
+- `host` - хост (для `ws`/`http`; для WS при пустом `host` подставляется SNI из TLS, если есть)
 - `path` - путь (для `ws`/`http`/`grpc`)
 - `tls` - использование TLS (`"tls"` или отсутствует)
 - `sni` - SNI (опционально)
 - `alpn` - ALPN (опционально)
 - `fp` - fingerprint (опционально)
+- `insecure` в JSON (`"1"`) — небезопасный TLS, как у VLESS
+
+**Сборка outbound с TLS для VMess:** `tls.server_name` берётся из `sni`, при отсутствии — из поля **`peer`** в query (если провайдер продублировал имя в `peer`), иначе — **адрес сервера** (`add`). Флаги **`insecure` / `allowInsecure` / `allowinsecure`** в query обрабатываются так же, как для VLESS (`tlsInsecureTrue`).
+
+**Legacy (не JSON):** в query допускаются, например, `type=ws`, `path`, `tls=1` — они маппятся в `transport` и `tls` так же, как у URI-протоколов с query.
 
 **Пример:**
 ```
@@ -512,11 +593,14 @@ vmess://eyJ2IjoiMiIsInBzIjoiVGVzdCIsImFkZCI6InNlcnZlci5jb20iLCJwb3J0Ijo0NDMsImlk
 ### Trojan (`trojan://`)
 Стандартный URI формат: `trojan://password@server:port?params#tag`
 
-**Параметры query string:**
-- `security` - тип безопасности (например, `tls`)
-- `sni` - Server Name Indication
-- `alpn` - ALPN (через запятую для нескольких значений)
-- `fp` - TLS fingerprint
+Те же правила **TLS** и **[V2Ray transport](https://sing-box.sagernet.org/configuration/shared/v2ray-transport/)**, что и для VLESS (в т.ч. `type=ws`, `path`, `host` / `Host`, **`type=httpupgrade`** как у `xhttp`), см. **`SUBSCRIPTION_PARAMS_REPORT.md`** (023) и спеку **029**.
+
+**Параметры query string (типичные):**
+- `security` — например `tls` или `none` (без TLS)
+- `sni`, `host`, **`peer`** — SNI / имя сертификата (приоритет `sni`, затем `peer`, затем `host`); для WS также заголовок Host
+- `type` — `ws`, `grpc`, `http`, `xhttp`, **`httpupgrade`**, `tcp`/`raw` (+ при необходимости `headerType=http`) — как у VLESS
+- `path` — путь WebSocket
+- `alpn`, `fp`, `insecure` / `allowInsecure` — как у VLESS
 
 **Пример:**
 ```
@@ -557,8 +641,9 @@ ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ@server.com:443#Shadowsocks Server
 - `obfs` - тип обфускации (в настоящее время поддерживается только `salamander`)
 - `obfs-password` - пароль для указанного типа обфускации
 - `sni` - Server Name Indication для TLS соединений
-- `insecure` - разрешить небезопасные TLS соединения (принимает `"1"` для true или `"0"` для false)
-- `pinSHA256` - SHA-256 fingerprint сертификата сервера для привязки
+- `insecure`, **`allowInsecure` / `allowinsecure`** — небезопасный TLS (как у VLESS: `1` / `true` / `yes`); также учитываются `skip-cert-verify`
+- `fingerprint` / `fp` — uTLS fingerprint → `tls.utls` в sing-box
+- `pinSHA256` — base64 SHA-256 публичного ключа сертификата → `tls.certificate_public_key_sha256` в sing-box
 
 **⚠️ Важно:** Параметры полосы пропускания (`upmbps`, `downmbps`) и режимы клиента (HTTP, SOCKS5) **не должны** быть в URI, так как это клиентские настройки, специфичные для каждого пользователя.
 
@@ -592,6 +677,23 @@ hysteria2://[email protected]:123,5000-6000/?insecure=1&pinSHA256=deadbeef#Multi
 ssh://root:admin@127.0.0.1:22#Local SSH
 ssh://user@server.com:22?private_key_path=$HOME/.ssh/id_rsa#Git Server
 ssh://root:password@192.168.1.1:22?private_key_path=/path/to/key&host_key=ecdsa-sha2-nistp256%20AAAA...&client_version=SSH-2.0-OpenSSH_7.4p1#My SSH Server
+```
+
+### SOCKS5 (`socks5://` или `socks://`)
+
+Формат: `socks5://[user:password@]host[:port]#tag` или `socks://...` (короткая форма). В сгенерированном конфиге sing-box — outbound **`type`: `socks`** с **`version`: `5`** (отдельного типа `socks5` в sing-box нет). В фильтрах парсера поле **`scheme`**: для ссылок `socks5://` — **`socks5`**, для `socks://` — **`socks`**.
+
+**Структура:**
+- `user:password` — опциональная авторизация (логин и пароль прокси)
+- `host` — хост или IP SOCKS5-сервера (обязательный)
+- `port` — порт (по умолчанию **1080**, если не указан)
+- `#tag` — тег/комментарий ноды (опционально)
+
+**Примеры:**
+```
+socks5://myuser:mypass@proxy.example.com:1080#Office SOCKS5
+socks5://proxy.example.com:1080
+socks://127.0.0.1:1080#Local
 ```
 
 ### WireGuard (`wireguard://`)

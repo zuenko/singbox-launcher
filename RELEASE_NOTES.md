@@ -1,76 +1,34 @@
 # Release Notes
 
+Полный черновик следующего релиза: [docs/release_notes/upcoming.md](docs/release_notes/upcoming.md)
+
+---
+
+### Выжимка (RU) — v0.8.5
+
+Кратко: визард (DNS, Rules v3, Sources, gutter, hover-строки, правка источника, несохранённое), парсер и генерация (лимит узлов 3000, URI/UTF-8/sing-box check), вкладка Servers (ПКМ, share URI, фильтр ошибок пинга, мультивыбор, ScrollToTop), Clash API (кодирование имён), настройки пинга, сборка Linux/macOS, шаблон DNS и sing-box 1.13+.
+
+**Полный список изменений:** [docs/release_notes/0-8-5.md](docs/release_notes/0-8-5.md).
+
+### Draft highlights (EN) — v0.8.5
+
+Wizard (DNS tab, Rules v3, Sources, scroll gutters, row hover, per-source edit, unsaved flow), parser and config generation (3000 nodes cap, URI edge cases, `sing-box check`), Servers tab (context menu, share URI, ping-error filter, multi-select, scroll after switch), Clash API path encoding, launcher ping settings, Linux/macOS build notes, wizard template DNS and sing-box 1.13+ mixed inbound.
+
+**Full changelog:** [docs/release_notes/0-8-5.md](docs/release_notes/0-8-5.md).
+
+*Черновик следующего релиза:* [docs/release_notes/upcoming.md](docs/release_notes/upcoming.md)
+
+---
+
 ## Последний релиз / Latest release
 
-**v0.8.3** — полное описание (full details): [docs/release_notes/0-8-3.md](docs/release_notes/0-8-3.md)
+| Версия | Описание |
+|--------|----------|
+| **v0.8.5** | [docs/release_notes/0-8-5.md](docs/release_notes/0-8-5.md) |
+| **v0.8.4** | [docs/release_notes/0-8-4.md](docs/release_notes/0-8-4.md) |
+| **v0.8.3** | [docs/release_notes/0-8-3.md](docs/release_notes/0-8-3.md) |
+| **v0.8.2** | [docs/release_notes/0-8-2.md](docs/release_notes/0-8-2.md) |
+| **v0.8.1** | [docs/release_notes/0-8-1.md](docs/release_notes/0-8-1.md) |
+| **v0.8.0** | [docs/release_notes/0-8-0.md](docs/release_notes/0-8-0.md) |
 
-<details>
-<summary><b>🇷🇺 Кратко (v0.8.3)</b></summary>
-
-- Парсер wireguard://; секция endpoints в конфиге (sing-box 1.11+)
-- Шаблон визарда почищен, TUN на macOS возвращён
-- Исправлено падение Clash API на названиях с `#` и `//` (jsonc.ToJSON)
-- Визард: кеш превью, View по источнику из кеша, Get free VPN — подтверждение, диалог Outbound (Raw→Settings), конфигуратор синхронно, смена Scope при редактировании
-- Визард: модель как источник истины (Model(), единый префикс 1:/2:/3:, унифицированная сборка прокси)
-- Диагностика: настройки STUN (свой сервер, на Mac — SOCKS5/напрямую), ссылка на список STUN-серверов
-- Diagnostics: две кнопки (окно логов, папка логов) с иконками; повторное нажатие — фокус на открытое окно; в Help убрана кнопка «Open Logs Folder»
-- Исправлено исчезновение источников после reopen визарда, смены префиксов и сохранения
-- Логи: Internal до Trace при открытом окне; wintun — загрузка с GitHub, затем wintun.net, таймаут 1 мин без данных
-- Core: подсказки «?» у Sing-box и Wintun (Open bin folder, ссылка), краткий статус «❌ not found», Fallback 1.13.1
-- Автообновление конфига: 2 попытки, сброс счётчика при Start
-
-</details>
-
-<details>
-<summary><b>🇬🇧 Summary (v0.8.3)</b></summary>
-
-- Parser wireguard://; config endpoints section (sing-box 1.11+)
-- Wizard template cleaned up; TUN on macOS restored
-- Fixed Clash API failing on names with `#` and `//` (jsonc.ToJSON)
-- Wizard: preview cache, View uses cache, Get free VPN confirmation, Outbound dialog (Raw→Settings), configurator sync, Scope when editing
-- Wizard: model as source of truth (Model(), unified prefix 1:/2:/3:, proxy list building)
-- Diagnostics: STUN settings (custom server, on Mac SOCKS5/direct), link to STUN server list
-- Diagnostics: two buttons (log window, logs folder) with icons; reopening focuses existing window; Help «Open Logs Folder» removed
-- Fixed sources disappearing after reopen, changing prefixes, and save
-- Logs: Internal up to Trace when window open; wintun download from GitHub then wintun.net, 1 min idle timeout
-- Core: help «?» for Sing-box and Wintun (Open bin folder, link), short status «❌ not found», Fallback 1.13.1
-- Auto-update: 2 attempts, counter reset on Start
-
-</details>
-
-**v0.8.2** — полное описание (full details): [docs/release_notes/0-8-2.md](docs/release_notes/0-8-2.md)
-
-<details>
-<summary><b>🇷🇺 Кратко (v0.8.2)</b></summary>
-
-- Единый диалог «загрузка не удалась» для sing-box, wintun, шаблона, SRS
-- Локальное скачивание SRS в `bin/rule-sets/`; кнопка SRS во вкладке Rules
-- Windows: стабильнее start/stop (AttachConsole + taskkill)
-- Логи: уровень по сборке (release = Warn); окно логов Diagnostics (Internal, Core, API)
-- Clash API: ошибки Ping в tooltip; параллельный test; настраиваемый endpoint; закрепление direct-out и активного прокси
-- Визард: вкладка Outbounds, Edit Outbound (Settings + Raw), Save без сети и Update в фоне, статус при сохранении, пустое поле URL при загрузке, префиксы по умолчанию, копирование источника по клику
-
-</details>
-
-<details>
-<summary><b>🇬🇧 Summary (v0.8.2)</b></summary>
-
-- Unified “download failed” dialog for sing-box, wintun, template, SRS
-- SRS local download to `bin/rule-sets/`; SRS button in Rules tab
-- Windows: more stable start/stop (AttachConsole + taskkill)
-- Logging: build-based level (release = Warn); Diagnostics log viewer (Internal, Core, API)
-- Clash API: Ping errors in tooltip; parallel test; configurable endpoint; pin direct-out and active proxy
-- Wizard: Outbounds tab, Edit Outbound (Settings + Raw), Save without network and background Update, save status, empty URL field on load, default prefixes, copy source on click
-
-</details>
-
-**v0.8.1** — полное описание (full details): [docs/release_notes/0-8-1.md](docs/release_notes/0-8-1.md)
-
-**v0.8.0** — полное описание (full details): [docs/release_notes/0-8-0.md](docs/release_notes/0-8-0.md)
-
-<details>
-<summary><b>Что не вошло в релиз / Not yet released</b></summary>
-
-Черновик следующего релиза (draft): [upcoming.md](docs/release_notes/upcoming.md)
-
-</details>
+Полное описание каждой версии — по ссылке в таблице (full details in linked files).

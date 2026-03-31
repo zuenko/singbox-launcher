@@ -149,7 +149,7 @@ func (fs *FileService) CloseLogFiles() {
 // Файл открывается в режиме append (O_APPEND) — новые записи добавляются в конец.
 func (fs *FileService) OpenLogFileWithRotation(logPath string) (*os.File, error) {
 	fs.CheckAndRotateLogFile(logPath)
-	return os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	return os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, platform.DefaultFileMode)
 }
 
 // CheckAndRotateLogFile проверяет размер лог-файла и выполняет ротацию при необходимости.
@@ -193,7 +193,11 @@ func ReadLastLines(path string, maxLines int) ([]string, error) {
 		}
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			debuglog.WarnLog("ReadLastLines: failed to close file %s: %v", path, cerr)
+		}
+	}()
 	info, err := f.Stat()
 	if err != nil {
 		return nil, err

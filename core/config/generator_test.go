@@ -1,7 +1,11 @@
 package config
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
+
+	"singbox-launcher/core/config/subscription"
 )
 
 // TestOutboundInfo_ThreePassAlgorithm tests the three-pass algorithm for handling dynamic addOutbounds
@@ -266,4 +270,199 @@ func TestOutboundInfo_ThreePassAlgorithm(t *testing.T) {
 			t.Errorf("A: expected outboundCount 2, got %d", aInfo.outboundCount)
 		}
 	})
+}
+
+// Sing-box rejects Xray-only flow xtls-rprx-vision-udp443; buildOutbound maps it to vision + xudp.
+// GenerateNodeJSON must emit the converted flow from node.Outbound, not the original node.Flow (used for skip filters).
+func TestGenerateNodeJSON_VLESS_XtlsVisionUDP443(t *testing.T) {
+	uri := "vless://729764b1-149c-49f2-b170-322544df7b5b@144.31.130.245:443?encryption=none&flow=xtls-rprx-vision-udp443&sni=144.31.130.245&fp=chrome#Cyprus"
+	node, err := subscription.ParseNode(uri, nil)
+	if err != nil {
+		t.Fatalf("ParseNode: %v", err)
+	}
+	if node == nil {
+		t.Fatal("ParseNode returned nil")
+	}
+	if node.Flow != "xtls-rprx-vision-udp443" {
+		t.Fatalf("node.Flow should stay original for filters, got %q", node.Flow)
+	}
+	jsonStr, err := GenerateNodeJSON(node)
+	if err != nil {
+		t.Fatalf("GenerateNodeJSON: %v", err)
+	}
+	if !strings.Contains(jsonStr, `"flow":"xtls-rprx-vision"`) {
+		t.Fatalf("expected sing-box flow in JSON:\n%s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"packet_encoding":"xudp"`) {
+		t.Fatalf("expected packet_encoding in JSON:\n%s", jsonStr)
+	}
+	if strings.Contains(jsonStr, "xtls-rprx-vision-udp443") {
+		t.Fatalf("must not emit unsupported Xray flow in JSON:\n%s", jsonStr)
+	}
+}
+
+// GenerateNodeJSON must emit transport for VLESS ws and omit tls when security=none.
+func TestGenerateNodeJSON_VLESS_WSTransportNoTLS(t *testing.T) {
+	uri := "vless://a0ee37a5-1844-4087-bc5c-1db6f416d38c@cdn.example.com:8880?encryption=none&type=ws&path=%2F&host=h.cdn&security=none#t"
+	node, err := subscription.ParseNode(uri, nil)
+	if err != nil || node == nil {
+		t.Fatalf("ParseNode: %v", err)
+	}
+	jsonStr, err := GenerateNodeJSON(node)
+	if err != nil {
+		t.Fatalf("GenerateNodeJSON: %v", err)
+	}
+	if !strings.Contains(jsonStr, `"transport":`) || !strings.Contains(jsonStr, `"type":"ws"`) {
+		t.Fatalf("expected ws transport in JSON:\n%s", jsonStr)
+	}
+	if strings.Contains(jsonStr, `"tls":`) {
+		t.Fatalf("unexpected tls for security=none:\n%s", jsonStr)
+	}
+}
+
+// sing-box rejects uTLS fingerprints with wrong casing (e.g. "QQ"); emit lowercase (issue #45).
+func TestGenerateNodeJSON_UTLSFingerprintLowercase(t *testing.T) {
+	node := &ParsedNode{
+		Scheme: "vless",
+		Tag:    "t-fp",
+		Server: "example.com",
+		Port:   443,
+		UUID:   "a0ee37a5-1844-4087-bc5c-1db6f416d38c",
+		Outbound: map[string]interface{}{
+			"tls": map[string]interface{}{
+				"enabled":     true,
+				"server_name": "example.com",
+				"utls": map[string]interface{}{
+					"enabled":     true,
+					"fingerprint": "QQ",
+				},
+			},
+		},
+	}
+	jsonStr, err := GenerateNodeJSON(node)
+	if err != nil {
+		t.Fatalf("GenerateNodeJSON: %v", err)
+	}
+	if strings.Contains(jsonStr, `"QQ"`) {
+		t.Fatalf("expected no uppercase QQ in JSON:\n%s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"fingerprint":"qq"`) {
+		t.Fatalf("expected lowercase qq fingerprint:\n%s", jsonStr)
+	}
+}
+
+// VLESS URI may use fingerprint= instead of fp=; same normalization as hysteria2.
+func TestParseNode_VLESS_FingerprintQueryAlias(t *testing.T) {
+	uri := "vless://a0ee37a5-1844-4087-bc5c-1db6f416d38c@example.com:443?encryption=none&security=tls&sni=example.com&fingerprint=QQ#t"
+	node, err := subscription.ParseNode(uri, nil)
+	if err != nil || node == nil {
+		t.Fatalf("ParseNode: %v", err)
+	}
+	tls := node.Outbound["tls"].(map[string]interface{})
+	ut := tls["utls"].(map[string]interface{})
+	if ut["fingerprint"] != "qq" {
+		t.Fatalf("fingerprint: %+v", ut)
+	}
+}
+
+// GenerateNodeJSON must emit username and password for SOCKS5 (from node.Outbound / URI userinfo).
+func TestGenerateNodeJSON_SOCKS5_WithAuth(t *testing.T) {
+	uri := "socks5://myuser:mypass@proxy.example.com:1080#Office"
+	node, err := subscription.ParseNode(uri, nil)
+	if err != nil || node == nil {
+		t.Fatalf("ParseNode: %v", err)
+	}
+	jsonStr, err := GenerateNodeJSON(node)
+	if err != nil {
+		t.Fatalf("GenerateNodeJSON: %v", err)
+	}
+	if !strings.Contains(jsonStr, `"type":"socks"`) {
+		t.Fatalf("expected socks type in JSON:\n%s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"version":"5"`) {
+		t.Fatalf("expected SOCKS version 5 in JSON:\n%s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"server":"proxy.example.com"`) {
+		t.Fatalf("expected server in JSON:\n%s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"server_port":1080`) {
+		t.Fatalf("expected server_port in JSON:\n%s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"username":"myuser"`) {
+		t.Fatalf("expected username in JSON:\n%s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"password":"mypass"`) {
+		t.Fatalf("expected password in JSON:\n%s", jsonStr)
+	}
+}
+
+// Large subscription lists may carry invalid UTF-8 in query/path and line breaks in #fragment labels.
+// fmt %q is not JSON-safe; sing-box decode must accept the object line.
+func TestGenerateNodeJSON_InvalidUTF8PathAndNewlineLabelStillValidJSON(t *testing.T) {
+	node := &ParsedNode{
+		Scheme: "vless",
+		Tag:    "t-invalid-utf8",
+		Server: "1.2.3.4",
+		Port:   443,
+		UUID:   "00000000-0000-0000-0000-000000000001",
+		Label:  "line1\nline2",
+		Outbound: map[string]interface{}{
+			"transport": map[string]interface{}{
+				"type": "ws",
+				"path": "/prefix\xff\xfe/suffix",
+			},
+		},
+	}
+	s, err := GenerateNodeJSON(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(s, "// line1 line2") {
+		t.Fatalf("expected newline sanitized in comment, got:\n%s", s)
+	}
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected comment + JSON line: %q", s)
+	}
+	jsonLine := strings.TrimSuffix(strings.TrimSpace(lines[len(lines)-1]), ",")
+	var obj map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonLine), &obj); err != nil {
+		t.Fatalf("object line must be valid JSON: %v\n%s", err, jsonLine)
+	}
+}
+
+// WireGuard endpoints use a leading // comment; subscription metadata must not break JSONC structure or UTF-8.
+func TestGenerateEndpointJSON_CommentSanitized(t *testing.T) {
+	node := &ParsedNode{
+		Scheme:  "wireguard",
+		Tag:     "wg-test-tag",
+		Comment: "line1\nline2\xff\xfe",
+		Outbound: map[string]interface{}{
+			"private_key": "YFabc1234567890123456789012345678901234567890=",
+			"address":     []string{"10.0.0.2/32"},
+			"peers": []interface{}{
+				map[string]interface{}{
+					"address":     "203.0.113.1:51820",
+					"public_key":  "YFpeerpub9876543210987654321098765432109876543210=",
+					"allowed_ips": []string{"0.0.0.0/0"},
+				},
+			},
+		},
+	}
+	s, err := GenerateEndpointJSON(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(s, "// line1 line2") {
+		t.Fatalf("expected newline/invalid UTF-8 sanitized in comment prefix, got prefix:\n%.80q", s)
+	}
+	idx := strings.Index(s, "\n")
+	if idx < 0 {
+		t.Fatalf("expected newline after comment: %q", s)
+	}
+	jsonPart := strings.TrimSpace(s[idx+1:])
+	var obj map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonPart), &obj); err != nil {
+		t.Fatalf("endpoint JSON must parse: %v\n%s", err, jsonPart)
+	}
 }

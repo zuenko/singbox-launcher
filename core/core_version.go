@@ -16,8 +16,10 @@ import (
 	"fyne.io/fyne/v2"
 
 	"singbox-launcher/internal/constants"
+	"singbox-launcher/internal/ctxutil"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 )
 
@@ -275,14 +277,10 @@ func (ac *AppController) CheckVersionInBackground() {
 				interval = verySlowInterval
 			}
 
-			// Ждем перед попыткой (кроме первой)
 			if attemptCount > 0 {
-				select {
-				case <-ac.ctx.Done():
+				if err := ctxutil.SleepWithContext(ac.ctx, interval); err != nil {
 					debuglog.DebugLog("CheckVersionInBackground: Stopped (context cancelled)")
 					return
-				case <-time.After(interval):
-					// Continue
 				}
 			}
 
@@ -290,6 +288,9 @@ func (ac *AppController) CheckVersionInBackground() {
 			if !ac.ShouldCheckVersion() {
 				debuglog.DebugLog("CheckVersionInBackground: Version already cached during wait, stopping")
 				return
+			}
+			if platform.IsSleeping() {
+				continue
 			}
 
 			attemptCount++
@@ -387,7 +388,7 @@ func (ac *AppController) getLatestVersionFromURLWithPrefix(url string, keepPrefi
 func (ac *AppController) CheckForUpdates() {
 	// Показываем информационное сообщение о начале проверки
 	if ac.UIService != nil && ac.UIService.MainWindow != nil {
-		dialogs.ShowInfo(ac.UIService.MainWindow, "Checking for Updates", "Checking for updates...")
+		dialogs.ShowInfo(ac.UIService.MainWindow, locale.T("core.update_available_title"), locale.T("help.checking_updates"))
 	}
 
 	// Запускаем проверку версии в фоне
@@ -403,7 +404,7 @@ func (ac *AppController) CheckForUpdates() {
 			debuglog.WarnLog("CheckForUpdates: Failed to get latest version: %v", err)
 			fyne.Do(func() {
 				if ac.UIService != nil && ac.UIService.MainWindow != nil {
-					dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Failed to check for updates: %v", err))
+					dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("%s: %w", locale.T("error.check_updates_failed"), err))
 				}
 			})
 			return
@@ -417,28 +418,25 @@ func (ac *AppController) CheckForUpdates() {
 		if info.Error != "" {
 			fyne.Do(func() {
 				if ac.UIService != nil && ac.UIService.MainWindow != nil {
-					dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Error checking version: %s", info.Error))
+					dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("%s", locale.Tf("error.version_check", info.Error)))
 				}
 			})
 			return
 		}
 
 		// Формируем сообщение для пользователя
-		var message string
 		if info.UpdateAvailable {
-			message = fmt.Sprintf("Update available!\n\nInstalled: %s\nLatest: %s\n\nYou can download the update from the Core tab.",
-				info.InstalledVersion, info.LatestVersion)
+			message := locale.Tf("core.update_available_message", info.InstalledVersion, info.LatestVersion)
 			fyne.Do(func() {
 				if ac.UIService != nil && ac.UIService.MainWindow != nil {
-					dialogs.ShowInfo(ac.UIService.MainWindow, "Update Available", message)
+					dialogs.ShowInfo(ac.UIService.MainWindow, locale.T("core.update_available_title"), message)
 				}
 			})
 		} else {
-			message = fmt.Sprintf("You are using the latest version.\n\nInstalled: %s\nLatest: %s",
-				info.InstalledVersion, info.LatestVersion)
+			message := locale.Tf("core.latest_version_message", info.InstalledVersion, info.LatestVersion)
 			fyne.Do(func() {
 				if ac.UIService != nil && ac.UIService.MainWindow != nil {
-					dialogs.ShowInfo(ac.UIService.MainWindow, "No Updates", message)
+					dialogs.ShowInfo(ac.UIService.MainWindow, locale.T("core.no_updates_title"), message)
 				}
 			})
 		}

@@ -3,9 +3,10 @@
 // Файл loader.go загружает единый шаблон конфигурации (wizard_template.json) и преобразует
 // его в TemplateData для использования визардом.
 //
-// Шаблон содержит 4 секции:
+// Шаблон содержит секции:
 //   - parser_config — конфигурация парсера подписок (JSON-объект)
 //   - config — основной конфиг sing-box (после применения params)
+//   - dns_options (опционально) — дефолты вкладки DNS во визарде (не sing-box)
 //   - selectable_rules — правила маршрутизации для визарда (с platforms и rule_set)
 //   - params — платформозависимые параметры (применяются по runtime.GOOS)
 //
@@ -13,7 +14,7 @@
 //  1. Чтение и валидацию JSON файла шаблона
 //  2. Применение params для текущей платформы (replace/prepend/append)
 //  3. Фильтрацию selectable_rules по platforms
-//  4. Извлечение defaultFinal из config.route.final
+//  4. Извлечение defaultFinal из config.route.final; default_domain_resolver из dns_options (default_domain_resolver или route.default_domain_resolver) или config.route
 //  5. Парсинг config в упорядоченные секции для генератора
 //
 // Используется в:
@@ -63,6 +64,12 @@ type TemplateData struct {
 
 	// DefaultFinal — outbound по умолчанию из config.route.final.
 	DefaultFinal string
+
+	// DefaultDomainResolver — тег для route.default_domain_resolver: сначала из dns_options, иначе из config.route (после apply params).
+	DefaultDomainResolver string
+
+	// DNSOptionsRaw — секция dns_options из шаблона (не sing-box); визард читает отсюда список DNS-серверов и правила при наличии.
+	DNSOptionsRaw json.RawMessage `json:"-"`
 }
 
 // TemplateSelectableRule — правило маршрутизации, управляемое пользователем в визарде.
@@ -94,6 +101,10 @@ type TemplateSelectableRule struct {
 
 	// HasOutbound — true если правило имеет outbound/action, который можно выбрать.
 	HasOutbound bool
+
+	// Params — состояние UI по типу правила (только для custom rules). Не сериализуется из шаблона.
+	// Используется для сохранения/восстановления match_by_path, path_mode (processes), domain_regex (urls) и т.д.
+	Params map[string]interface{}
 }
 
 // TemplateParam — платформозависимый параметр из секции params шаблона (name, platforms, value, mode).
@@ -133,7 +144,7 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 
 	raw, err := os.ReadFile(templatePath)
 	if err != nil {
-		return nil, fmt.Errorf("не удалось прочитать %s: %w", TemplateFileName, err)
+		return nil, fmt.Errorf("failed to read %s: %w", TemplateFileName, err)
 	}
 
 	// Удаление UTF-8 BOM если присутствует
@@ -143,11 +154,12 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 	var root struct {
 		ParserConfig    json.RawMessage      `json:"parser_config"`
 		Config          json.RawMessage      `json:"config"`
+		DNSOptions      json.RawMessage      `json:"dns_options,omitempty"`
 		SelectableRules []jsonSelectableRule `json:"selectable_rules"`
-		Params          []TemplateParam       `json:"params"`
+		Params          []TemplateParam      `json:"params"`
 	}
 	if err := json.Unmarshal(raw, &root); err != nil {
-		return nil, fmt.Errorf("невалидный JSON в %s: %w", TemplateFileName, err)
+		return nil, fmt.Errorf("invalid JSON in %s: %w", TemplateFileName, err)
 	}
 
 	// 1. ParserConfig → оборачиваем содержимое parser_config в объект ParserConfig и форматируем
@@ -173,19 +185,24 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 	enableTunDefault := true
 	configJSON, err := applyParams(root.Config, root.Params, runtime.GOOS, enableTunDefault)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка применения params: %w", err)
+		return nil, fmt.Errorf("error applying params: %w", err)
 	}
 
 	// 3. Парсинг config в упорядоченные секции
 	configSections, configOrder, err := parseJSONWithOrder(configJSON)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка парсинга config: %w", err)
+		return nil, fmt.Errorf("error parsing config: %w", err)
 	}
 	debuglog.DebugLog("TemplateLoader: секции конфига: %v", configOrder)
 
-	// 4. Извлечение defaultFinal из route
+	// 4. Извлечение defaultFinal; default_domain_resolver — dns_options, затем route
 	defaultFinal := extractDefaultFinal(configSections)
+	defaultDomainResolver := extractDefaultDomainResolverFromDNSOptions(root.DNSOptions)
+	if defaultDomainResolver == "" {
+		defaultDomainResolver = extractDefaultDomainResolver(configSections)
+	}
 	debuglog.DebugLog("TemplateLoader: defaultFinal: %s", defaultFinal)
+	debuglog.DebugLog("TemplateLoader: defaultDomainResolver: %s", defaultDomainResolver)
 
 	// 5. Фильтрация selectable_rules по платформе и преобразование
 	platform := runtime.GOOS
@@ -193,13 +210,15 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 	debuglog.InfoLog("TemplateLoader: загружено %d selectable rules для платформы %s", len(selectableRules), platform)
 
 	return &TemplateData{
-		ParserConfig:    parserConfigStr,
-		Config:          configSections,
-		ConfigOrder:     configOrder,
-		RawConfig:       rawConfig,
-		Params:          root.Params,
-		SelectableRules: selectableRules,
-		DefaultFinal:    defaultFinal,
+		ParserConfig:            parserConfigStr,
+		Config:                  configSections,
+		ConfigOrder:             configOrder,
+		RawConfig:               rawConfig,
+		Params:                  root.Params,
+		SelectableRules:         selectableRules,
+		DefaultFinal:            defaultFinal,
+		DefaultDomainResolver:   defaultDomainResolver,
+		DNSOptionsRaw:           root.DNSOptions,
 	}, nil
 }
 
@@ -212,7 +231,7 @@ func applyParams(configJSON json.RawMessage, params []TemplateParam, goos string
 
 	var config map[string]json.RawMessage
 	if err := json.Unmarshal(configJSON, &config); err != nil {
-		return nil, fmt.Errorf("не удалось распарсить config: %w", err)
+		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
 	for _, param := range params {
@@ -226,7 +245,7 @@ func applyParams(configJSON json.RawMessage, params []TemplateParam, goos string
 		debuglog.DebugLog("TemplateLoader: применение param '%s' (mode=%s) для платформы %s", param.Name, mode, goos)
 
 		if err := applyParam(config, param.Name, param.Value, mode); err != nil {
-			return nil, fmt.Errorf("ошибка применения param '%s': %w", param.Name, err)
+			return nil, fmt.Errorf("error applying param '%s': %w", param.Name, err)
 		}
 	}
 
@@ -253,7 +272,7 @@ func applyParam(config map[string]json.RawMessage, name string, value json.RawMe
 
 	var subConfig map[string]json.RawMessage
 	if err := json.Unmarshal(existing, &subConfig); err != nil {
-		return fmt.Errorf("секция '%s' не является объектом: %w", key, err)
+		return fmt.Errorf("section '%s' is not an object: %w", key, err)
 	}
 
 	if err := applyParam(subConfig, subKey, value, mode); err != nil {
@@ -292,7 +311,7 @@ func applyValue(config map[string]json.RawMessage, key string, value json.RawMes
 		return mergeArrays(config, key, existing, value)
 
 	default:
-		return fmt.Errorf("неизвестный mode: %s", mode)
+		return fmt.Errorf("unknown mode: %s", mode)
 	}
 }
 
@@ -300,10 +319,10 @@ func applyValue(config map[string]json.RawMessage, key string, value json.RawMes
 func mergeArrays(config map[string]json.RawMessage, key string, first, second json.RawMessage) error {
 	var arr1, arr2 []json.RawMessage
 	if err := json.Unmarshal(first, &arr1); err != nil {
-		return fmt.Errorf("'%s' первый массив невалиден: %w", key, err)
+		return fmt.Errorf("'%s' first array invalid: %w", key, err)
 	}
 	if err := json.Unmarshal(second, &arr2); err != nil {
-		return fmt.Errorf("'%s' второй массив невалиден: %w", key, err)
+		return fmt.Errorf("'%s' second array invalid: %w", key, err)
 	}
 	merged := append(arr1, arr2...)
 	result, err := json.Marshal(merged)
@@ -326,7 +345,9 @@ func GetEffectiveConfig(rawConfig json.RawMessage, params []TemplateParam, goos 
 	return parseJSONWithOrder(applied)
 }
 
-// matchesPlatform проверяет, подходит ли текущая платформа. При goos=="darwin" и enableTunForDarwin также матчится "darwin-tun".
+// matchesPlatform проверяет, подходит ли текущая платформа.
+// При goos=="darwin" и enableTunForDarwin также матчится "darwin-tun".
+// При сборке Win7 (GOOS=windows, GOARCH=386) также матчится "win7" вместе с "windows".
 func matchesPlatform(platforms []string, goos string, enableTunForDarwin bool) bool {
 	if len(platforms) == 0 {
 		return true
@@ -336,6 +357,9 @@ func matchesPlatform(platforms []string, goos string, enableTunForDarwin bool) b
 			return true
 		}
 		if goos == "darwin" && enableTunForDarwin && p == "darwin-tun" {
+			return true
+		}
+		if goos == "windows" && runtime.GOARCH == "386" && p == "win7" {
 			return true
 		}
 	}
@@ -418,7 +442,7 @@ func parseJSONWithOrder(jsonBytes []byte) (map[string]json.RawMessage, []string,
 		return nil, nil, err
 	}
 	if delim, ok := token.(json.Delim); !ok || delim != '{' {
-		return nil, nil, fmt.Errorf("ожидался '{', получен %v", token)
+		return nil, nil, fmt.Errorf("expected '{', got %v", token)
 	}
 
 	for decoder.More() {
@@ -428,12 +452,12 @@ func parseJSONWithOrder(jsonBytes []byte) (map[string]json.RawMessage, []string,
 		}
 		key, ok := keyToken.(string)
 		if !ok {
-			return nil, nil, fmt.Errorf("ожидался строковый ключ, получен %v", keyToken)
+			return nil, nil, fmt.Errorf("expected string key, got %v", keyToken)
 		}
 
 		var value json.RawMessage
 		if err := decoder.Decode(&value); err != nil {
-			return nil, nil, fmt.Errorf("ошибка декодирования значения для '%s': %w", key, err)
+			return nil, nil, fmt.Errorf("error decoding value for '%s': %w", key, err)
 		}
 
 		sections[key] = value
@@ -445,7 +469,7 @@ func parseJSONWithOrder(jsonBytes []byte) (map[string]json.RawMessage, []string,
 		return nil, nil, err
 	}
 	if delim, ok := token.(json.Delim); !ok || delim != '}' {
-		return nil, nil, fmt.Errorf("ожидался '}', получен %v", token)
+		return nil, nil, fmt.Errorf("expected '}', got %v", token)
 	}
 
 	return sections, order, nil
@@ -469,16 +493,56 @@ func extractDefaultFinal(sections map[string]json.RawMessage) string {
 	return ""
 }
 
-// stripUTF8BOM удаляет UTF-8 BOM (EF BB BF) если присутствует.
+// extractDefaultDomainResolverFromDNSOptions reads dns_options (wizard-only): default_domain_resolver или route.default_domain_resolver.
+func extractDefaultDomainResolverFromDNSOptions(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		debuglog.DebugLog("TemplateLoader: dns_options parse: %v", err)
+		return ""
+	}
+	for _, key := range []string{"default_domain_resolver", "route.default_domain_resolver"} {
+		if v, ok := m[key]; ok && len(v) > 0 {
+			var s string
+			if json.Unmarshal(v, &s) != nil {
+				continue
+			}
+			if t := strings.TrimSpace(s); t != "" {
+				return t
+			}
+		}
+	}
+	return ""
+}
+
+// extractDefaultDomainResolver reads route.default_domain_resolver from config sections (after params).
+func extractDefaultDomainResolver(sections map[string]json.RawMessage) string {
+	raw, ok := sections["route"]
+	if !ok || len(raw) == 0 {
+		return ""
+	}
+	var route map[string]interface{}
+	if err := json.Unmarshal(raw, &route); err != nil {
+		return ""
+	}
+	v, ok := route["default_domain_resolver"]
+	if !ok || v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	default:
+		return strings.TrimSpace(fmt.Sprint(t))
+	}
+}
+
+// stripUTF8BOM удаляет UTF-8 BOM (EF BB BF) в начале файла, если присутствует.
 func stripUTF8BOM(b []byte) []byte {
 	if len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
-		b = b[3:]
-	}
-	if len(b) >= 3 {
-		n := len(b)
-		if b[n-3] == 0xEF && b[n-2] == 0xBB && b[n-1] == 0xBF {
-			b = b[:n-3]
-		}
+		return b[3:]
 	}
 	return b
 }

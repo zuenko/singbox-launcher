@@ -6,7 +6,7 @@
 //  1. Нормализует ParserConfig (версия, last_updated)
 //  2. Для каждой секции config из шаблона:
 //     - outbounds: вставляет сгенерированные outbounds перед статическими
-//     - route: добавляет включённые selectable rules, custom rules, rule_set и устанавливает final
+//     - route: база из шаблона (статические rules/rule_set, final из шаблона), затем правила и rule_set из custom_rules модели
 //     - остальные секции: форматирует как есть
 //  3. Оборачивает всё в JSONC с блоком @ParserConfig
 //
@@ -120,11 +120,14 @@ func buildConfigSections(model *wizardmodels.WizardModel, forPreview bool, timin
 			formatted, err = buildOutboundsSection(model, raw, forPreview, timing)
 		case "endpoints":
 			formatted, err = buildEndpointsSection(model, raw, forPreview, timing)
+		case "dns":
+			formatted, err = buildDNSSection(model, raw, timing)
 		case "route":
 			formatted, err = buildRouteSection(model, raw, timing)
 		default:
 			formatted, err = FormatSectionJSON(raw, 2)
 			if err != nil {
+				debuglog.WarnLog("buildConfigSections: FormatSectionJSON failed for key %q, using raw: %v", key, err)
 				formatted = string(raw)
 				err = nil
 			}
@@ -141,8 +144,10 @@ func buildConfigSections(model *wizardmodels.WizardModel, forPreview bool, timin
 	return sections, nil
 }
 
-// buildOutboundsSection строит секцию outbounds: динамические между @ParserSTART/@ParserEND и статические из шаблона.
-// Между блоками ставится запятая только если есть оба.
+// buildOutboundsSection строит секцию outbounds: маркеры @ParserSTART/@ParserEND и статические из шаблона.
+// При сохранении (forPreview == false) между маркерами ничего не пишется — заполнение
+// динамической секции выполняет updater.WriteToConfig (Parser update) после сохранения.
+// При preview динамические outbounds записываются для отображения пользователю.
 func buildOutboundsSection(model *wizardmodels.WizardModel, templateOutbounds json.RawMessage, forPreview bool, timing *debuglog.TimingContext) (string, error) {
 	start := time.Now()
 	defer func() { timing.LogTiming("build outbounds", time.Since(start)) }()
@@ -154,31 +159,30 @@ func buildOutboundsSection(model *wizardmodels.WizardModel, templateOutbounds js
 	var builder strings.Builder
 	builder.WriteString("[\n")
 
-	// 1. Динамические outbounds между маркерами
+	hasDynamic := false
 	builder.WriteString(indent + "/** @ParserSTART */\n")
-	if forPreview && model.OutboundStats.NodesCount > wizardutils.MaxNodesForFullPreview {
-		builder.WriteString(fmt.Sprintf("%s// Generated: %d nodes, %d local selectors, %d global selectors\n",
-			indent, model.OutboundStats.NodesCount, model.OutboundStats.LocalSelectorsCount, model.OutboundStats.GlobalSelectorsCount))
-		builder.WriteString(fmt.Sprintf("%s// Total outbounds: %d\n", indent, len(model.GeneratedOutbounds)))
-	} else {
-		for idx, entry := range model.GeneratedOutbounds {
-			cleaned := strings.TrimRight(entry, ",\n\r\t ")
-			builder.WriteString(IndentMultiline(cleaned, indent))
-			if idx < len(model.GeneratedOutbounds)-1 {
-				builder.WriteString(",")
-			} else if len(staticOutbounds) > 0 {
-				// Запятая после последнего динамического, чтобы после пропуска комментария парсер видел: value, value
-				builder.WriteString(",")
+	if forPreview {
+		if model.OutboundStats.NodesCount > wizardutils.MaxNodesForFullPreview {
+			builder.WriteString(fmt.Sprintf("%s// Generated: %d nodes, %d local selectors, %d global selectors\n",
+				indent, model.OutboundStats.NodesCount, model.OutboundStats.LocalSelectorsCount, model.OutboundStats.GlobalSelectorsCount))
+			builder.WriteString(fmt.Sprintf("%s// Total outbounds: %d\n", indent, len(model.GeneratedOutbounds)))
+		} else {
+			for idx, entry := range model.GeneratedOutbounds {
+				cleaned := strings.TrimRight(entry, ",\n\r\t ")
+				builder.WriteString(IndentMultiline(cleaned, indent))
+				if idx < len(model.GeneratedOutbounds)-1 || len(staticOutbounds) > 0 {
+					builder.WriteString(",")
+				}
+				builder.WriteString("\n")
+				hasDynamic = true
 			}
-			builder.WriteString("\n")
 		}
 	}
 	builder.WriteString(indent + "/** @ParserEND */")
 
-	// 2. Статические outbounds: запятую перед первым не пишем — она уже после последнего динамического
 	if len(staticOutbounds) > 0 {
 		for i, item := range staticOutbounds {
-			if i > 0 {
+			if i > 0 || hasDynamic {
 				builder.WriteString(",\n")
 			} else {
 				builder.WriteString("\n")
@@ -195,7 +199,10 @@ func buildOutboundsSection(model *wizardmodels.WizardModel, templateOutbounds js
 	return builder.String(), nil
 }
 
-// buildEndpointsSection строит секцию endpoints (WireGuard): динамические между @ParserSTART_E/@ParserEND_E и статические из шаблона.
+// buildEndpointsSection строит секцию endpoints (WireGuard): маркеры @ParserSTART_E/@ParserEND_E и статические из шаблона.
+// При сохранении (forPreview == false) между маркерами ничего не пишется — заполнение
+// динамической секции выполняет updater.WriteToConfig (Parser update) после сохранения.
+// При preview динамические endpoints записываются для отображения пользователю.
 func buildEndpointsSection(model *wizardmodels.WizardModel, templateEndpoints json.RawMessage, forPreview bool, timing *debuglog.TimingContext) (string, error) {
 	start := time.Now()
 	defer func() { timing.LogTiming("build endpoints", time.Since(start)) }()
@@ -207,26 +214,28 @@ func buildEndpointsSection(model *wizardmodels.WizardModel, templateEndpoints js
 	var builder strings.Builder
 	builder.WriteString("[\n")
 
+	hasDynamic := false
 	builder.WriteString(indent + "/** @ParserSTART_E */\n")
-	if forPreview && model.OutboundStats.EndpointsCount > wizardutils.MaxNodesForFullPreview {
-		builder.WriteString(fmt.Sprintf("%s// Generated: %d endpoints (WireGuard)\n", indent, model.OutboundStats.EndpointsCount))
-	} else {
-		for idx, entry := range model.GeneratedEndpoints {
-			cleaned := strings.TrimRight(entry, ",\n\r\t ")
-			builder.WriteString(IndentMultiline(cleaned, indent))
-			if idx < len(model.GeneratedEndpoints)-1 {
-				builder.WriteString(",")
-			} else if len(staticEndpoints) > 0 {
-				builder.WriteString(",")
+	if forPreview {
+		if model.OutboundStats.EndpointsCount > wizardutils.MaxNodesForFullPreview {
+			builder.WriteString(fmt.Sprintf("%s// Generated: %d endpoints (WireGuard)\n", indent, model.OutboundStats.EndpointsCount))
+		} else {
+			for idx, entry := range model.GeneratedEndpoints {
+				cleaned := strings.TrimRight(entry, ",\n\r\t ")
+				builder.WriteString(IndentMultiline(cleaned, indent))
+				if idx < len(model.GeneratedEndpoints)-1 || len(staticEndpoints) > 0 {
+					builder.WriteString(",")
+				}
+				builder.WriteString("\n")
+				hasDynamic = true
 			}
-			builder.WriteString("\n")
 		}
 	}
 	builder.WriteString(indent + "/** @ParserEND_E */")
 
 	if len(staticEndpoints) > 0 {
 		for i, item := range staticEndpoints {
-			if i > 0 {
+			if i > 0 || hasDynamic {
 				builder.WriteString(",\n")
 			} else {
 				builder.WriteString("\n")
@@ -243,12 +252,29 @@ func buildEndpointsSection(model *wizardmodels.WizardModel, templateEndpoints js
 	return builder.String(), nil
 }
 
+// buildDNSSection merges wizard DNS model into the template dns section.
+func buildDNSSection(model *wizardmodels.WizardModel, templateDNS json.RawMessage, timing *debuglog.TimingContext) (string, error) {
+	start := time.Now()
+	defer func() { timing.LogTiming("build dns", time.Since(start)) }()
+
+	merged, err := MergeDNSSection(templateDNS, model)
+	if err != nil {
+		return "", fmt.Errorf("dns merge failed: %w", err)
+	}
+	formatted, err := FormatSectionJSON(merged, 2)
+	if err != nil {
+		return string(merged), nil
+	}
+	return formatted, nil
+}
+
 // buildRouteSection строит секцию route с объединением правил и rule_set.
 func buildRouteSection(model *wizardmodels.WizardModel, raw json.RawMessage, timing *debuglog.TimingContext) (string, error) {
 	start := time.Now()
 	defer func() { timing.LogTiming("build route", time.Since(start)) }()
 
-	merged, err := MergeRouteSection(raw, model.SelectableRuleStates, model.CustomRules, model.SelectedFinalOutbound, model.ExecDir)
+	merged, err := MergeRouteSection(raw, model.CustomRules, model.SelectedFinalOutbound, model.ExecDir,
+		model.DefaultDomainResolver, model.DefaultDomainResolverUnset)
 	if err != nil {
 		return "", fmt.Errorf("route merge failed: %w", err)
 	}
@@ -260,15 +286,16 @@ func buildRouteSection(model *wizardmodels.WizardModel, raw json.RawMessage, tim
 	return formatted, nil
 }
 
-// MergeRouteSection объединяет selectable rules, custom rules и rule_set в секцию route.
-// execDir — директория исполняемого файла; для remote SRS с raw.githubusercontent.com подставляется type: local, path.
-func MergeRouteSection(raw json.RawMessage, states []*wizardmodels.RuleState, customRules []*wizardmodels.RuleState, finalOutbound string, execDir string) (json.RawMessage, error) {
+// MergeRouteSection объединяет custom rules (единый список) и rule_set в секцию route.
+// execDir — директория исполняемого файла; для SRS rule-set при наличии локального файла
+// подставляется type: local, path (для шаблонных правил и пользовательских SRS).
+func MergeRouteSection(raw json.RawMessage, customRules []*wizardmodels.RuleState, finalOutbound string, execDir string, defaultDomainResolver string, omitDefaultDomainResolver bool) (json.RawMessage, error) {
 	var route map[string]interface{}
 	if err := json.Unmarshal(raw, &route); err != nil {
 		return nil, err
 	}
 
-	// Существующие rules из шаблона
+	// Базовые rules из шаблона (например hijack-dns); далее append только из custom_rules.
 	var rules []interface{}
 	if existing, ok := route["rules"]; ok {
 		if arr, ok := existing.([]interface{}); ok {
@@ -276,7 +303,6 @@ func MergeRouteSection(raw json.RawMessage, states []*wizardmodels.RuleState, cu
 		}
 	}
 
-	// Существующие rule_set из шаблона
 	var ruleSets []interface{}
 	if existing, ok := route["rule_set"]; ok {
 		if arr, ok := existing.([]interface{}); ok {
@@ -304,7 +330,6 @@ func MergeRouteSection(raw json.RawMessage, states []*wizardmodels.RuleState, cu
 		}
 	}
 
-	// Обработка правил (selectable + custom)
 	processRule := func(ruleState *wizardmodels.RuleState) {
 		if !ruleState.Enabled {
 			return
@@ -333,9 +358,6 @@ func MergeRouteSection(raw json.RawMessage, states []*wizardmodels.RuleState, cu
 		}
 	}
 
-	for _, state := range states {
-		processRule(state)
-	}
 	for _, customRule := range customRules {
 		processRule(customRule)
 	}
@@ -350,20 +372,35 @@ func MergeRouteSection(raw json.RawMessage, states []*wizardmodels.RuleState, cu
 		route["final"] = finalOutbound
 	}
 
+	if omitDefaultDomainResolver {
+		delete(route, "default_domain_resolver")
+	} else if strings.TrimSpace(defaultDomainResolver) != "" {
+		route["default_domain_resolver"] = strings.TrimSpace(defaultDomainResolver)
+	}
+
 	return json.Marshal(route)
 }
 
-// convertRuleSetToLocalIfNeeded для remote SRS с raw.githubusercontent.com подставляет type: local, path.
+// convertRuleSetToLocalIfNeeded для remote SRS rule-set подставляет type: local + path,
+// если локальный файл bin/rule-sets/{tag}.srs существует. Если файла нет (удалён вручную,
+// ещё не скачан и т.п.), rule-set остаётся remote — sing-box загрузит его по URL при старте.
 func convertRuleSetToLocalIfNeeded(rs json.RawMessage, execDir string) interface{} {
 	var m map[string]interface{}
 	if err := json.Unmarshal(rs, &m); err != nil {
 		return nil
 	}
 	typ, _ := m["type"].(string)
-	url, _ := m["url"].(string)
 	tag, _ := m["tag"].(string)
-	if typ == "remote" && tag != "" && strings.Contains(url, "raw.githubusercontent.com") && execDir != "" {
-		path := services.RuleSRSPath(execDir, tag)
+	if typ != "remote" || tag == "" || execDir == "" {
+		return m
+	}
+
+	path := services.RuleSRSPath(execDir, tag)
+
+	// Для всех SRS (как встроенных, так и пользовательских) генерируем local-вариант
+	// только при наличии локального файла. Если файл был удалён вручную из bin/rule-sets/,
+	// конфиг вернётся к remote-варианту и приложение не упадёт при запуске sing-box.
+	if services.SRSFileExists(execDir, tag) {
 		return map[string]interface{}{
 			"tag":    tag,
 			"type":   "local",
@@ -371,6 +408,7 @@ func convertRuleSetToLocalIfNeeded(rs json.RawMessage, execDir string) interface
 			"path":   path,
 		}
 	}
+
 	return m
 }
 

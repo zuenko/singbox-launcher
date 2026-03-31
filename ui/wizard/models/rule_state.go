@@ -17,7 +17,7 @@
 // Определение структуры данных отделено от утилит (rule_state_utils.go) и констант (constants.go).
 //
 // Используется в:
-//   - models/wizard_model.go - WizardModel содержит SelectableRuleStates и CustomRules ([]*RuleState)
+//   - models/wizard_model.go - WizardModel.CustomRules ([]*RuleState)
 //   - business/create_config.go - MergeRouteSection использует RuleState для слияния правил
 //   - presentation/presenter_methods.go - RefreshOutboundOptions обновляет outbounds для RuleState
 //   - dialogs/add_rule_dialog.go - работает с RuleState при добавлении/редактировании правил

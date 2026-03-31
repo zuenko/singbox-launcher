@@ -3,7 +3,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-Leadaxe%2Fsingbox--launcher-blue)](https://github.com/Leadaxe/singbox-launcher)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.24%2B-blue)](https://golang.org/)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/Leadaxe/singbox-launcher/releases)
+[![Version](https://img.shields.io/badge/version-0.8.5-blue)](https://github.com/Leadaxe/singbox-launcher/releases)
 
 Кроссплатформенный графический лаунчер для [sing-box](https://github.com/SagerNet/sing-box) - универсального прокси-клиента.
 
@@ -106,7 +106,9 @@
 ## 📋 Требования
 
 ### Windows
-- Windows 10/11 (x64)
+- **Рекомендуемые системы:** Windows 10/11 (x64)
+- **Режим совместимости:** Windows 7 (x86/x64) через отдельную сборку лаунчера `singbox-launcher-<version>-win7-32.zip`  
+  В этом режиме лаунчер использует фиксированную legacy-версию `sing-box` (1.13.2, 32-bit) и 32-битный `wintun.dll`, работающие как на Win7 x86, так и на Win7 x64.
 - [sing-box](https://github.com/SagerNet/sing-box/releases) (исполняемый файл)
 - [WinTun](https://www.wintun.net/) (wintun.dll) - лицензия MIT, можно распространять
 
@@ -131,15 +133,17 @@
 
 ### Windows
 
-1. Скачайте последний релиз с [GitHub Releases](https://github.com/Leadaxe/singbox-launcher/releases)
+1. Скачайте последний релиз с [GitHub Releases](https://github.com/Leadaxe/singbox-launcher/releases)  
+   - для Windows 10/11 (x64) — обычный релизный архив для Windows;
+   - для Windows 7 (x86/x64) — архив `singbox-launcher-<version>-win7-32.zip` (отдельная legacy-сборка).
 2. Распакуйте архив в любую папку (например, `C:\Program Files\singbox-launcher`)
 3. Поместите `config.json` в папку `bin\`:
    - Скопируйте `config.example.json` в `config.json` и настройте под себя
 4. Запустите `singbox-launcher.exe`
 5. **Автоматическое скачивание** (рекомендуется):
    - Перейдите на вкладку **"Core"**
-   - Нажмите **"Download"** для скачивания `sing-box.exe` (автоматически скачает правильную версию для вашей системы)
-   - Нажмите **"Download wintun.dll"** при необходимости (автоматически скачает правильную архитектуру)
+   - Нажмите **"Download"** для скачивания `sing-box.exe` (лаунчер автоматически подберёт совместимый бинарник для вашей платформы; на Windows 7 используется фиксированная 32-битная версия 1.13.2)
+   - Нажмите **"Download wintun.dll"** при необходимости (автоматически скачает правильную архитектуру; на Windows 7 — 32-битный `wintun.dll`)
    - Лаунчер автоматически скачает с GitHub или зеркала SourceForge, если GitHub недоступен
 
 ### macOS
@@ -171,10 +175,10 @@ curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scrip
 **Установка конкретной версии:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scripts/install-macos.sh | bash -s -- v0.8.0
+curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scripts/install-macos.sh | bash -s -- v0.8.5
 ```
 
-Замените `v0.8.0` на нужную версию.
+Замените `v0.8.5` на нужную версию.
 
 #### Вариант 2: Ручная установка
 
@@ -400,6 +404,10 @@ singbox-launcher.exe -start
    - Сохраните задачу
    - Задача будет автоматически запускаться с правами администратора при входе в систему
 
+   **Если лаунчер зависает при автозапуске из Планировщика** (не отвечает, приходится завершать через диспетчер задач):
+   - При триггере «При входе в систему» задача может стартовать до того, как рабочий стол и видеодрайвер полностью готовы — инициализация GUI (OpenGL, трей) тогда может зависнуть.
+   - **Обходной путь:** в том же триггере «При входе в систему» включите **задержку запуска**: в диалоге триггера нажмите «Дополнительно» и задайте «Отложить задачу на» **30 секунд** или **1 минуту**. После этого задача будет запускаться, когда сессия уже готова, и зависания обычно исчезают.
+
 **Примечания:**
 - Параметр можно комбинировать с другими параметрами (например, `-start -tray`)
 - **Для автозагрузки рекомендуется использовать Планировщик задач**, так как он более надежно обеспечивает запуск с правами администратора
@@ -510,7 +518,7 @@ singbox-launcher/
 
 **Пример структуры шаблона:**
 
-```json
+```jsonc
 {
   "parser_config": {
     "ParserConfig": {
@@ -571,7 +579,7 @@ singbox-launcher/
 
 Пользовательские правила сохраняются в стандартном формате правил sing-box:
 
-```json
+```jsonc
 {
   "route": {
     "rules": [
@@ -937,18 +945,45 @@ chmod +x build/build_darwin.sh
 ./build/build_darwin.sh universal
 ```
 
-2. **Бинарник только для Intel** (для старых Mac):
-   - Поддерживает только Intel Mac
-   - Требует macOS 10.15+ (Catalina или новее)
-   - Полезно, если нужно поддерживать старые Intel Mac
+2. **Только Apple Silicon** (`arm64`, быстрее — один `go build`, без `lipo`):
+   - Только для Mac на M-серии; минимум macOS 11.0+
 
 ```bash
-# Соберите бинарник только для Intel
+./build/build_darwin.sh arm64
+```
+
+3. **Только Intel** (`intel`, amd64, macOS 11.0+):
+   - Одна архитектура, без сборки universal
+
+```bash
 ./build/build_darwin.sh intel
 ```
 
+4. **Intel под Catalina** (`catalina`):
+   - amd64, минимум macOS 10.15
+
+```bash
+./build/build_darwin.sh catalina
+```
+
+**Установка / обновление в /Applications** (`-i`):
+
+- Если **`singbox-launcher.app` уже есть** в `/Applications`, меняется только исполняемый файл **`Contents/MacOS/singbox-launcher`** — каталоги **`Contents/MacOS/bin/`** (в т.ч. `config.json`) и **`logs/`** сохраняются.
+- Если приложения **ещё нет**, копируется **весь** `.app` (первая установка).
+- После успешного **`-i`** собранный **`singbox-launcher.app` в каталоге проекта удаляется** (в дереве репозитория от этой сборки ничего не остаётся).
+
+```bash
+./build/build_darwin.sh -i arm64
+# или: ./build/build_darwin.sh -i universal
+```
+
+Не перезаписывайте весь `.app` через `cp -R`, если важны данные: лаунчер хранит конфиг рядом с бинарником (`…/Contents/MacOS/bin/`).
+
+Список опций: `./build/build_darwin.sh --help`.
+
 **Возможности скрипта сборки:**
-- Автоматически создает универсальный бинарник (arm64 + x86_64) или только для Intel
+- Universal (`arm64` + `amd64`) или одна архитектура: `arm64` / `intel` / `catalina`
+- Флаг `-i` — установка/обновление в `/Applications` (при уже установленном приложении — только бинарник)
 - Создает правильную структуру `.app` бандла с Info.plist
 - Устанавливает правильный `LSMinimumSystemVersion` и приоритеты архитектур
 - Включает иконку приложения, если доступна

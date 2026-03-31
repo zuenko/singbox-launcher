@@ -1,6 +1,6 @@
 {
   "parser_config": {
-    "version": 4,
+    "version": 5,
     "proxies": [],
     "outbounds": [
       {
@@ -71,60 +71,22 @@
     "dns": {
       "servers": [
         {
+          "type": "local",
+          "tag": "local_dns_resolver"
+        },
+        {
           "type": "udp",
           "tag": "direct_dns_resolver",
-          "server": "1.1.1.1",
+          "server": "8.8.8.8",
           "server_port": 53
-        },
-        {
-          "type": "https",
-          "tag": "google_doh",
-          "server": "8.8.8.8",
-          "server_port": 443,
-          "path": "/dns-query"
-        },
-        {
-          "type": "https",
-          "tag": "google_doh_vpn",
-          "server": "8.8.8.8",
-          "server_port": 443,
-          "path": "/dns-query",
-          "detour": "proxy-out"
-        },
-        {
-          "type": "https",
-          "tag": "yandex_doh",
-          "server": "77.88.8.88",
-          "server_port": 443,
-          "path": "/dns-query",
-          "domain_strategy": "prefer_ipv4"
-        },
-        {
-          "type": "udp",
-          "tag": "yandex_dns_vpn",
-          "server": "77.88.8.2",
-          "server_port": 53,
-          "detour": "proxy-out",
-          "domain_strategy": "prefer_ipv4"
-        },
-        {
-          "type": "udp",
-          "tag": "yandex_dns_direct",
-          "server": "77.88.8.2",
-          "server_port": 53,
-          "domain_strategy": "prefer_ipv4"
         }
       ],
       "rules": [
-        { "rule_set": "ru-domains", "server": "yandex_doh" },
-        { "rule_set": "ru-domains", "server": "yandex_dns_vpn" },
-        { "rule_set": "ru-domains", "server": "yandex_dns_direct" },
-        { "server": "google_doh_vpn" },
-        { "server": "google_doh" }
+        { "server": "direct_dns_resolver" }
       ],
-      "final": "direct_dns_resolver",
-      "strategy": "ipv4_only",
-      "independent_cache": false
+      "final": "local_dns_resolver",
+      "strategy": "prefer_ipv4",
+      "independent_cache": true
     },
     "inbounds": [],
     "endpoints": [],
@@ -132,7 +94,7 @@
       { "type": "direct", "tag": "direct-out" }
     ],
     "route": {
-      "default_domain_resolver": "direct_dns_resolver",
+      "default_domain_resolver": "local_dns_resolver",
       "rule_set": [
         { "tag": "ru-domains", "type": "inline", "format": "domain_suffix", "rules": [{ "domain_suffix": ["ru", "xn--p1ai", "su"] }] }
       ],
@@ -152,6 +114,96 @@
         "path": "cache.db"
       }
     }
+  },
+
+  "dns_options": {
+    "independent_cache": false,
+    "servers": [
+      {
+        "type": "udp",
+        "tag": "direct_dns_resolver",
+        "server": "8.8.8.8",
+        "server_port": 53,
+        "description": "Direct DNS resolver",
+        "enabled": true
+      },
+      {
+        "type": "udp",
+        "tag": "cloudflare_udp",
+        "server": "1.1.1.1",
+        "server_port": 53,
+        "description": "Cloudflare DNS resolver",
+        "enabled": false
+      },
+      {
+        "type": "https",
+        "tag": "cloudflare_doh",
+        "server": "1.1.1.1",
+        "server_port": 443,
+        "path": "/dns-query",
+        "tls": {
+          "server_name": "cloudflare-dns.com"
+        },
+        "description": "Cloudflare DNS over HTTPS resolver",
+        "enabled": false
+      },
+      {
+        "type": "https",
+        "tag": "google_doh",
+        "server": "dns.google",
+        "server_port": 443,
+        "path": "/dns-query",
+        "domain_resolver": "direct_dns_resolver",
+        "description": "Google DNS over HTTPS resolver",
+        "enabled": true
+      },
+      {
+        "type": "https",
+        "tag": "google_doh_vpn",
+        "server": "dns.google",
+        "server_port": 443,
+        "path": "/dns-query",
+        "domain_resolver": "direct_dns_resolver",
+        "detour": "proxy-out",
+        "description": "Google DNS over HTTPS resolver",
+        "enabled": false
+      },
+      {
+        "type": "https",
+        "tag": "yandex_doh",
+        "server": "77.88.8.88",
+        "server_port": 443,
+        "path": "/dns-query",
+        "domain_strategy": "prefer_ipv4",
+        "description": "Yandex DNS over HTTPS resolver",
+        "enabled": true
+      },
+      {
+        "type": "udp",
+        "tag": "yandex_dns_vpn",
+        "server": "77.88.8.2",
+        "server_port": 53,
+        "detour": "proxy-out",
+        "domain_strategy": "prefer_ipv4",
+        "description": "Yandex DNS over UDP resolver",
+        "enabled": false
+      },
+      {
+        "type": "udp",
+        "tag": "yandex_dns_direct",
+        "server": "77.88.8.2",
+        "server_port": 53,
+        "domain_strategy": "prefer_ipv4",
+        "description": "Yandex 2 DNS over UDP resolver",
+        "enabled": false
+      }
+    ],
+    "rules": [
+      { "rule_set": "ru-domains", "server": "yandex_doh" },
+      { "server": "google_doh" }
+    ],
+    "dns.final": "direct_dns_resolver",
+    "route.default_domain_resolver": "direct_dns_resolver"
   },
 
   "selectable_rules": [
@@ -392,6 +444,11 @@
       ]
     },
     {
+      "name": "inbounds.stack",
+      "platforms": ["win7"],
+      "value": "gvisor"
+    },
+    {
       "name": "inbounds",
       "platforms": ["darwin-tun"],
       "value": [
@@ -415,8 +472,6 @@
           "tag": "proxy-in",
           "listen": "127.0.0.1",
           "listen_port": 7890,
-          "sniff": true,
-          "sniff_override_destination": true,
           "set_system_proxy": true
         }
       ],
@@ -429,6 +484,15 @@
       "value": [
         { "inbound": "tun-in", "action": "resolve", "strategy": "prefer_ipv4" },
         { "inbound": "tun-in", "action": "sniff", "timeout": "1s" }
+      ]
+    },
+    {
+      "name": "route.rules",
+      "platforms": ["darwin"],
+      "mode": "prepend",
+      "value": [
+        { "inbound": "proxy-in", "action": "resolve", "strategy": "prefer_ipv4" },
+        { "inbound": "proxy-in", "action": "sniff", "timeout": "1s" }
       ]
     }
   ]

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -10,7 +11,9 @@ import (
 
 	"singbox-launcher/api"
 	"singbox-launcher/core/config"
+	"singbox-launcher/internal/ctxutil"
 	"singbox-launcher/internal/debuglog"
+	"singbox-launcher/internal/platform"
 )
 
 // APIService manages Clash API interactions and proxy list management.
@@ -283,17 +286,13 @@ func (apiSvc *APIService) AutoLoadProxies(ctx context.Context) {
 		default:
 		}
 
-		// Wait for the interval (except first attempt)
 		if attempt > 0 {
-			select {
-			case <-ctx.Done():
+			if err := ctxutil.SleepWithContext(ctx, interval*time.Second); err != nil {
 				debuglog.DebugLog("AutoLoadProxies: Stopped during wait (context cancelled)")
 				apiSvc.AutoLoadMutex.Lock()
 				apiSvc.AutoLoadInProgress = false
 				apiSvc.AutoLoadMutex.Unlock()
 				return
-			case <-time.After(interval * time.Second):
-				// Continue
 			}
 		}
 
@@ -318,11 +317,19 @@ func (apiSvc *APIService) AutoLoadProxies(ctx context.Context) {
 			return
 		}
 
+		if platform.IsSleeping() {
+			debuglog.DebugLog("AutoLoadProxies: Skipping attempt - system sleeping")
+			continue
+		}
+
 		// Try to load proxies
 		proxies, now, err := api.GetProxiesInGroup(baseURL, token, currentGroup)
 		if err != nil {
-			debuglog.DebugLog("AutoLoadProxies: Attempt %d failed: %v", attempt+1, err)
-			// Continue to next attempt
+			if errors.Is(err, api.ErrPlatformInterrupt) {
+				debuglog.DebugLog("AutoLoadProxies: Aborted (platform interrupt/sleep)")
+			} else {
+				debuglog.DebugLog("AutoLoadProxies: Attempt %d failed: %v", attempt+1, err)
+			}
 			continue
 		}
 

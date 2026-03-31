@@ -55,7 +55,8 @@ func TestMergeRouteSection(t *testing.T) {
 		},
 	}
 
-	result, err := MergeRouteSection(rawRoute, selectableRules, customRules, "final-out", "")
+	allRules := append(append([]*wizardmodels.RuleState(nil), selectableRules...), customRules...)
+	result, err := MergeRouteSection(rawRoute, allRules, "final-out", "", "", false)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestMergeRouteSection_RejectAction(t *testing.T) {
 		},
 	}
 
-	result, err := MergeRouteSection(rawRoute, selectableRules, nil, "", "")
+	result, err := MergeRouteSection(rawRoute, selectableRules, "", "", "", false)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestMergeRouteSection_DisabledRules(t *testing.T) {
 		},
 	}
 
-	result, err := MergeRouteSection(rawRoute, selectableRules, nil, "", "")
+	result, err := MergeRouteSection(rawRoute, selectableRules, "", "", "", false)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -174,6 +175,64 @@ func TestMergeRouteSection_DisabledRules(t *testing.T) {
 	// Disabled rule should not be included
 	if len(rules) != 0 {
 		t.Errorf("Expected 0 rules (disabled rule should be excluded), got %d", len(rules))
+	}
+}
+
+func TestMergeRouteSection_CustomRulesOrderPreserved(t *testing.T) {
+	rawRoute := json.RawMessage(`{"rules":[],"final":"direct-out"}`)
+
+	customRules := []*wizardmodels.RuleState{
+		{
+			Rule: wizardtemplate.TemplateSelectableRule{
+				Label: "First custom",
+				Rule: map[string]interface{}{
+					"domain": []string{"first.example"},
+				},
+			},
+			Enabled:          true,
+			SelectedOutbound: "proxy-a",
+		},
+		{
+			Rule: wizardtemplate.TemplateSelectableRule{
+				Label: "Second custom",
+				Rule: map[string]interface{}{
+					"domain": []string{"second.example"},
+				},
+			},
+			Enabled:          true,
+			SelectedOutbound: "proxy-b",
+		},
+	}
+
+	result, err := MergeRouteSection(rawRoute, customRules, "", "", "", false)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var route map[string]interface{}
+	if err := json.Unmarshal(result, &route); err != nil {
+		t.Fatalf("Result is not valid JSON: %v", err)
+	}
+
+	rules, ok := route["rules"].([]interface{})
+	if !ok || len(rules) != 2 {
+		t.Fatalf("Expected 2 rules, got %v", route["rules"])
+	}
+
+	firstRule, ok := rules[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected first rule map")
+	}
+	secondRule, ok := rules[1].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected second rule map")
+	}
+
+	if firstRule["outbound"] != "proxy-a" {
+		t.Fatalf("Expected first rule outbound proxy-a, got %v", firstRule["outbound"])
+	}
+	if secondRule["outbound"] != "proxy-b" {
+		t.Fatalf("Expected second rule outbound proxy-b, got %v", secondRule["outbound"])
 	}
 }
 
@@ -279,5 +338,35 @@ func TestIndentMultiline(t *testing.T) {
 				t.Errorf("Expected %q, got %q", tt.expected, result)
 			}
 		})
+	}
+}
+
+func TestMergeRouteSection_DefaultDomainResolver(t *testing.T) {
+	raw := json.RawMessage(`{"rules":[],"final":"direct-out","default_domain_resolver":"old"}`)
+	out, err := MergeRouteSection(raw, nil, "", "", "new_tag", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var route map[string]interface{}
+	if err := json.Unmarshal(out, &route); err != nil {
+		t.Fatal(err)
+	}
+	if route["default_domain_resolver"] != "new_tag" {
+		t.Fatalf("expected new_tag, got %v", route["default_domain_resolver"])
+	}
+}
+
+func TestMergeRouteSection_OmitDefaultDomainResolver(t *testing.T) {
+	raw := json.RawMessage(`{"rules":[],"final":"direct-out","default_domain_resolver":"old"}`)
+	out, err := MergeRouteSection(raw, nil, "", "", "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var route map[string]interface{}
+	if err := json.Unmarshal(out, &route); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := route["default_domain_resolver"]; ok {
+		t.Fatal("expected default_domain_resolver removed")
 	}
 }

@@ -5,7 +5,7 @@
 // WizardPresenter:
 //   - Реализует UIUpdater для обновления GUI из бизнес-логики
 //   - Хранит модель (WizardModel) и GUI-состояние (GUIState)
-//   - Синхронизирует данные между моделью и GUI (SyncModelToGUI, SyncGUIToModel)
+//   - Синхронизирует данные между моделью и GUI (SyncModelToGUI, SyncGUIToModel, MergeGUIToModel)
 //   - Управляет открытыми диалогами (OpenRuleDialogs)
 //   - Координирует вызовы бизнес-логики и обновление GUI
 //
@@ -27,6 +27,9 @@
 package presentation
 
 import (
+	"sync"
+	"time"
+
 	"fyne.io/fyne/v2"
 
 	"singbox-launcher/core"
@@ -44,6 +47,10 @@ type WizardPresenter struct {
 	openOutboundEditWindow fyne.Window // single Outbound Edit/Add window
 	hasChanges             bool                                     // Отслеживает наличие несохранённых изменений
 	createRulesTabFunc     func(*WizardPresenter) fyne.CanvasObject // Функция для создания вкладки Rules (устанавливается при инициализации)
+
+	// outboundOptionsDebounce: отложенный RefreshOutboundOptions при частых правках JSON/prefix (ScheduleRefreshOutboundOptionsDebounced).
+	outboundOptionsDebounceMu    sync.Mutex
+	outboundOptionsDebounceTimer *time.Timer
 }
 
 // NewWizardPresenter создает новый презентер визарда.
@@ -101,6 +108,27 @@ func SafeFyneDo(window fyne.Window, fn func()) {
 // Инкапсулирует доступ к guiState.Window внутри презентера.
 func (p *WizardPresenter) UpdateUI(fn func()) {
 	SafeFyneDo(p.guiState.Window, fn)
+}
+
+// DialogParent returns the wizard window, or any open app window, for modal dialogs (e.g. DNS editor when guiState.Window is not set yet).
+func (p *WizardPresenter) DialogParent() fyne.Window {
+	if p.guiState != nil && p.guiState.Window != nil {
+		return p.guiState.Window
+	}
+	app := fyne.CurrentApp()
+	if app == nil {
+		return nil
+	}
+	d := app.Driver()
+	if d == nil {
+		return nil
+	}
+	for _, w := range d.AllWindows() {
+		if w != nil && w.Canvas() != nil {
+			return w
+		}
+	}
+	return nil
 }
 
 // Child windows contract: see docs/WIZARD_CHILD_WINDOWS.md (register on open, unregister on close, UpdateChildOverlay, single instance for View/Edit).

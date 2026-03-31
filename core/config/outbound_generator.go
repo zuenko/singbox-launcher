@@ -33,17 +33,40 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"log"
-	"regexp"
 	"strings"
+
+	"singbox-launcher/core/config/subscription"
+	"singbox-launcher/internal/debuglog"
 )
+
+// marshalJSONString returns s as a JSON string literal (including quotes).
+// encoding/json replaces invalid UTF-8 with U+FFFD, unlike fmt %q / strconv.Quote which can emit
+// escapes that are invalid in JSON (e.g. \xNN) and break sing-box decode.
+func marshalJSONString(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return `""`
+	}
+	return string(b)
+}
+
+// sanitizeOutboundLineComment removes newlines so a // comment does not swallow the next JSON line
+// (subscription fragments may contain raw line breaks). Invalid UTF-8 is replaced so the whole
+// config file stays valid UTF-8 for strict decoders (comments are not JSON string literals).
+func sanitizeOutboundLineComment(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.TrimSpace(s)
+	return strings.ToValidUTF8(s, "\uFFFD")
+}
 
 // OutboundGenerationResult is the return value of GenerateOutboundsFromParserConfig: slice of JSON strings
 // (nodes, then local selectors, then global selectors) and counts for each category.
 // WireGuard nodes go to EndpointsJSON (sing-box endpoints), not OutboundsJSON.
 type OutboundGenerationResult struct {
 	OutboundsJSON        []string // Generated JSON lines for outbounds array (nodes, then local, then global selectors)
-	EndpointsJSON       []string // Generated JSON lines for endpoints array (WireGuard nodes only)
+	EndpointsJSON        []string // Generated JSON lines for endpoints array (WireGuard nodes only)
 	NodesCount           int      // Number of node outbounds (non-WireGuard)
 	EndpointsCount       int      // Number of WireGuard endpoint nodes
 	LocalSelectorsCount  int      // Number of local (per-source) selectors
@@ -63,8 +86,150 @@ type outboundInfo struct {
 	isLocal       bool           // true if it's a local selector (from proxySource.Outbounds), false if global
 }
 
+// exposeTagCandidate is a wizard local outbound tag eligible for merge into global selectors (SPEC 026).
+type exposeTagCandidate struct {
+	Tag     string
+	Comment string
+}
+
+func commentHasWizardLocalOutboundMarker(comment string) bool {
+	if strings.Contains(comment, "WIZARD:auto") {
+		return true
+	}
+	if strings.Contains(comment, "WIZARD:select") || strings.Contains(comment, "WIZARD:selector") {
+		return true
+	}
+	return false
+}
+
+func collectExposeTagCandidates(parserConfig *ParserConfig) []exposeTagCandidate {
+	if parserConfig == nil {
+		return nil
+	}
+	var out []exposeTagCandidate
+	for _, ps := range parserConfig.ParserConfig.Proxies {
+		if !ps.ExposeGroupTagsToGlobal {
+			continue
+		}
+		for _, ob := range ps.Outbounds {
+			if ob.Tag == "" || !commentHasWizardLocalOutboundMarker(ob.Comment) {
+				continue
+			}
+			out = append(out, exposeTagCandidate{Tag: ob.Tag, Comment: ob.Comment})
+		}
+	}
+	return out
+}
+
+func augmentGlobalOutboundDependenciesForExpose(
+	outboundsInfo map[string]*outboundInfo,
+	parserConfig *ParserConfig,
+	exposeCandidates []exposeTagCandidate,
+	dependents map[string][]string,
+	inDegree map[string]int,
+) {
+	if parserConfig == nil || len(exposeCandidates) == 0 {
+		return
+	}
+	edgeSeen := make(map[string]map[string]struct{})
+	for _, gCfg := range parserConfig.ParserConfig.Outbounds {
+		info, ok := outboundsInfo[gCfg.Tag]
+		if !ok || info == nil || info.isLocal {
+			continue
+		}
+		for _, c := range exposeCandidates {
+			if !SelectorFiltersAcceptNode(gCfg.Filters, ExposeTagSyntheticNode(c.Tag, c.Comment)) {
+				continue
+			}
+			if _, exists := outboundsInfo[c.Tag]; !exists {
+				continue
+			}
+			if edgeSeen[c.Tag] == nil {
+				edgeSeen[c.Tag] = make(map[string]struct{})
+			}
+			if _, dup := edgeSeen[c.Tag][gCfg.Tag]; dup {
+				continue
+			}
+			edgeSeen[c.Tag][gCfg.Tag] = struct{}{}
+			dependents[c.Tag] = append(dependents[c.Tag], gCfg.Tag)
+			inDegree[gCfg.Tag]++
+		}
+	}
+}
+
+// globalOutboundExposeCredit counts unique expose tags that pass filters and reference a valid dynamic outbound (or unknown tag).
+func globalOutboundExposeCredit(info *outboundInfo, outboundsInfo map[string]*outboundInfo, exposeCandidates []exposeTagCandidate) int {
+	if info == nil || info.isLocal || len(exposeCandidates) == 0 {
+		return 0
+	}
+	seen := make(map[string]struct{})
+	credit := 0
+	for _, c := range exposeCandidates {
+		if _, dup := seen[c.Tag]; dup {
+			continue
+		}
+		if !SelectorFiltersAcceptNode(info.config.Filters, ExposeTagSyntheticNode(c.Tag, c.Comment)) {
+			continue
+		}
+		seen[c.Tag] = struct{}{}
+		if ref, ok := outboundsInfo[c.Tag]; ok {
+			if !ref.isValid {
+				continue
+			}
+		}
+		credit++
+	}
+	return credit
+}
+
+// appendOutboundTransportParts appends a sing-box "transport" object from node.Outbound (VLESS, VMess, Trojan).
+func appendOutboundTransportParts(parts []string, outbound map[string]interface{}) []string {
+	if outbound == nil {
+		return parts
+	}
+	transport, ok := outbound["transport"].(map[string]interface{})
+	if !ok || len(transport) == 0 {
+		return parts
+	}
+	var transportParts []string
+	if tType, ok := transport["type"].(string); ok && tType != "" {
+		transportParts = append(transportParts, fmt.Sprintf(`"type":%s`, marshalJSONString(tType)))
+	}
+	if path, ok := transport["path"].(string); ok && path != "" {
+		transportParts = append(transportParts, fmt.Sprintf(`"path":%s`, marshalJSONString(path)))
+	}
+	switch hostVal := transport["host"].(type) {
+	case string:
+		if hostVal != "" {
+			transportParts = append(transportParts, fmt.Sprintf(`"host":%s`, marshalJSONString(hostVal)))
+		}
+	case []string:
+		if len(hostVal) > 0 {
+			hostJSON, err := json.Marshal(hostVal)
+			if err == nil {
+				transportParts = append(transportParts, fmt.Sprintf(`"host":%s`, string(hostJSON)))
+			}
+		}
+	}
+	if serviceName, ok := transport["service_name"].(string); ok && serviceName != "" {
+		transportParts = append(transportParts, fmt.Sprintf(`"service_name":%s`, marshalJSONString(serviceName)))
+	}
+	if headers, ok := transport["headers"].(map[string]string); ok && len(headers) > 0 {
+		var headerParts []string
+		for k, v := range headers {
+			headerParts = append(headerParts, fmt.Sprintf(`%s:%s`, marshalJSONString(k), marshalJSONString(v)))
+		}
+		transportParts = append(transportParts, fmt.Sprintf(`"headers":{%s}`, strings.Join(headerParts, ",")))
+	}
+	if len(transportParts) > 0 {
+		transportJSON := "{" + strings.Join(transportParts, ",") + "}"
+		parts = append(parts, fmt.Sprintf(`"transport":%s`, transportJSON))
+	}
+	return parts
+}
+
 // GenerateNodeJSON returns a single JSON object string for one proxy node (sing-box outbound).
-// Field order and presence follow sing-box expectations. Supports: vless, vmess, trojan, shadowsocks, hysteria2, ssh.
+// Field order and presence follow sing-box expectations. Supports: vless, vmess, trojan, shadowsocks, hysteria2, socks.
 // Includes optional TLS (including reality), transport (ws/http/grpc), and protocol-specific options.
 // Returned string ends with a trailing comma and may include a leading comment line (node label) for readability.
 func GenerateNodeJSON(node *ParsedNode) (string, error) {
@@ -72,64 +237,43 @@ func GenerateNodeJSON(node *ParsedNode) (string, error) {
 	var parts []string
 
 	// 1. tag
-	parts = append(parts, fmt.Sprintf(`"tag":%q`, node.Tag))
+	parts = append(parts, fmt.Sprintf(`"tag":%s`, marshalJSONString(node.Tag)))
 
-	// 2. type
+	// 2. type (sing-box uses "socks" + version for SOCKS5 URIs, not a separate socks5 type)
 	if node.Scheme == "ss" {
-		parts = append(parts, fmt.Sprintf(`"type":%q`, "shadowsocks"))
+		parts = append(parts, fmt.Sprintf(`"type":%s`, marshalJSONString("shadowsocks")))
+	} else if node.Scheme == "socks" || node.Scheme == "socks5" {
+		parts = append(parts, fmt.Sprintf(`"type":%s`, marshalJSONString("socks")))
 	} else {
-		parts = append(parts, fmt.Sprintf(`"type":%q`, node.Scheme))
+		parts = append(parts, fmt.Sprintf(`"type":%s`, marshalJSONString(node.Scheme)))
 	}
 
 	// 3. server
-	parts = append(parts, fmt.Sprintf(`"server":%q`, node.Server))
+	parts = append(parts, fmt.Sprintf(`"server":%s`, marshalJSONString(node.Server)))
 
-	// 4. server_port
-	parts = append(parts, fmt.Sprintf(`"server_port":%d`, node.Port))
+	// 4. server_port (prefer outbound map: buildOutbound may adjust port, e.g. vision-udp443 → 443)
+	serverPort := node.Port
+	if node.Outbound != nil {
+		if sp, ok := node.Outbound["server_port"].(int); ok && sp > 0 {
+			serverPort = sp
+		}
+	}
+	parts = append(parts, fmt.Sprintf(`"server_port":%d`, serverPort))
 
 	// 5. uuid (for vless/vmess) or password (for trojan) or method/password (for ss)
 	if node.Scheme == "vless" || node.Scheme == "vmess" {
-		parts = append(parts, fmt.Sprintf(`"uuid":%q`, node.UUID))
+		parts = append(parts, fmt.Sprintf(`"uuid":%s`, marshalJSONString(node.UUID)))
 
-		// For VMESS add additional fields
 		if node.Scheme == "vmess" {
-			// security
 			if security, ok := node.Outbound["security"].(string); ok && security != "" {
-				parts = append(parts, fmt.Sprintf(`"security":%q`, security))
+				parts = append(parts, fmt.Sprintf(`"security":%s`, marshalJSONString(security)))
 			}
-
-			// alter_id
 			if alterID, ok := node.Outbound["alter_id"].(int); ok {
 				parts = append(parts, fmt.Sprintf(`"alter_id":%d`, alterID))
 			}
-
-			// НЕ добавляем поле network - sing-box не поддерживает его для vmess
-			// Используем только transport для ws/http/grpc
-
-			// transport
-			if transport, ok := node.Outbound["transport"].(map[string]interface{}); ok && len(transport) > 0 {
-				var transportParts []string
-				if tType, ok := transport["type"].(string); ok {
-					transportParts = append(transportParts, fmt.Sprintf(`"type":%q`, tType))
-				}
-				if path, ok := transport["path"].(string); ok {
-					transportParts = append(transportParts, fmt.Sprintf(`"path":%q`, path))
-				}
-				if headers, ok := transport["headers"].(map[string]string); ok && len(headers) > 0 {
-					var headerParts []string
-					for k, v := range headers {
-						headerParts = append(headerParts, fmt.Sprintf(`%q:%q`, k, v))
-					}
-					transportParts = append(transportParts, fmt.Sprintf(`"headers":{%s}`, strings.Join(headerParts, ",")))
-				}
-				if len(transportParts) > 0 {
-					transportJSON := "{" + strings.Join(transportParts, ",") + "}"
-					parts = append(parts, fmt.Sprintf(`"transport":%s`, transportJSON))
-				}
-			}
 		}
 	} else if node.Scheme == "trojan" {
-		parts = append(parts, fmt.Sprintf(`"password":%q`, node.UUID))
+		parts = append(parts, fmt.Sprintf(`"password":%s`, marshalJSONString(node.UUID)))
 	} else if node.Scheme == "hysteria2" {
 		// Password is required for Hysteria2
 		if password, ok := node.Outbound["password"].(string); ok && password != "" {
@@ -159,7 +303,7 @@ func GenerateNodeJSON(node *ParsedNode) (string, error) {
 		if obfs, ok := node.Outbound["obfs"].(map[string]interface{}); ok && len(obfs) > 0 {
 			var obfsParts []string
 			if obfsType, ok := obfs["type"].(string); ok {
-				obfsParts = append(obfsParts, fmt.Sprintf(`"type":%q`, obfsType))
+				obfsParts = append(obfsParts, fmt.Sprintf(`"type":%s`, marshalJSONString(obfsType)))
 			}
 			if obfsPassword, ok := obfs["password"].(string); ok && obfsPassword != "" {
 				obfsPasswordJSON, err := json.Marshal(obfsPassword)
@@ -191,74 +335,107 @@ func GenerateNodeJSON(node *ParsedNode) (string, error) {
 			}
 			parts = append(parts, fmt.Sprintf(`"password":%s`, string(passwordJSON)))
 		}
+	} else if (node.Scheme == "socks" || node.Scheme == "socks5") && node.Outbound != nil {
+		if ver, ok := node.Outbound["version"].(string); ok && ver != "" {
+			parts = append(parts, fmt.Sprintf(`"version":%s`, marshalJSONString(ver)))
+		}
+		if username, ok := node.Outbound["username"].(string); ok && username != "" {
+			usernameJSON, err := json.Marshal(username)
+			if err != nil {
+				return "", fmt.Errorf("failed to marshal socks username: %w", err)
+			}
+			parts = append(parts, fmt.Sprintf(`"username":%s`, string(usernameJSON)))
+		}
+		if password, ok := node.Outbound["password"].(string); ok && password != "" {
+			passwordJSON, err := json.Marshal(password)
+			if err != nil {
+				return "", fmt.Errorf("failed to marshal socks password: %w", err)
+			}
+			parts = append(parts, fmt.Sprintf(`"password":%s`, string(passwordJSON)))
+		}
 	}
 
-	// 6. flow (if present)
-	if node.Flow != "" {
-		parts = append(parts, fmt.Sprintf(`"flow":%q`, node.Flow))
+	// 6. flow (if present) — use node.Outbound["flow"] when set so Xray-only values like
+	// xtls-rprx-vision-udp443 stay in node.Flow for filters but sing-box gets xtls-rprx-vision
+	flowOut := node.Flow
+	if node.Outbound != nil {
+		if f, ok := node.Outbound["flow"].(string); ok && f != "" {
+			flowOut = f
+		}
 	}
+	if flowOut != "" {
+		parts = append(parts, fmt.Sprintf(`"flow":%s`, marshalJSONString(flowOut)))
+	}
+	if node.Scheme == "vless" && node.Outbound != nil {
+		if pe, ok := node.Outbound["packet_encoding"].(string); ok && pe != "" {
+			parts = append(parts, fmt.Sprintf(`"packet_encoding":%s`, marshalJSONString(pe)))
+		}
+	}
+
+	parts = appendOutboundTransportParts(parts, node.Outbound)
 
 	// 7. tls (if present) - with correct field order
-	if tlsData, ok := node.Outbound["tls"].(map[string]interface{}); ok {
-		var tlsParts []string
+	if node.Outbound != nil {
+		if tlsData, ok := node.Outbound["tls"].(map[string]interface{}); ok {
+			if disabled, ok := tlsData["enabled"].(bool); ok && !disabled {
+				parts = append(parts, `"tls":{"enabled":false}`)
+			} else {
+				var tlsParts []string
 
-		// enabled
-		if enabled, ok := tlsData["enabled"].(bool); ok {
-			tlsParts = append(tlsParts, fmt.Sprintf(`"enabled":%v`, enabled))
-		}
+				if enabled, ok := tlsData["enabled"].(bool); ok {
+					tlsParts = append(tlsParts, fmt.Sprintf(`"enabled":%v`, enabled))
+				}
 
-		// server_name
-		if serverName, ok := tlsData["server_name"].(string); ok {
-			tlsParts = append(tlsParts, fmt.Sprintf(`"server_name":%q`, serverName))
-		}
+				if serverName, ok := tlsData["server_name"].(string); ok && serverName != "" {
+					tlsParts = append(tlsParts, fmt.Sprintf(`"server_name":%s`, marshalJSONString(serverName)))
+				}
 
-		// alpn (for VMESS and Hysteria2)
-		if alpn, ok := tlsData["alpn"].([]string); ok && len(alpn) > 0 {
-			alpnJSON, _ := json.Marshal(alpn)
-			tlsParts = append(tlsParts, fmt.Sprintf(`"alpn":%s`, string(alpnJSON)))
-		}
+				if alpn, ok := tlsData["alpn"].([]string); ok && len(alpn) > 0 {
+					alpnJSON, _ := json.Marshal(alpn)
+					tlsParts = append(tlsParts, fmt.Sprintf(`"alpn":%s`, string(alpnJSON)))
+				}
 
-		// utls
-		if utls, ok := tlsData["utls"].(map[string]interface{}); ok {
-			var utlsParts []string
-			if utlsEnabled, ok := utls["enabled"].(bool); ok {
-				utlsParts = append(utlsParts, fmt.Sprintf(`"enabled":%v`, utlsEnabled))
+				if utls, ok := tlsData["utls"].(map[string]interface{}); ok {
+					var utlsParts []string
+					if utlsEnabled, ok := utls["enabled"].(bool); ok {
+						utlsParts = append(utlsParts, fmt.Sprintf(`"enabled":%v`, utlsEnabled))
+					}
+					if fingerprint, ok := utls["fingerprint"].(string); ok {
+						fingerprint = subscription.NormalizeUTLSFingerprint(fingerprint)
+						utlsParts = append(utlsParts, fmt.Sprintf(`"fingerprint":%s`, marshalJSONString(fingerprint)))
+					}
+					utlsJSON := "{" + strings.Join(utlsParts, ",") + "}"
+					tlsParts = append(tlsParts, fmt.Sprintf(`"utls":%s`, utlsJSON))
+				}
+
+				if insecure, ok := tlsData["insecure"].(bool); ok && insecure {
+					tlsParts = append(tlsParts, fmt.Sprintf(`"insecure":%v`, insecure))
+				}
+
+				if reality, ok := tlsData["reality"].(map[string]interface{}); ok {
+					var realityParts []string
+					if realityEnabled, ok := reality["enabled"].(bool); ok {
+						realityParts = append(realityParts, fmt.Sprintf(`"enabled":%v`, realityEnabled))
+					}
+					if publicKey, ok := reality["public_key"].(string); ok {
+						realityParts = append(realityParts, fmt.Sprintf(`"public_key":%s`, marshalJSONString(publicKey)))
+					}
+					if shortID, ok := reality["short_id"].(string); ok {
+						realityParts = append(realityParts, fmt.Sprintf(`"short_id":%s`, marshalJSONString(shortID)))
+					}
+					realityJSON := "{" + strings.Join(realityParts, ",") + "}"
+					tlsParts = append(tlsParts, fmt.Sprintf(`"reality":%s`, realityJSON))
+				}
+
+				tlsJSON := "{" + strings.Join(tlsParts, ",") + "}"
+				parts = append(parts, fmt.Sprintf(`"tls":%s`, tlsJSON))
 			}
-			if fingerprint, ok := utls["fingerprint"].(string); ok {
-				utlsParts = append(utlsParts, fmt.Sprintf(`"fingerprint":%q`, fingerprint))
-			}
-			utlsJSON := "{" + strings.Join(utlsParts, ",") + "}"
-			tlsParts = append(tlsParts, fmt.Sprintf(`"utls":%s`, utlsJSON))
 		}
-
-		// insecure (for VMESS and Hysteria2)
-		if insecure, ok := tlsData["insecure"].(bool); ok && insecure {
-			tlsParts = append(tlsParts, fmt.Sprintf(`"insecure":%v`, insecure))
-		}
-
-		// reality
-		if reality, ok := tlsData["reality"].(map[string]interface{}); ok {
-			var realityParts []string
-			if realityEnabled, ok := reality["enabled"].(bool); ok {
-				realityParts = append(realityParts, fmt.Sprintf(`"enabled":%v`, realityEnabled))
-			}
-			if publicKey, ok := reality["public_key"].(string); ok {
-				realityParts = append(realityParts, fmt.Sprintf(`"public_key":%q`, publicKey))
-			}
-			if shortID, ok := reality["short_id"].(string); ok {
-				realityParts = append(realityParts, fmt.Sprintf(`"short_id":%q`, shortID))
-			}
-			realityJSON := "{" + strings.Join(realityParts, ",") + "}"
-			tlsParts = append(tlsParts, fmt.Sprintf(`"reality":%s`, realityJSON))
-		}
-
-		tlsJSON := "{" + strings.Join(tlsParts, ",") + "}"
-		parts = append(parts, fmt.Sprintf(`"tls":%s`, tlsJSON))
 	}
 
 	// Build final JSON
 	jsonStr := "{" + strings.Join(parts, ",") + "}"
-	return fmt.Sprintf("\t// %s\n\t%s,", node.Label, jsonStr), nil
+	return fmt.Sprintf("\t// %s\n\t%s,", sanitizeOutboundLineComment(node.Label), jsonStr), nil
 }
 
 // GenerateSelectorWithFilteredAddOutbounds builds one selector/urltest outbound as a JSON string.
@@ -270,18 +447,23 @@ func GenerateSelectorWithFilteredAddOutbounds(
 	allNodes []*ParsedNode,
 	outboundConfig OutboundConfig,
 	outboundsInfo map[string]*outboundInfo,
+	forGlobalOutbound bool,
+	exposeCandidates []exposeTagCandidate,
 ) (string, error) {
 	// Filter nodes based on filters (version 3)
 	filterMap := outboundConfig.Filters
-	log.Printf("Parser: GenerateSelectorWithFilteredAddOutbounds for '%s' (type: %s): filters=%v, addOutbounds=%v, allNodes=%d",
+	debuglog.DebugLog("Parser: GenerateSelectorWithFilteredAddOutbounds for '%s' (type: %s): filters=%v, addOutbounds=%v, allNodes=%d",
 		outboundConfig.Tag, outboundConfig.Type, filterMap, outboundConfig.AddOutbounds, len(allNodes))
 
 	filteredNodes := filterNodesForSelector(allNodes, filterMap)
-	log.Printf("Parser: filterNodesForSelector returned %d nodes for '%s'", len(filteredNodes), outboundConfig.Tag)
+	debuglog.DebugLog("Parser: filterNodesForSelector returned %d nodes for '%s'", len(filteredNodes), outboundConfig.Tag)
 
 	// Build outbounds list with unique tags
 	// Pre-allocate with estimated capacity to reduce allocations
 	estimatedSize := len(outboundConfig.AddOutbounds) + len(filteredNodes)
+	if forGlobalOutbound {
+		estimatedSize += len(exposeCandidates)
+	}
 	outboundsList := make([]string, 0, estimatedSize)
 	seenTags := make(map[string]bool, estimatedSize)
 	duplicateCountInSelector := 0
@@ -289,11 +471,11 @@ func GenerateSelectorWithFilteredAddOutbounds(
 	// Add addOutbounds first (version 3) - only valid dynamic ones + all constants
 	addOutboundsList := outboundConfig.AddOutbounds
 	if len(addOutboundsList) > 0 {
-		log.Printf("Parser: Processing %d addOutbounds for selector '%s'", len(addOutboundsList), outboundConfig.Tag)
+		debuglog.DebugLog("Parser: Processing %d addOutbounds for selector '%s'", len(addOutboundsList), outboundConfig.Tag)
 		for _, tag := range addOutboundsList {
 			if seenTags[tag] {
 				duplicateCountInSelector++
-				log.Printf("Parser: Skipping duplicate tag '%s' in addOutbounds for selector '%s'", tag, outboundConfig.Tag)
+				debuglog.DebugLog("Parser: Skipping duplicate tag '%s' in addOutbounds for selector '%s'", tag, outboundConfig.Tag)
 				continue
 			}
 
@@ -302,42 +484,64 @@ func GenerateSelectorWithFilteredAddOutbounds(
 				if addInfo.isValid {
 					outboundsList = append(outboundsList, tag)
 					seenTags[tag] = true
-					log.Printf("Parser: Adding valid dynamic addOutbound '%s' to selector '%s'", tag, outboundConfig.Tag)
+					debuglog.DebugLog("Parser: Adding valid dynamic addOutbound '%s' to selector '%s'", tag, outboundConfig.Tag)
 				} else {
-					log.Printf("Parser: Skipping invalid (empty) dynamic addOutbound '%s' for selector '%s'", tag, outboundConfig.Tag)
+					debuglog.DebugLog("Parser: Skipping invalid (empty) dynamic addOutbound '%s' for selector '%s'", tag, outboundConfig.Tag)
 				}
 			} else {
 				// This is a constant from template (direct-out, auto-proxy-out, etc.)
 				// Constants always exist, always add them
 				outboundsList = append(outboundsList, tag)
 				seenTags[tag] = true
-				log.Printf("Parser: Adding constant addOutbound '%s' to selector '%s'", tag, outboundConfig.Tag)
+				debuglog.DebugLog("Parser: Adding constant addOutbound '%s' to selector '%s'", tag, outboundConfig.Tag)
 			}
 		}
 	}
 
 	// Add filtered node tags (without duplicates)
-	log.Printf("Parser: Processing %d filtered nodes for selector '%s'", len(filteredNodes), outboundConfig.Tag)
+	debuglog.DebugLog("Parser: Processing %d filtered nodes for selector '%s'", len(filteredNodes), outboundConfig.Tag)
 	for _, node := range filteredNodes {
 		if !seenTags[node.Tag] {
 			outboundsList = append(outboundsList, node.Tag)
 			seenTags[node.Tag] = true
 		} else {
 			duplicateCountInSelector++
-			log.Printf("Parser: Skipping duplicate tag '%s' in filtered nodes for selector '%s'", node.Tag, outboundConfig.Tag)
+			debuglog.DebugLog("Parser: Skipping duplicate tag '%s' in filtered nodes for selector '%s'", node.Tag, outboundConfig.Tag)
 		}
 	}
 
-	// Check if we have any outbounds at all (addOutbounds + filteredNodes)
+	if forGlobalOutbound && len(exposeCandidates) > 0 {
+		exposeSeen := make(map[string]struct{}, len(exposeCandidates))
+		for _, c := range exposeCandidates {
+			if _, dup := exposeSeen[c.Tag]; dup {
+				continue
+			}
+			if !SelectorFiltersAcceptNode(outboundConfig.Filters, ExposeTagSyntheticNode(c.Tag, c.Comment)) {
+				continue
+			}
+			if addInfo, exists := outboundsInfo[c.Tag]; exists && !addInfo.isValid {
+				continue
+			}
+			exposeSeen[c.Tag] = struct{}{}
+			if seenTags[c.Tag] {
+				continue
+			}
+			outboundsList = append(outboundsList, c.Tag)
+			seenTags[c.Tag] = true
+			debuglog.DebugLog("Parser: Adding expose tag '%s' to global selector '%s'", c.Tag, outboundConfig.Tag)
+		}
+	}
+
+	// Check if we have any outbounds at all (addOutbounds + filteredNodes + expose)
 	if len(outboundsList) == 0 {
-		log.Printf("Parser: No outbounds (neither addOutbounds nor filteredNodes) for %s '%s'", outboundConfig.Type, outboundConfig.Tag)
+		debuglog.DebugLog("Parser: No outbounds (neither addOutbounds nor filteredNodes) for %s '%s'", outboundConfig.Type, outboundConfig.Tag)
 		return "", nil
 	}
 
 	if duplicateCountInSelector > 0 {
-		log.Printf("Parser: Removed %d duplicate tags from selector '%s' outbounds list", duplicateCountInSelector, outboundConfig.Tag)
+		debuglog.DebugLog("Parser: Removed %d duplicate tags from selector '%s' outbounds list", duplicateCountInSelector, outboundConfig.Tag)
 	}
-	log.Printf("Parser: Selector '%s' will have %d unique outbounds", outboundConfig.Tag, len(outboundsList))
+	debuglog.DebugLog("Parser: Selector '%s' will have %d unique outbounds", outboundConfig.Tag, len(outboundsList))
 
 	// Determine default - only if preferredDefault is specified in config (version 3)
 	preferredDefaultMap := outboundConfig.PreferredDefault
@@ -359,14 +563,14 @@ func GenerateSelectorWithFilteredAddOutbounds(
 	var parts []string
 
 	// 1. tag
-	parts = append(parts, fmt.Sprintf(`"tag":%q`, outboundConfig.Tag))
+	parts = append(parts, fmt.Sprintf(`"tag":%s`, marshalJSONString(outboundConfig.Tag)))
 
 	// 2. type
-	parts = append(parts, fmt.Sprintf(`"type":%q`, outboundConfig.Type))
+	parts = append(parts, fmt.Sprintf(`"type":%s`, marshalJSONString(outboundConfig.Type)))
 
 	// 3. default (if present) - BEFORE outbounds
 	if defaultTag != "" {
-		parts = append(parts, fmt.Sprintf(`"default":%q`, defaultTag))
+		parts = append(parts, fmt.Sprintf(`"default":%s`, marshalJSONString(defaultTag)))
 	}
 
 	// 4. outbounds
@@ -387,7 +591,7 @@ func GenerateSelectorWithFilteredAddOutbounds(
 	for key, value := range outboundConfig.Options {
 		if key != "interrupt_exist_connections" {
 			valJSON, _ := json.Marshal(value)
-			parts = append(parts, fmt.Sprintf(`%q:%s`, key, string(valJSON)))
+			parts = append(parts, fmt.Sprintf(`%s:%s`, marshalJSONString(key), string(valJSON)))
 		}
 	}
 
@@ -397,7 +601,7 @@ func GenerateSelectorWithFilteredAddOutbounds(
 	// Add comment if present
 	result := ""
 	if outboundConfig.Comment != "" {
-		result = fmt.Sprintf("\t// %s\n", outboundConfig.Comment)
+		result = fmt.Sprintf("\t// %s\n", sanitizeOutboundLineComment(outboundConfig.Comment))
 	}
 	result += fmt.Sprintf("\t%s,", jsonStr)
 
@@ -426,7 +630,7 @@ func GenerateEndpointJSON(node *ParsedNode) (string, error) {
 	}
 	result := ""
 	if node.Comment != "" {
-		result = "// " + node.Comment + "\n"
+		result = "// " + sanitizeOutboundLineComment(node.Comment) + "\n"
 	}
 	result += string(jsonBytes)
 	return result, nil
@@ -438,7 +642,7 @@ func GenerateEndpointJSON(node *ParsedNode) (string, error) {
 func buildOutboundsInfo(
 	parserConfig *ParserConfig,
 	nodesBySource map[int][]*ParsedNode,
-	allNodes []*ParsedNode,
+	globalNodePool []*ParsedNode,
 	progressCallback func(float64, string),
 ) map[string]*outboundInfo {
 	if progressCallback != nil {
@@ -468,7 +672,7 @@ func buildOutboundsInfo(
 	}
 
 	for _, outboundConfig := range parserConfig.ParserConfig.Outbounds {
-		filteredNodes := filterNodesForSelector(allNodes, outboundConfig.Filters)
+		filteredNodes := filterNodesForSelector(globalNodePool, outboundConfig.Filters)
 		logDuplicateTagIfExists(outboundsInfo, outboundConfig.Tag, "global", 0)
 		outboundsInfo[outboundConfig.Tag] = &outboundInfo{
 			config:        outboundConfig,
@@ -493,15 +697,15 @@ func logDuplicateTagIfExists(outboundsInfo map[string]*outboundInfo, tag, kind s
 		if existingInfo.isLocal {
 			selectorType = "local"
 		}
-		log.Printf("GenerateOutboundsFromParserConfig: Warning: Duplicate tag '%s' detected. "+
+		debuglog.WarnLog("GenerateOutboundsFromParserConfig: Duplicate tag '%s' detected. "+
 			"Local selector from source %d will overwrite %s selector. This may cause unexpected behavior.",
 			tag, sourceIndex, selectorType)
 	} else {
 		if existingInfo.isLocal {
-			log.Printf("GenerateOutboundsFromParserConfig: Warning: Duplicate tag '%s' detected. "+
+			debuglog.WarnLog("GenerateOutboundsFromParserConfig: Duplicate tag '%s' detected. "+
 				"Global selector will overwrite local selector. This may cause unexpected behavior.", tag)
 		} else {
-			log.Printf("GenerateOutboundsFromParserConfig: Warning: Duplicate tag '%s' detected. "+
+			debuglog.WarnLog("GenerateOutboundsFromParserConfig: Duplicate tag '%s' detected. "+
 				"Multiple global selectors with same tag. This may cause unexpected behavior.", tag)
 		}
 	}
@@ -511,7 +715,13 @@ func logDuplicateTagIfExists(outboundsInfo map[string]*outboundInfo, tag, kind s
 // then for each selector (in that order) sets outboundCount = len(filteredNodes) + count of valid addOutbounds
 // (dynamic with outboundCount > 0 plus constants). isValid = (outboundCount > 0). Uses Kahn's algorithm;
 // if not all selectors are processed, a cycle is reported in the log.
-func computeOutboundValidity(outboundsInfo map[string]*outboundInfo, progressCallback func(float64, string)) {
+// Global selectors also gain edges from expose tag targets and count expose credits (SPEC 026).
+func computeOutboundValidity(
+	outboundsInfo map[string]*outboundInfo,
+	parserConfig *ParserConfig,
+	exposeCandidates []exposeTagCandidate,
+	progressCallback func(float64, string),
+) {
 	if progressCallback != nil {
 		progressCallback(70, "Calculating outbound dependencies (pass 2)...")
 	}
@@ -529,6 +739,8 @@ func computeOutboundValidity(outboundsInfo map[string]*outboundInfo, progressCal
 			}
 		}
 	}
+	augmentGlobalOutboundDependenciesForExpose(outboundsInfo, parserConfig, exposeCandidates, dependents, inDegree)
+
 	queue := make([]string, 0, len(outboundsInfo))
 	for tag, degree := range inDegree {
 		if degree == 0 {
@@ -541,6 +753,9 @@ func computeOutboundValidity(outboundsInfo map[string]*outboundInfo, progressCal
 		queue = queue[1:]
 		info := outboundsInfo[current]
 		totalCount := len(info.filteredNodes)
+		if !info.isLocal {
+			totalCount += globalOutboundExposeCredit(info, outboundsInfo, exposeCandidates)
+		}
 		for _, addTag := range info.config.AddOutbounds {
 			if addInfo, exists := outboundsInfo[addTag]; exists {
 				if addInfo.outboundCount > 0 {
@@ -567,7 +782,7 @@ func computeOutboundValidity(outboundsInfo map[string]*outboundInfo, progressCal
 				unprocessed = append(unprocessed, tag)
 			}
 		}
-		log.Printf("GenerateOutboundsFromParserConfig: Warning: Not all outbounds processed (processed: %d, total: %d). "+
+		debuglog.WarnLog("GenerateOutboundsFromParserConfig: Not all outbounds processed (processed: %d, total: %d). "+
 			"Possible cycles in dependency graph. Unprocessed outbounds: %v",
 			processedCount, len(outboundsInfo), unprocessed)
 	}
@@ -579,8 +794,9 @@ func computeOutboundValidity(outboundsInfo map[string]*outboundInfo, progressCal
 func generateSelectorJSONs(
 	parserConfig *ParserConfig,
 	nodesBySource map[int][]*ParsedNode,
-	allNodes []*ParsedNode,
+	globalNodePool []*ParsedNode,
 	outboundsInfo map[string]*outboundInfo,
+	exposeCandidates []exposeTagCandidate,
 	progressCallback func(float64, string),
 ) ([]string, int, int) {
 	if progressCallback != nil {
@@ -602,13 +818,13 @@ func generateSelectorJSONs(
 			info, exists := outboundsInfo[outboundConfig.Tag]
 			if !exists || !info.isValid {
 				if exists && !info.isValid {
-					log.Printf("GenerateOutboundsFromParserConfig: Skipping empty local selector '%s'", outboundConfig.Tag)
+					debuglog.DebugLog("GenerateOutboundsFromParserConfig: Skipping empty local selector '%s'", outboundConfig.Tag)
 				}
 				continue
 			}
-			selectorJSON, err := GenerateSelectorWithFilteredAddOutbounds(sourceNodes, outboundConfig, outboundsInfo)
+			selectorJSON, err := GenerateSelectorWithFilteredAddOutbounds(sourceNodes, outboundConfig, outboundsInfo, false, nil)
 			if err != nil {
-				log.Printf("GenerateOutboundsFromParserConfig: Warning: Failed to generate local selector %s for source %d: %v",
+				debuglog.WarnLog("GenerateOutboundsFromParserConfig: Failed to generate local selector %s for source %d: %v",
 					outboundConfig.Tag, i+1, err)
 				continue
 			}
@@ -623,13 +839,13 @@ func generateSelectorJSONs(
 		info, exists := outboundsInfo[outboundConfig.Tag]
 		if !exists || !info.isValid {
 			if exists && !info.isValid {
-				log.Printf("GenerateOutboundsFromParserConfig: Skipping empty global selector '%s'", outboundConfig.Tag)
+				debuglog.DebugLog("GenerateOutboundsFromParserConfig: Skipping empty global selector '%s'", outboundConfig.Tag)
 			}
 			continue
 		}
-		selectorJSON, err := GenerateSelectorWithFilteredAddOutbounds(allNodes, outboundConfig, outboundsInfo)
+		selectorJSON, err := GenerateSelectorWithFilteredAddOutbounds(globalNodePool, outboundConfig, outboundsInfo, true, exposeCandidates)
 		if err != nil {
-			log.Printf("GenerateOutboundsFromParserConfig: Warning: Failed to generate global selector %s: %v",
+			debuglog.WarnLog("GenerateOutboundsFromParserConfig: Failed to generate global selector %s: %v",
 				outboundConfig.Tag, err)
 			continue
 		}
@@ -668,11 +884,14 @@ func GenerateOutboundsFromParserConfig(
 
 		nodesFromSource, err := loadNodesFunc(proxySource, tagCounts, progressCallback, i, totalSources)
 		if err != nil {
-			log.Printf("GenerateOutboundsFromParserConfig: Error processing source %d/%d: %v", i+1, totalSources, err)
+			debuglog.ErrorLog("GenerateOutboundsFromParserConfig: Error processing source %d/%d: %v", i+1, totalSources, err)
 			continue
 		}
 
 		if len(nodesFromSource) > 0 {
+			for _, n := range nodesFromSource {
+				n.SourceIndex = i
+			}
 			allNodes = append(allNodes, nodesFromSource...)
 			nodesBySource[i] = nodesFromSource
 		}
@@ -696,7 +915,7 @@ func GenerateOutboundsFromParserConfig(
 		if node.Scheme == "wireguard" {
 			epJSON, err := GenerateEndpointJSON(node)
 			if err != nil {
-				log.Printf("GenerateOutboundsFromParserConfig: Warning: Failed to generate JSON for endpoint %s: %v", node.Tag, err)
+				debuglog.WarnLog("GenerateOutboundsFromParserConfig: Failed to generate JSON for endpoint %s: %v", node.Tag, err)
 				continue
 			}
 			endpointsJSON = append(endpointsJSON, epJSON)
@@ -704,7 +923,7 @@ func GenerateOutboundsFromParserConfig(
 		} else {
 			nodeJSON, err := GenerateNodeJSON(node)
 			if err != nil {
-				log.Printf("GenerateOutboundsFromParserConfig: Warning: Failed to generate JSON for node %s: %v", node.Tag, err)
+				debuglog.WarnLog("GenerateOutboundsFromParserConfig: Failed to generate JSON for node %s: %v", node.Tag, err)
 				continue
 			}
 			selectorsJSON = append(selectorsJSON, nodeJSON)
@@ -712,9 +931,11 @@ func GenerateOutboundsFromParserConfig(
 		}
 	}
 
-	outboundsInfo := buildOutboundsInfo(parserConfig, nodesBySource, allNodes, progressCallback)
-	computeOutboundValidity(outboundsInfo, progressCallback)
-	selectorJSONs, localSelectorsCount, globalSelectorsCount := generateSelectorJSONs(parserConfig, nodesBySource, allNodes, outboundsInfo, progressCallback)
+	globalPool := FilterNodesExcludeFromGlobal(allNodes, parserConfig.ParserConfig.Proxies)
+	exposeCandidates := collectExposeTagCandidates(parserConfig)
+	outboundsInfo := buildOutboundsInfo(parserConfig, nodesBySource, globalPool, progressCallback)
+	computeOutboundValidity(outboundsInfo, parserConfig, exposeCandidates, progressCallback)
+	selectorJSONs, localSelectorsCount, globalSelectorsCount := generateSelectorJSONs(parserConfig, nodesBySource, globalPool, outboundsInfo, exposeCandidates, progressCallback)
 	selectorsJSON = append(selectorsJSON, selectorJSONs...)
 
 	return &OutboundGenerationResult{
@@ -726,151 +947,3 @@ func GenerateOutboundsFromParserConfig(
 		GlobalSelectorsCount: globalSelectorsCount,
 	}, nil
 }
-
-// Helper functions for selector filters (ParserConfig filters: tag, host, scheme, label, etc.).
-// Supports literal match, negation !literal, regex /pattern/i, negation regex !/pattern/i.
-
-// filterNodesForSelector returns nodes that match the filter. filter may be nil (all nodes),
-// a single map (AND of key/pattern), or a slice of maps (OR of maps). Empty map = no filter.
-func filterNodesForSelector(allNodes []*ParsedNode, filter interface{}) []*ParsedNode {
-	if filter == nil {
-		return allNodes // No filter, return all nodes
-	}
-
-	// Check if filter is an empty map - treat as no filter
-	if filterMap, ok := filter.(map[string]interface{}); ok {
-		if len(filterMap) == 0 {
-			return allNodes // Empty filter object means no filter, return all nodes
-		}
-	}
-
-	filtered := make([]*ParsedNode, 0)
-
-	// Check if filter is an array
-	if filterArray, ok := filter.([]interface{}); ok {
-		// OR between filter objects
-		for _, node := range allNodes {
-			for _, filterObj := range filterArray {
-				if filterMap, ok := filterObj.(map[string]interface{}); ok {
-					filterStrMap := convertFilterToStringMap(filterMap)
-					if matchesFilter(node, filterStrMap) {
-						filtered = append(filtered, node)
-						break // Node matched at least one filter, add it
-					}
-				}
-			}
-		}
-	} else if filterMap, ok := filter.(map[string]interface{}); ok {
-		// Single filter object (AND between keys)
-		filterStrMap := convertFilterToStringMap(filterMap)
-		for _, node := range allNodes {
-			if matchesFilter(node, filterStrMap) {
-				filtered = append(filtered, node)
-			}
-		}
-	}
-
-	return filtered
-}
-
-// convertFilterToStringMap flattens filter map to string values for matching (non-string values are skipped).
-func convertFilterToStringMap(filter map[string]interface{}) map[string]string {
-	result := make(map[string]string)
-	for k, v := range filter {
-		if str, ok := v.(string); ok {
-			result[k] = str
-		}
-	}
-	return result
-}
-
-// matchesFilter returns true if the node has matching values for every key in filter (AND); each value is checked with matchesPattern.
-func matchesFilter(node *ParsedNode, filter map[string]string) bool {
-	for key, pattern := range filter {
-		value := getNodeValue(node, key)
-		if !matchesPattern(value, pattern) {
-			return false // At least one key doesn't match
-		}
-	}
-	return true // All keys match
-}
-
-// getNodeValue returns the node field used in filters: tag, host, label, scheme, fragment (alias for label), comment.
-func getNodeValue(node *ParsedNode, key string) string {
-	switch key {
-	case "tag":
-		return node.Tag
-	case "host":
-		return node.Server
-	case "label":
-		return node.Label
-	case "scheme":
-		return node.Scheme
-	case "fragment":
-		return node.Label // fragment == label
-	case "comment":
-		return node.Comment
-	default:
-		return ""
-	}
-}
-
-// matchesPattern matches value against pattern: literal, !literal, /regex/i, !/regex/i. Case-insensitive for regex.
-func matchesPattern(value, pattern string) bool {
-	// Negation literal: !literal
-	if strings.HasPrefix(pattern, "!") && !strings.HasPrefix(pattern, "!/") {
-		literal := strings.TrimPrefix(pattern, "!")
-		return value != literal
-	}
-
-	// Negation regex: !/regex/i
-	if strings.HasPrefix(pattern, "!/") && strings.HasSuffix(pattern, "/i") {
-		regexStr := strings.TrimPrefix(pattern, "!/")
-		regexStr = strings.TrimSuffix(regexStr, "/i")
-		re, err := regexp.Compile("(?i)" + regexStr)
-		if err != nil {
-			log.Printf("Parser: Invalid regex pattern %s: %v", pattern, err)
-			return false
-		}
-		return !re.MatchString(value)
-	}
-
-	// Regex: /regex/i
-	if strings.HasPrefix(pattern, "/") && strings.HasSuffix(pattern, "/i") {
-		regexStr := strings.TrimPrefix(pattern, "/")
-		regexStr = strings.TrimSuffix(regexStr, "/i")
-		re, err := regexp.Compile("(?i)" + regexStr)
-		if err != nil {
-			log.Printf("Parser: Invalid regex pattern %s: %v", pattern, err)
-			return false
-		}
-		return re.MatchString(value)
-	}
-
-	// Literal match
-	return value == pattern
-}
-
-// PreviewSelectorNodes returns nodes that match outboundConfig.Filters and the default tag
-// based on outboundConfig.PreferredDefault. It is used by UI layers to build a selector
-// preview that is consistent with the real selector generation logic.
-//
-// allNodes must be the same set of nodes that will be used for selector generation
-// (i.e. result of the same LoadNodesFromSource pipeline that GenerateOutboundsFromParserConfig uses).
-func PreviewSelectorNodes(allNodes []*ParsedNode, outboundConfig OutboundConfig) ([]*ParsedNode, string) {
-	filtered := filterNodesForSelector(allNodes, outboundConfig.Filters)
-
-	defaultTag := ""
-	if len(outboundConfig.PreferredDefault) > 0 {
-		preferredFilter := convertFilterToStringMap(outboundConfig.PreferredDefault)
-		for _, node := range filtered {
-			if matchesFilter(node, preferredFilter) {
-				defaultTag = node.Tag
-				break
-			}
-		}
-	}
-
-	return filtered, defaultTag
-}
-

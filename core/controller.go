@@ -17,8 +17,10 @@ import (
 
 	"singbox-launcher/api"
 	"singbox-launcher/core/services"
+	"singbox-launcher/core/uiservice"
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 	"singbox-launcher/internal/process"
 )
@@ -40,7 +42,7 @@ const (
 type AppController struct {
 	// --- Services ---
 	// UIService manages UI-related state, callbacks, and tray menu logic
-	UIService *services.UIService
+	UIService *uiservice.UIService
 	// APIService manages Clash API interactions and proxy list management
 	APIService *services.APIService
 	// StateService manages application state including version caches and auto-update state
@@ -62,6 +64,7 @@ type AppController struct {
 	ParserMutex                 sync.Mutex // Mutex for ParserRunning
 	ParserRunning               bool
 	StoppedByUser               bool
+	RestartRequestedByUser      bool   // true when user clicked Restart: watcher must bring process back up
 	ConsecutiveCrashAttempts    int
 
 	// --- VPN Operation State ---
@@ -159,7 +162,7 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 	ac.RunningState.Set(false)
 
 	// Initialize UIService
-	uiService, err := services.NewUIService(
+	uiService, err := uiservice.NewUIService(
 		appIconData, greyIconData, greenIconData, redIconData,
 		func() bool { return ac.RunningState.IsRunning() },
 		ac.FileService.SingboxPath,
@@ -354,7 +357,7 @@ func (ac *AppController) RunHidden(name string, args []string, logPath string, d
 			cmd.Stderr = logFile
 		} else {
 			// For other logs (parser), use truncate mode for clean start
-			logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+			logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, platform.DefaultFileMode)
 			if err != nil {
 				return fmt.Errorf("RunHidden: cannot open log file '%s': %w", logPath, err)
 			}
@@ -375,9 +378,10 @@ func CheckLinuxCapabilities() {
 	}
 	if suggestion := platform.CheckAndSuggestCapabilities(ac.FileService.SingboxPath); suggestion != "" {
 		debuglog.InfoLog("CheckLinuxCapabilities: %s", suggestion)
-		// Show info dialog (not error) - capabilities can be set later
+		// Show dialog with selectable command and Copy button (issue #34)
 		if ac.hasUI() {
-			dialogs.ShowInfo(ac.UIService.MainWindow, "Linux Capabilities", suggestion)
+			cmd := platform.GetSetCapCommand(ac.FileService.SingboxPath)
+			dialogs.ShowLinuxCapabilitiesRequired(ac.UIService.MainWindow, "Linux Capabilities", suggestion, cmd)
 		}
 	}
 }
@@ -489,6 +493,15 @@ func StopSingBoxProcess() {
 	ac.ProcessService.Stop()
 }
 
+// KillSingBoxForRestart kills the sing-box process so the monitor will restart it (no StoppedByUser).
+func KillSingBoxForRestart() {
+	ac := GetController()
+	if ac == nil || ac.ProcessService == nil {
+		return
+	}
+	ac.ProcessService.KillForRestart()
+}
+
 // RunParserProcess starts the internal configuration update process.
 // Note: ConfigService must be initialized in NewAppController. This is a wrapper for backward compatibility.
 func RunParserProcess() {
@@ -526,18 +539,10 @@ func CheckConfigFileExists() {
 	if _, err := os.Stat(ac.FileService.ConfigPath); os.IsNotExist(err) {
 		debuglog.WarnLog("CheckConfigFileExists: config.json not found at %s", ac.FileService.ConfigPath)
 
-		message := fmt.Sprintf(
-			"⚠️ Configuration file not found!\n\n"+
-				"The file %s is missing from the bin/ folder.\n\n"+
-				"To get started:\n"+
-				"1. download Wizard\n"+
-				"2. use Wizard to generate a configuration file\n"+
-				"3. press Start\n",
-			constants.ConfigFileName,
-		)
+		message := locale.Tf("core.config_not_found_message", constants.ConfigFileName)
 
 		if ac.hasUI() {
-			dialogs.ShowInfo(ac.UIService.MainWindow, "Configuration Not Found", message)
+			dialogs.ShowInfo(ac.UIService.MainWindow, locale.T("core.config_not_found_title"), message)
 		}
 	}
 }
@@ -567,7 +572,7 @@ func CheckIfLauncherAlreadyRunningUtil() {
 		}
 		if strings.EqualFold(p.Name, execName) {
 			if ac.hasUI() {
-				dialogs.ShowInfo(ac.UIService.MainWindow, "Information", "The application is already running. Use the existing instance or close it before starting a new one.")
+				dialogs.ShowInfo(ac.UIService.MainWindow, locale.T("core.already_running_app_title"), locale.T("core.already_running_app_message"))
 			}
 			return
 		}

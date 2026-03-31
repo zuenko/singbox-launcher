@@ -1,14 +1,10 @@
 // Package tabs содержит UI компоненты для табов визарда конфигурации.
 //
-// Файл rules_tab.go содержит функцию CreateRulesTab, которая создает UI второго таба визарда:
-//   - Отображение правил маршрутизации из шаблона (SelectableRuleStates)
-//   - Выбор outbound для каждого правила через Select виджеты
-//   - Отображение пользовательских правил (CustomRules)
-//   - Кнопки добавления, редактирования и удаления правил
-//   - Выбор финального outbound (FinalOutboundSelect)
+// Файл rules_tab.go — вкладка Rules: единый список CustomRules (027), библиотека пресетов шаблона в library_rules_dialog.
+//   - Над скроллом: Add Rule, Add from library и подпись столбца Outbound в одной строке (Border); в скролле — строки без «Outbound:» на каждой строке
+//   - Final outbound; на macOS — TUN (fynewidget.CheckWithContent + тултип)
 //
-// Каждый таб визарда имеет свою отдельную ответственность и логику UI.
-// Содержит сложную логику управления виджетами правил (RuleWidget) и их синхронизации с моделью.
+// RuleWidget в GUIState связывает виджеты с *RuleState при пересоздании вкладки.
 //
 // Используется в:
 //   - wizard.go - при создании окна визарда, вызывается CreateRulesTab(presenter, showAddRuleDialog)
@@ -21,15 +17,18 @@ package tabs
 
 import (
 	"context"
-	"fmt"
+	"image/color"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 
@@ -37,6 +36,8 @@ import (
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/fynewidget"
+	"singbox-launcher/internal/locale"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
@@ -46,12 +47,80 @@ import (
 // ShowAddRuleDialogFunc is a function type for showing the add rule dialog.
 type ShowAddRuleDialogFunc func(p *wizardpresentation.WizardPresenter, editRule *wizardmodels.RuleState, ruleIndex int)
 
-// SRS button labels (managed in one place)
 const (
-	srsBtnDownload = "⬇ srs"
-	srsBtnLoading  = "🔄 srs"
-	srsBtnDone     = "✔️ srs"
+	srsGroupDownloadTimeout = 90 * time.Second
+
+	// rulesOutboundColumnRightGutter — отступ справа только у подписи «Outbound:» в шапке над скроллом.
+	rulesOutboundColumnRightGutter float32 = 40
 )
+
+func srsBtnDownload() string { return locale.T("wizard.rules.button_srs_download") }
+func srsBtnLoading() string  { return locale.T("wizard.rules.button_srs_loading") }
+func srsBtnDone() string     { return locale.T("wizard.rules.button_srs_done") }
+
+// srsEntriesTooltip возвращает строку URL для tooltip кнопки SRS.
+// customRuleSRSEntries возвращает записи SRS для строки правила, если это пресет с rule_sets; иначе ok=false.
+func customRuleSRSEntries(customRule *wizardmodels.RuleState) (entries []services.SRSEntry, ok bool) {
+	if customRule == nil {
+		return nil, false
+	}
+	if wizardmodels.DetermineRuleType(customRule.Rule.Rule) != wizardmodels.RuleTypeSRS || len(customRule.Rule.RuleSets) == 0 {
+		return nil, false
+	}
+	return services.GetSRSEntries(customRule.Rule.RuleSets), true
+}
+
+func srsEntriesTooltip(entries []services.SRSEntry) string {
+	if len(entries) == 0 {
+		return ""
+	}
+	urls := make([]string, len(entries))
+	for i, e := range entries {
+		urls[i] = e.URL
+	}
+	return strings.Join(urls, "\n")
+}
+
+// runSRSDownloadAsync запускает скачивание SRS в горутине и по завершении обновляет UI (кнопка, outbound, onSuccess).
+func runSRSDownloadAsync(
+	presenter *wizardpresentation.WizardPresenter,
+	model *wizardmodels.WizardModel,
+	guiState *wizardpresentation.GUIState,
+	srsEntries []services.SRSEntry,
+	btn *ttwidget.Button,
+	outboundSelect *widget.Select,
+	onSuccess func(),
+) {
+	if model.ExecDir == "" {
+		return
+	}
+	btn.Disable()
+	btn.SetText(srsBtnLoading())
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), srsGroupDownloadTimeout)
+		defer cancel()
+		err := services.DownloadSRSGroup(ctx, model.ExecDir, srsEntries)
+		presenter.UpdateUI(func() {
+			btn.Enable()
+			if err != nil {
+				btn.SetText(srsBtnDownload())
+				ruleSetsDir := filepath.Join(model.ExecDir, constants.BinDirName, constants.RuleSetsDirName)
+				downloadURL := ""
+				if len(srsEntries) > 0 {
+					downloadURL = srsEntries[0].URL
+				}
+				debuglog.DebugLog("rules_tab: SRS download failed")
+				dialogs.ShowDownloadFailedManual(guiState.Window, locale.T("wizard.rules.error_srs_failed"), downloadURL, ruleSetsDir)
+				return
+			}
+			btn.SetText(srsBtnDone())
+			if outboundSelect != nil {
+				outboundSelect.Enable()
+			}
+			onSuccess()
+		})
+	}()
+}
 
 // CreateRulesTab creates the Rules tab UI.
 // showAddRuleDialog is a function that will be called to show the add rule dialog.
@@ -64,32 +133,33 @@ func CreateRulesTab(presenter *wizardpresentation.WizardPresenter, showAddRuleDi
 		return createTemplateNotFoundMessage()
 	}
 
-	// Initialize state
 	initializeRulesTabState(presenter, model, guiState)
 	availableOutbounds := wizardbusiness.EnsureDefaultAvailableOutbounds(wizardbusiness.GetAvailableOutbounds(model))
 
-	// Create UI components
-	rulesBox := createSelectableRulesUI(presenter, model, guiState, availableOutbounds)
-	createCustomRulesUI(presenter, model, guiState, availableOutbounds, showAddRuleDialog, rulesBox)
-	createAddRuleButton(presenter, showAddRuleDialog, rulesBox)
-	finalSelect := createFinalOutboundSelect(presenter, model, guiState, availableOutbounds)
+	rulesBox := container.NewVBox()
+	if len(model.CustomRules) == 0 {
+		rulesBox.Add(createRulesEmptyState())
+	} else {
+		buildCustomRuleRows(presenter, model, guiState, availableOutbounds, showAddRuleDialog, rulesBox)
+	}
 
-	// Create scrollable container
+	finalSelect := createFinalOutboundSelect(presenter, model, guiState, availableOutbounds)
+	headerRow := createRulesToolbarOutboundHeaderRow(presenter, showAddRuleDialog)
 	rulesScroll := CreateRulesScroll(guiState, rulesBox)
 
 	// RefreshOutboundOptions will reset UpdatingOutboundOptions flag and hasChanges after all SetSelected() calls
 	presenter.RefreshOutboundOptions()
 
 	// Build final container
-	return buildRulesTabContainer(presenter, rulesScroll, finalSelect)
+	return buildRulesTabContainer(presenter, headerRow, rulesScroll, finalSelect)
 }
 
 // createTemplateNotFoundMessage создает сообщение об отсутствии шаблона.
 func createTemplateNotFoundMessage() fyne.CanvasObject {
 	templateFileName := wizardtemplate.GetTemplateFileName()
 	return container.NewVBox(
-		widget.NewLabel(fmt.Sprintf("Template file bin/%s not found.", templateFileName)),
-		widget.NewLabel("Create the template file to enable this tab."),
+		widget.NewLabel(locale.Tf("wizard.rules.template_not_found", templateFileName)),
+		widget.NewLabel(locale.T("wizard.rules.template_create_hint")),
 	)
 }
 
@@ -100,271 +170,71 @@ func initializeRulesTabState(presenter *wizardpresentation.WizardPresenter, mode
 	// Очищаем старые виджеты перед созданием новых (важно при пересоздании вкладки)
 	guiState.RuleOutboundSelects = make([]*wizardpresentation.RuleWidget, 0)
 
-	// Set flag to block callbacks during initialization
 	guiState.UpdatingOutboundOptions = true
-	debuglog.DebugLog("rules_tab: UpdatingOutboundOptions set to true before creating widgets")
 
-	// Initialize CustomRules if needed
 	if model.CustomRules == nil {
 		model.CustomRules = make([]*wizardmodels.RuleState, 0)
 	}
 }
 
-// createSelectableRulesUI создает UI для selectable rules из шаблона.
-// Возвращает VBox контейнер для добавления custom rules и кнопки Add Rule.
-func createSelectableRulesUI(presenter *wizardpresentation.WizardPresenter, model *wizardmodels.WizardModel, guiState *wizardpresentation.GUIState, availableOutbounds []string) *fyne.Container {
-	rulesBox := container.NewVBox()
-
-	if len(model.SelectableRuleStates) == 0 {
-		rulesBox.Add(widget.NewLabel("No selectable rules defined in template."))
-		return rulesBox
-	}
-
-	for i := range model.SelectableRuleStates {
-		ruleState := model.SelectableRuleStates[i]
-		idx := i
-		srsEntries := services.GetRemoteSRSEntries(ruleState.Rule.RuleSets)
-		srsDownloaded := services.AllSRSDownloaded(model.ExecDir, ruleState.Rule.RuleSets)
-
-		outboundSelect, outboundRow := createOutboundSelectorForSelectableRule(
-			presenter, model, guiState, ruleState, idx, availableOutbounds, srsDownloaded,
-		)
-
-		var srsButton *ttwidget.Button
-		var srsTooltipText string
-		// When user clicks checkbox to enable rule and SRS is not downloaded, we start download and set this flag
-		// so that on success we set the rule checkbox (only when download was initiated by checkbox, not by ⬇).
-		enableRuleOnSRSSuccess := new(bool)
-		checkbox := createSelectableRuleCheckbox(presenter, model, guiState, ruleState, idx, outboundSelect, &srsButton, enableRuleOnSRSSuccess)
-
-		if len(srsEntries) > 0 {
-			srsButton = createSRSButton(presenter, model, guiState, ruleState, idx, srsEntries, checkbox, outboundSelect, enableRuleOnSRSSuccess)
-			urls := make([]string, 0, len(srsEntries))
-			for _, e := range srsEntries {
-				urls = append(urls, e.URL)
-			}
-			srsTooltipText = strings.Join(urls, "\n")
-		}
-
-		// Create RuleWidget and add to GUIState
-		ruleWidget := &wizardpresentation.RuleWidget{
-			Select:    outboundSelect,
-			Checkbox:  checkbox,
-			SRSButton: srsButton,
-			RuleState: ruleState,
-		}
-		guiState.RuleOutboundSelects = append(guiState.RuleOutboundSelects, ruleWidget)
-
-		// Create row content
-		rowContent := createSelectableRuleRowContent(ruleState, guiState, checkbox, outboundRow, srsButton, srsTooltipText)
-		rulesBox.Add(container.NewHBox(rowContent...))
-	}
-
-	return rulesBox
-}
-
-// createOutboundSelectorForSelectableRule создает селектор outbound для selectable rule.
-func createOutboundSelectorForSelectableRule(
-	presenter *wizardpresentation.WizardPresenter,
-	model *wizardmodels.WizardModel,
-	guiState *wizardpresentation.GUIState,
-	ruleState *wizardmodels.RuleState,
-	idx int,
-	availableOutbounds []string,
-	srsDownloaded bool,
-) (*widget.Select, fyne.CanvasObject) {
-	if !ruleState.Rule.HasOutbound {
-		return nil, nil
-	}
-
-	wizardmodels.EnsureDefaultOutbound(ruleState, availableOutbounds)
-	outboundSelect := widget.NewSelect(availableOutbounds, func(value string) {
-		// Ignore callback during programmatic update
-		if guiState.UpdatingOutboundOptions {
-			return
-		}
-		model.SelectableRuleStates[idx].SelectedOutbound = value
-		model.TemplatePreviewNeedsUpdate = true
-		presenter.MarkAsChanged()
+// refreshRulesTabFromPresenter пересоздаёт вкладку Rules (общий путь после правок списка).
+func refreshRulesTabFromPresenter(presenter *wizardpresentation.WizardPresenter, showAddRuleDialog ShowAddRuleDialogFunc) {
+	presenter.RefreshRulesTab(func(p *wizardpresentation.WizardPresenter) fyne.CanvasObject {
+		return CreateRulesTab(p, showAddRuleDialog)
 	})
-	outboundSelect.SetSelected(ruleState.SelectedOutbound)
-	if !ruleState.Enabled {
-		outboundSelect.Disable()
-	}
-	if !srsDownloaded {
-		outboundSelect.Disable()
-	}
-
-	outboundRow := container.NewHBox(
-		widget.NewLabel("Outbound:"),
-		outboundSelect,
-	)
-
-	return outboundSelect, outboundRow
 }
 
-// createSelectableRuleCheckbox создает checkbox для selectable rule.
-// When user checks the box and SRS is not downloaded, we start download and set enableRuleOnSRSSuccess
-// so that on success the rule is enabled (checkbox stays checked).
-func createSelectableRuleCheckbox(
-	presenter *wizardpresentation.WizardPresenter,
-	model *wizardmodels.WizardModel,
-	guiState *wizardpresentation.GUIState,
-	ruleState *wizardmodels.RuleState,
-	idx int,
-	outboundSelect *widget.Select,
-	srsButtonRef **ttwidget.Button,
-	enableRuleOnSRSSuccess *bool,
-) *widget.Check {
-	var checkbox *widget.Check
-	checkbox = widget.NewCheck(ruleState.Rule.Label, func(val bool) {
-		if val && !services.AllSRSDownloaded(model.ExecDir, ruleState.Rule.RuleSets) {
-			if !guiState.UpdatingOutboundOptions && srsButtonRef != nil && *srsButtonRef != nil {
-				*enableRuleOnSRSSuccess = true // on 🔄→✔️ success we will set the checkbox
-				(*srsButtonRef).OnTapped()
-			}
-			checkbox.SetChecked(false)
-			return
-		}
-		// Always update model and UI state to keep them in sync
-		model.SelectableRuleStates[idx].Enabled = val
-		model.TemplatePreviewNeedsUpdate = true
-
-		if outboundSelect != nil {
-			if val {
-				outboundSelect.Enable()
-			} else {
-				outboundSelect.Disable()
-			}
-		}
-
-		// Only mark as changed if not during programmatic update
-		if !guiState.UpdatingOutboundOptions {
-			presenter.MarkAsChanged()
-		}
+func rulesToolbarButtons(
+	p *wizardpresentation.WizardPresenter,
+	showAddRuleDialog ShowAddRuleDialogFunc,
+) fyne.CanvasObject {
+	addRule := widget.NewButton(locale.T("wizard.rules.button_add_rule"), func() {
+		showAddRuleDialog(p, nil, -1)
 	})
-	checkbox.SetChecked(ruleState.Enabled)
-	checkbox.Refresh() // Обновляем визуальное состояние чекбокса
-	return checkbox
+	addRule.Importance = widget.LowImportance
+	addLib := widget.NewButton(locale.T("wizard.rules.button_add_from_library"), func() {
+		ShowRulesLibraryDialog(p, showAddRuleDialog)
+	})
+	addLib.Importance = widget.LowImportance
+	setTooltip(addLib, locale.T("wizard.rules.tooltip_add_from_library"))
+	return container.NewHBox(addRule, addLib)
 }
 
-// createSRSButton создает кнопку ⬇/🔄/✔️ для скачивания SRS.
-// enableRuleOnSRSSuccess: if set by checkbox before starting download, we set the rule checkbox on success.
-func createSRSButton(
-	presenter *wizardpresentation.WizardPresenter,
-	model *wizardmodels.WizardModel,
-	guiState *wizardpresentation.GUIState,
-	ruleState *wizardmodels.RuleState,
-	idx int,
-	srsEntries []services.SRSEntry,
-	checkbox *widget.Check,
-	outboundSelect *widget.Select,
-	enableRuleOnSRSSuccess *bool,
-) *ttwidget.Button {
-	execDir := model.ExecDir
-	initialText := srsBtnDownload
-	if services.AllSRSDownloaded(execDir, ruleState.Rule.RuleSets) {
-		initialText = srsBtnDone
-	}
-
-	btn := ttwidget.NewButton(initialText, nil)
-	btn.Importance = widget.LowImportance
-
-	btn.OnTapped = func() {
-		if execDir == "" {
-			return
-		}
-		btn.Disable()
-		btn.SetText(srsBtnLoading)
-
-		go func() {
-			ctx := context.Background()
-			var lastErr error
-			for _, e := range srsEntries {
-				destPath := services.RuleSRSPath(execDir, e.Tag)
-				if err := services.DownloadSRS(ctx, e.URL, destPath); err != nil {
-					lastErr = err
-					break
-				}
-			}
-
-			presenter.UpdateUI(func() {
-				btn.Enable()
-				if lastErr != nil {
-					btn.SetText(srsBtnDownload)
-					ruleSetsDir := filepath.Join(execDir, constants.BinDirName, constants.RuleSetsDirName)
-					downloadURL := ""
-					if len(srsEntries) > 0 {
-						downloadURL = srsEntries[0].URL
-					}
-					debuglog.DebugLog("rules_tab: showing download failed manual (SRS)")
-					dialogs.ShowDownloadFailedManual(guiState.Window, "Rule-set (SRS) download failed", downloadURL, ruleSetsDir)
-					return
-				}
-				btn.SetText(srsBtnDone)
-				if outboundSelect != nil {
-					outboundSelect.Enable()
-				}
-				// Set rule checkbox only when download was initiated by checkbox click (not by ⬇).
-				if enableRuleOnSRSSuccess != nil && *enableRuleOnSRSSuccess {
-					*enableRuleOnSRSSuccess = false
-					guiState.UpdatingOutboundOptions = true
-					model.SelectableRuleStates[idx].Enabled = true
-					checkbox.SetChecked(true)
-					guiState.UpdatingOutboundOptions = false
-					presenter.MarkAsChanged()
-				} else if ruleState.Rule.IsDefault && !ruleState.Enabled {
-					// Auto-enable default rules when they are first opened (e.g. initial auto-download).
-					guiState.UpdatingOutboundOptions = true
-					model.SelectableRuleStates[idx].Enabled = true
-					checkbox.SetChecked(true)
-					guiState.UpdatingOutboundOptions = false
-					presenter.MarkAsChanged()
-				}
-				model.TemplatePreviewNeedsUpdate = true
-				presenter.MarkAsChanged()
-			})
-		}()
-	}
-
-	return btn
+func rulesOutboundRightEdgeGutter() fyne.CanvasObject {
+	r := canvas.NewRectangle(color.Transparent)
+	r.SetMinSize(fyne.NewSize(rulesOutboundColumnRightGutter, 1))
+	return r
 }
 
-// createSelectableRuleRowContent создает содержимое строки для selectable rule.
-func createSelectableRuleRowContent(
-	ruleState *wizardmodels.RuleState,
-	guiState *wizardpresentation.GUIState,
-	checkbox *widget.Check,
-	outboundRow fyne.CanvasObject,
-	srsButton *ttwidget.Button,
-	srsTooltipText string,
-) []fyne.CanvasObject {
-	// Create checkbox container with optional info button and SRS button
-	checkboxContainer := container.NewHBox(checkbox)
-	if ruleState.Rule.Description != "" {
-		infoButton := widget.NewButton("?", func() {
-			dialog.ShowInformation(ruleState.Rule.Label, ruleState.Rule.Description, guiState.Window)
-		})
-		infoButton.Importance = widget.LowImportance
-		checkboxContainer.Add(infoButton)
-	}
-	if srsButton != nil {
-		if srsTooltipText != "" {
-			srsButton.SetToolTip(srsTooltipText)
-		}
-		checkboxContainer.Add(srsButton)
-	}
-
-	rowContent := []fyne.CanvasObject{checkboxContainer, layout.NewSpacer()}
-	if outboundRow != nil {
-		rowContent = append(rowContent, outboundRow)
-	}
-
-	return rowContent
+// rulesRowEditDeleteLeadWidth — ширина блока Edit+Delete в строке правила (для выравнивания заголовка «Outbound:» над селектами).
+func rulesRowEditDeleteLeadWidth() float32 {
+	e := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() {})
+	d := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {})
+	e.Importance = widget.LowImportance
+	d.Importance = widget.LowImportance
+	return container.NewHBox(e, d).MinSize().Width
 }
 
-// createCustomRulesUI создает UI для пользовательских правил.
-func createCustomRulesUI(
+// createRulesToolbarOutboundHeaderRow — одна строка над скроллом: кнопки слева, подпись столбца Outbound справа над селектами.
+func createRulesToolbarOutboundHeaderRow(
+	p *wizardpresentation.WizardPresenter,
+	showAddRuleDialog ShowAddRuleDialogFunc,
+) fyne.CanvasObject {
+	lead := canvas.NewRectangle(color.Transparent)
+	lead.SetMinSize(fyne.NewSize(rulesRowEditDeleteLeadWidth(), 1))
+	outLbl := widget.NewLabel(locale.T("wizard.rules.label_outbound"))
+	right := container.NewHBox(lead, outLbl, rulesOutboundRightEdgeGutter())
+	return container.NewBorder(nil, nil, rulesToolbarButtons(p, showAddRuleDialog), right, layout.NewSpacer())
+}
+
+func createRulesEmptyState() fyne.CanvasObject {
+	msg := widget.NewLabel(locale.T("wizard.rules.empty_state"))
+	msg.Wrapping = fyne.TextWrapWord
+	return msg
+}
+
+// buildCustomRuleRows строит строки правил: чекбокс, ↑↓, подпись (центр Border), SRS, справа Edit, Del, Select (подпись Outbound — в шапке над скроллом).
+func buildCustomRuleRows(
 	presenter *wizardpresentation.WizardPresenter,
 	model *wizardmodels.WizardModel,
 	guiState *wizardpresentation.GUIState,
@@ -375,32 +245,109 @@ func createCustomRulesUI(
 	for i := range model.CustomRules {
 		customRule := model.CustomRules[i]
 		idx := i
+		srsEntries, isSRSRule := customRuleSRSEntries(customRule)
 
-		// Create outbound selector
-		outboundSelect := createOutboundSelectorForCustomRule(
-			presenter, model, guiState, customRule, idx, availableOutbounds,
+		var row *fynewidget.HoverRow
+		rowGetter := func() *fynewidget.HoverRow { return row }
+
+		outboundWidget := createOutboundSelectorForCustomRule(
+			presenter, model, guiState, customRule, idx, availableOutbounds, rowGetter,
+		)
+		outboundSelect := &outboundWidget.Select
+		if isSRSRule && len(srsEntries) > 0 && !services.AllSRSDownloadedForEntries(model.ExecDir, srsEntries) {
+			outboundSelect.Disable()
+		}
+
+		var srsButton *ttwidget.Button
+		enableRuleOnSRSSuccess := new(bool)
+		checkbox := createRuleEnableCheckbox(presenter, model, guiState, customRule, idx, outboundSelect, &srsButton, enableRuleOnSRSSuccess)
+		label := ttwidget.NewLabel(customRule.Rule.Label)
+		label.Wrapping = fyne.TextWrapOff
+		label.Truncation = fyne.TextTruncateEllipsis
+		if d := strings.TrimSpace(customRule.Rule.Description); d != "" {
+			label.SetToolTip(d)
+		}
+		var srsHF *fynewidget.HoverForwardTTButton
+		if isSRSRule && len(srsEntries) > 0 {
+			srsBtn := createCustomRuleSRSButton(presenter, model, guiState, customRule, idx, srsEntries, checkbox, outboundSelect, enableRuleOnSRSSuccess, rowGetter)
+			srsButton = srsBtn.TTWidget()
+			srsHF = srsBtn
+		}
+
+		moveUpButton, moveDownButton, editButton, deleteButton := createCustomRuleActionButtons(
+			presenter, model, guiState, customRule, idx, showAddRuleDialog, rowGetter,
 		)
 
-		// Create checkbox
-		checkbox := createCustomRuleCheckbox(presenter, model, guiState, customRule, idx, outboundSelect)
-
-		// Create action buttons
-		editButton, deleteButton := createCustomRuleActionButtons(
-			presenter, model, guiState, customRule, idx, showAddRuleDialog,
-		)
-
-		// Create RuleWidget for custom rule
 		customRuleWidget := &wizardpresentation.RuleWidget{
 			Select:    outboundSelect,
 			Checkbox:  checkbox,
+			SRSButton: srsButton,
 			RuleState: customRule,
 		}
 		guiState.RuleOutboundSelects = append(guiState.RuleOutboundSelects, customRuleWidget)
 
-		// Create row content
-		rowContent := createCustomRuleRowContent(checkbox, editButton, deleteButton, outboundSelect)
-		rulesBox.Add(container.NewHBox(rowContent...))
+		// Border: центр под подпись (HBox(left, Spacer, …) давал left только MinSize → «…» у label).
+		leftLead := container.NewHBox(checkbox, moveUpButton, moveDownButton)
+		rightCluster := container.NewHBox(editButton, deleteButton, outboundWidget)
+
+		labelTap := fynewidget.NewTapWrap(label, func() {
+			if checkbox.Disabled() {
+				return
+			}
+			checkbox.SetChecked(!checkbox.Checked)
+		})
+		var center fyne.CanvasObject = labelTap
+		if srsHF != nil {
+			center = container.NewBorder(nil, nil, nil, srsHF, labelTap)
+		}
+		rowInner := container.NewBorder(nil, nil, leftLead, rightCluster, center)
+		row = fynewidget.NewHoverRow(rowInner, fynewidget.HoverRowConfig{})
+		row.WireTooltipLabelHover(label)
+		rulesBox.Add(row)
 	}
+}
+
+// createRuleEnableCheckbox — чекбокс вкл/выкл; подпись правила обёрнута в TapWrap и тоже переключает состояние.
+func createRuleEnableCheckbox(
+	presenter *wizardpresentation.WizardPresenter,
+	model *wizardmodels.WizardModel,
+	guiState *wizardpresentation.GUIState,
+	customRule *wizardmodels.RuleState,
+	idx int,
+	outboundSelect *widget.Select,
+	srsButtonRef **ttwidget.Button,
+	enableRuleOnSRSSuccess *bool,
+) *widget.Check {
+	var ch *widget.Check
+	ch = widget.NewCheck("", func(val bool) {
+		if val {
+			entries, isSRS := customRuleSRSEntries(customRule)
+			if isSRS && len(entries) > 0 && !services.AllSRSDownloadedForEntries(model.ExecDir, entries) {
+				if !guiState.UpdatingOutboundOptions && *srsButtonRef != nil {
+					*enableRuleOnSRSSuccess = true
+					(*srsButtonRef).OnTapped()
+				}
+				ch.SetChecked(false)
+				return
+			}
+		}
+
+		model.CustomRules[idx].Enabled = val
+		model.TemplatePreviewNeedsUpdate = true
+
+		if val {
+			outboundSelect.Enable()
+		} else {
+			outboundSelect.Disable()
+		}
+
+		if !guiState.UpdatingOutboundOptions {
+			presenter.MarkAsChanged()
+		}
+	})
+	ch.SetChecked(customRule.Enabled)
+	setTooltip(ch, locale.T("wizard.rules.tooltip_rule_enabled"))
+	return ch
 }
 
 // createOutboundSelectorForCustomRule создает селектор outbound для custom rule.
@@ -411,23 +358,24 @@ func createOutboundSelectorForCustomRule(
 	customRule *wizardmodels.RuleState,
 	idx int,
 	availableOutbounds []string,
-) *widget.Select {
+	rowGetter fynewidget.RowHoverGetter,
+) *fynewidget.HoverForwardSelect {
 	wizardmodels.EnsureDefaultOutbound(customRule, availableOutbounds)
 
-	outboundSelect := widget.NewSelect(availableOutbounds, func(value string) {
+	sel := fynewidget.NewHoverForwardSelect(availableOutbounds, func(value string) {
 		if guiState.UpdatingOutboundOptions {
 			return
 		}
 		model.CustomRules[idx].SelectedOutbound = value
 		model.TemplatePreviewNeedsUpdate = true
 		presenter.MarkAsChanged()
-	})
-	outboundSelect.SetSelected(customRule.SelectedOutbound)
+	}, rowGetter)
+	sel.SetSelected(customRule.SelectedOutbound)
 	if !customRule.Enabled {
-		outboundSelect.Disable()
+		sel.Disable()
 	}
 
-	return outboundSelect
+	return sel
 }
 
 // createCustomRuleActionButtons создает кнопки редактирования и удаления для custom rule.
@@ -438,20 +386,59 @@ func createCustomRuleActionButtons(
 	customRule *wizardmodels.RuleState,
 	idx int,
 	showAddRuleDialog ShowAddRuleDialogFunc,
-) (*widget.Button, *widget.Button) {
-	// Edit button
-	editButton := widget.NewButton("✏️", func() {
+	rowGetter fynewidget.RowHoverGetter,
+) (*fynewidget.HoverForwardButton, *fynewidget.HoverForwardButton, *fynewidget.HoverForwardButton, *fynewidget.HoverForwardButton) {
+	moveUpButton := fynewidget.NewHoverForwardButton("↑", func() {
+		moveCustomRuleUp(presenter, model, guiState, idx, showAddRuleDialog)
+	}, rowGetter)
+	moveUpButton.Importance = widget.LowImportance
+	if idx <= 0 {
+		moveUpButton.Disable()
+		setTooltip(moveUpButton, locale.T("wizard.rules.tooltip_move_up_off"))
+	} else {
+		setTooltip(moveUpButton, locale.T("wizard.rules.tooltip_move_up"))
+	}
+
+	moveDownButton := fynewidget.NewHoverForwardButton("↓", func() {
+		moveCustomRuleDown(presenter, model, guiState, idx, showAddRuleDialog)
+	}, rowGetter)
+	moveDownButton.Importance = widget.LowImportance
+	if idx >= len(model.CustomRules)-1 {
+		moveDownButton.Disable()
+		setTooltip(moveDownButton, locale.T("wizard.rules.tooltip_move_down_off"))
+	} else {
+		setTooltip(moveDownButton, locale.T("wizard.rules.tooltip_move_down"))
+	}
+
+	// Edit — только иконка (подпись в tooltip, как у удаления)
+	editButton := fynewidget.NewHoverForwardButtonWithIcon("", theme.DocumentCreateIcon(), func() {
 		showAddRuleDialog(presenter, customRule, idx)
-	})
+	}, rowGetter)
 	editButton.Importance = widget.LowImportance
+	setTooltip(editButton, locale.T("wizard.shared.button_edit"))
 
-	// Delete button
-	deleteButton := widget.NewButton("❌", func() {
-		deleteCustomRule(presenter, model, guiState, customRule, showAddRuleDialog)
-	})
+	// Delete button (standard trash icon; confirmation before removal)
+	deleteButton := fynewidget.NewHoverForwardButtonWithIcon("", theme.DeleteIcon(), func() {
+		ruleLabel := strings.TrimSpace(customRule.Rule.Label)
+		if ruleLabel == "" {
+			ruleLabel = locale.T("wizard.rules.dialog_delete_unnamed")
+		}
+		dialog.ShowConfirm(
+			locale.T("wizard.dialog_confirmation"),
+			locale.Tf("wizard.rules.dialog_delete_confirm", ruleLabel),
+			func(ok bool) {
+				if !ok {
+					return
+				}
+				deleteCustomRule(presenter, model, guiState, customRule, showAddRuleDialog)
+			},
+			guiState.Window,
+		)
+	}, rowGetter)
 	deleteButton.Importance = widget.LowImportance
+	setTooltip(deleteButton, locale.T("wizard.rules.button_delete"))
 
-	return editButton, deleteButton
+	return moveUpButton, moveDownButton, editButton, deleteButton
 }
 
 // deleteCustomRule удаляет пользовательское правило.
@@ -470,10 +457,9 @@ func deleteCustomRule(
 		}
 	}
 
-	// Remove from GUIState
 	newRuleWidgets := make([]*wizardpresentation.RuleWidget, 0, len(guiState.RuleOutboundSelects)-1)
 	for _, rw := range guiState.RuleOutboundSelects {
-		if r, ok := rw.RuleState.(*wizardmodels.RuleState); ok && r != customRule {
+		if rw.RuleState != customRule {
 			newRuleWidgets = append(newRuleWidgets, rw)
 		}
 	}
@@ -482,72 +468,85 @@ func deleteCustomRule(
 	model.TemplatePreviewNeedsUpdate = true
 	presenter.MarkAsChanged()
 
-	// Recreate tab content
-	refreshWrapper := func(p *wizardpresentation.WizardPresenter) fyne.CanvasObject {
-		return CreateRulesTab(p, showAddRuleDialog)
-	}
-	presenter.RefreshRulesTab(refreshWrapper)
+	refreshRulesTabFromPresenter(presenter, showAddRuleDialog)
 }
 
-// createCustomRuleCheckbox создает checkbox для custom rule.
-func createCustomRuleCheckbox(
+func moveCustomRuleUp(
 	presenter *wizardpresentation.WizardPresenter,
 	model *wizardmodels.WizardModel,
 	guiState *wizardpresentation.GUIState,
-	customRule *wizardmodels.RuleState,
 	idx int,
-	outboundSelect *widget.Select,
-) *widget.Check {
-	checkbox := widget.NewCheck(customRule.Rule.Label, func(val bool) {
-		// Always update model and UI state to keep them in sync
-		model.CustomRules[idx].Enabled = val
-		model.TemplatePreviewNeedsUpdate = true
-
-		if val {
-			outboundSelect.Enable()
-		} else {
-			outboundSelect.Disable()
-		}
-
-		// Only mark as changed if not during programmatic update
-		if !guiState.UpdatingOutboundOptions {
-			presenter.MarkAsChanged()
-		}
-	})
-	checkbox.SetChecked(customRule.Enabled)
-	return checkbox
-}
-
-// createCustomRuleRowContent создает содержимое строки для custom rule.
-func createCustomRuleRowContent(
-	checkbox *widget.Check,
-	editButton *widget.Button,
-	deleteButton *widget.Button,
-	outboundSelect *widget.Select,
-) []fyne.CanvasObject {
-	return []fyne.CanvasObject{
-		checkbox,
-		editButton,
-		deleteButton,
-		layout.NewSpacer(),
-		container.NewHBox(
-			widget.NewLabel("Outbound:"),
-			outboundSelect,
-		),
-	}
-}
-
-// createAddRuleButton создает кнопку добавления правила.
-func createAddRuleButton(
-	presenter *wizardpresentation.WizardPresenter,
 	showAddRuleDialog ShowAddRuleDialogFunc,
-	rulesBox *fyne.Container,
 ) {
-	addRuleButton := widget.NewButton("➕ Add Rule", func() {
-		showAddRuleDialog(presenter, nil, -1)
-	})
-	addRuleButton.Importance = widget.LowImportance
-	rulesBox.Add(addRuleButton)
+	if idx <= 0 || idx >= len(model.CustomRules) {
+		return
+	}
+	if guiState.RulesScroll != nil {
+		guiState.RulesScrollOffset = guiState.RulesScroll.Offset
+	}
+	model.CustomRules[idx], model.CustomRules[idx-1] = model.CustomRules[idx-1], model.CustomRules[idx]
+	model.TemplatePreviewNeedsUpdate = true
+	presenter.MarkAsChanged()
+
+	refreshRulesTabFromPresenter(presenter, showAddRuleDialog)
+}
+
+func moveCustomRuleDown(
+	presenter *wizardpresentation.WizardPresenter,
+	model *wizardmodels.WizardModel,
+	guiState *wizardpresentation.GUIState,
+	idx int,
+	showAddRuleDialog ShowAddRuleDialogFunc,
+) {
+	if idx < 0 || idx >= len(model.CustomRules)-1 {
+		return
+	}
+	if guiState.RulesScroll != nil {
+		guiState.RulesScrollOffset = guiState.RulesScroll.Offset
+	}
+	model.CustomRules[idx], model.CustomRules[idx+1] = model.CustomRules[idx+1], model.CustomRules[idx]
+	model.TemplatePreviewNeedsUpdate = true
+	presenter.MarkAsChanged()
+
+	refreshRulesTabFromPresenter(presenter, showAddRuleDialog)
+}
+
+// createCustomRuleSRSButton создает кнопку ⬇/🔄/✔️ для пользовательского SRS-правила.
+func createCustomRuleSRSButton(
+	presenter *wizardpresentation.WizardPresenter,
+	model *wizardmodels.WizardModel,
+	guiState *wizardpresentation.GUIState,
+	_ *wizardmodels.RuleState,
+	idx int,
+	srsEntries []services.SRSEntry,
+	checkbox *widget.Check,
+	outboundSelect *widget.Select,
+	enableRuleOnSRSSuccess *bool,
+	rowGetter fynewidget.RowHoverGetter,
+) *fynewidget.HoverForwardTTButton {
+	initialText := srsBtnDownload()
+	if services.AllSRSDownloadedForEntries(model.ExecDir, srsEntries) {
+		initialText = srsBtnDone()
+	}
+	btn := fynewidget.NewHoverForwardTTButton(initialText, nil, rowGetter)
+	btn.Importance = widget.LowImportance
+	if t := srsEntriesTooltip(srsEntries); t != "" {
+		btn.SetToolTip(t)
+	}
+	btn.OnTapped = func() {
+		runSRSDownloadAsync(presenter, model, guiState, srsEntries, btn.TTWidget(), outboundSelect, func() {
+			if *enableRuleOnSRSSuccess {
+				*enableRuleOnSRSSuccess = false
+				guiState.UpdatingOutboundOptions = true
+				model.CustomRules[idx].Enabled = true
+				checkbox.SetChecked(true)
+				guiState.UpdatingOutboundOptions = false
+			}
+			model.TemplatePreviewNeedsUpdate = true
+			presenter.MarkAsChanged()
+		})
+	}
+	return btn
 }
 
 // createFinalOutboundSelect создает селектор финального outbound.
@@ -557,9 +556,7 @@ func createFinalOutboundSelect(
 	guiState *wizardpresentation.GUIState,
 	availableOutbounds []string,
 ) *widget.Select {
-	// Set flag BEFORE creating finalSelect to prevent callback from firing during initialization
 	guiState.UpdatingOutboundOptions = true
-	debuglog.DebugLog("rules_tab: UpdatingOutboundOptions set to true before creating finalSelect")
 
 	wizardbusiness.EnsureFinalSelected(model, availableOutbounds)
 	finalSelect := widget.NewSelect(availableOutbounds, func(value string) {
@@ -578,28 +575,29 @@ func createFinalOutboundSelect(
 }
 
 // buildRulesTabContainer создает финальный контейнер таба правил.
-func buildRulesTabContainer(presenter *wizardpresentation.WizardPresenter, rulesScroll fyne.CanvasObject, finalSelect *widget.Select) fyne.CanvasObject {
+func buildRulesTabContainer(presenter *wizardpresentation.WizardPresenter, headerRow, rulesScroll fyne.CanvasObject, finalSelect *widget.Select) fyne.CanvasObject {
 	model := presenter.Model()
 	row := container.NewHBox(
-		widget.NewLabel("Final outbound:"),
+		widget.NewLabel(locale.T("wizard.rules.label_final_outbound")),
 		finalSelect,
 		layout.NewSpacer(),
 	)
 	if runtime.GOOS == "darwin" {
-		tunCheck := widget.NewCheck("TUN", func(checked bool) {
+		tunLabel := ttwidget.NewLabel(locale.T("wizard.rules.checkbox_tun"))
+		tunLabel.Wrapping = fyne.TextWrapOff
+		tunCwc := fynewidget.NewCheckWithContent(func(checked bool) {
 			model.EnableTunForMacOS = checked
 			model.TemplatePreviewNeedsUpdate = true
 			presenter.MarkAsChanged()
+		}, tunLabel, fynewidget.CheckWithContentConfig{
+			ContentToolTip: locale.T("wizard.rules.tun_help"),
 		})
-		tunCheck.SetChecked(model.EnableTunForMacOS)
-		helpBtn := widget.NewButton("?", func() {
-			dialog.ShowInformation("TUN", "Enabling TUN will require entering your password when starting or stopping the VPN.", presenter.GUIState().Window)
-		})
-		row.Add(tunCheck)
-		row.Add(helpBtn)
+		tunCwc.Check.SetChecked(model.EnableTunForMacOS)
+		tunBlock := container.NewBorder(nil, nil, tunCwc.Check, nil, tunCwc.Content)
+		row.Add(tunBlock)
 	}
 	return container.NewVBox(
-		widget.NewLabel("Selectable rules"),
+		headerRow,
 		rulesScroll,
 		widget.NewSeparator(),
 		row,
@@ -612,7 +610,12 @@ func CreateRulesScroll(guiState *wizardpresentation.GUIState, content fyne.Canva
 	if maxHeight <= 0 {
 		maxHeight = 430
 	}
-	scroll := container.NewVScroll(content)
+	scrollGutter := canvas.NewRectangle(color.Transparent)
+	scrollGutter.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
+	contentWithGutter := container.NewBorder(nil, nil, nil, scrollGutter, content)
+	scroll := container.NewVScroll(contentWithGutter)
 	scroll.SetMinSize(fyne.NewSize(0, maxHeight))
+	scroll.Offset = guiState.RulesScrollOffset
+	guiState.RulesScroll = scroll
 	return scroll
 }

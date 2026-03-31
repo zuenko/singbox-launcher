@@ -1,7 +1,7 @@
 // Package business содержит бизнес-логику визарда конфигурации.
 //
 // Файл outbound.go содержит функции для работы с outbounds:
-//   - GetAvailableOutbounds - получение списка доступных outbound тегов из модели (ParserConfig, GeneratedOutbounds)
+//   - GetAvailableOutbounds - список доступных outbound тегов (ParserConfig или JSON); мемо по trimmed ParserConfigJSON при ParserConfig == nil
 //   - EnsureDefaultAvailableOutbounds - обеспечивает наличие обязательных outbounds (direct-out, reject, drop)
 //   - EnsureFinalSelected - обеспечивает выбранный final outbound в модели
 //
@@ -16,12 +16,14 @@ package business
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 
 	"singbox-launcher/core/config"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 )
 
 // GetAvailableOutbounds возвращает список доступных outbound тегов из модели.
+// При model.ParserConfig == nil и непустом ParserConfigJSON результат кэшируется по строке JSON (сброс — InvalidatePreviewCache).
 func GetAvailableOutbounds(model *wizardmodels.WizardModel) []string {
 	tags := map[string]struct{}{
 		wizardmodels.DefaultOutboundTag: {},
@@ -29,10 +31,26 @@ func GetAvailableOutbounds(model *wizardmodels.WizardModel) []string {
 		"drop":                          {}, // Always include "drop" in available options
 	}
 
+	if model == nil {
+		return sortedOutboundTagSlice(tags)
+	}
+
+	jsonKey := strings.TrimSpace(model.ParserConfigJSON)
+	if model.ParserConfig == nil && jsonKey != "" {
+		if model.AvailableOutboundsMemoKey == jsonKey && len(model.AvailableOutboundsMemoTags) > 0 {
+			out := make([]string, len(model.AvailableOutboundsMemoTags))
+			copy(out, model.AvailableOutboundsMemoTags)
+			return out
+		}
+	} else if model.ParserConfig != nil {
+		model.AvailableOutboundsMemoKey = ""
+		model.AvailableOutboundsMemoTags = nil
+	}
+
 	var parserCfg *config.ParserConfig
 	if model.ParserConfig != nil {
 		parserCfg = model.ParserConfig
-	} else if model.ParserConfigJSON != "" {
+	} else if jsonKey != "" {
 		var parsed config.ParserConfig
 		if err := json.Unmarshal([]byte(model.ParserConfigJSON), &parsed); err == nil {
 			parserCfg = &parsed
@@ -70,6 +88,15 @@ func GetAvailableOutbounds(model *wizardmodels.WizardModel) []string {
 		}
 	}
 
+	result := sortedOutboundTagSlice(tags)
+	if model.ParserConfig == nil && jsonKey != "" {
+		model.AvailableOutboundsMemoKey = jsonKey
+		model.AvailableOutboundsMemoTags = append([]string(nil), result...)
+	}
+	return result
+}
+
+func sortedOutboundTagSlice(tags map[string]struct{}) []string {
 	result := make([]string, 0, len(tags))
 	for tag := range tags {
 		result = append(result, tag)

@@ -327,7 +327,7 @@ jobs:
           fi
 
       - name: Upload Catalina artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: artifacts-macos-catalina
           path: |
@@ -336,7 +336,7 @@ jobs:
           retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 1 || 30 }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: artifacts-darwin
           path: dist/*
@@ -397,7 +397,7 @@ jobs:
           move /y singbox-launcher.exe dist\singbox-launcher.exe
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: artifacts-windows
           path: dist/*
@@ -411,6 +411,8 @@ jobs:
           (github.event.inputs.target == '' || contains(github.event.inputs.target, 'Win7')))
     needs: meta
     runs-on: windows-latest
+    env:
+      GOFLAGS: -mod=mod
 
     steps:
       - name: Checkout code
@@ -419,7 +421,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go (legacy)
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.20.14'
           cache: true
@@ -436,8 +438,18 @@ jobs:
           Copy-Item -Force go.mod go.mod.orig
           (Get-Content go.mod) -replace 'go\s+[0-9]+\.[0-9]+(\.[0-9]+)?','go 1.20' | Set-Content go.mod
 
+      - name: Remove Win7 sum file (always regenerate on CI)
+        shell: pwsh
+        run: |
+          if (Test-Path go.win7.sum) {
+            Remove-Item go.win7.sum -Force
+          }
+
       - name: Download dependencies
-        run: go mod download
+        run: go mod download "-modfile=go.win7.mod"
+
+      - name: Populate Win7 go.sum entries
+        run: go get "-modfile=go.win7.mod" ./...
 
       # MSYS2 нужен ТОЛЬКО для сборки
       - name: Setup MSYS2 (MINGW32)
@@ -457,6 +469,7 @@ jobs:
           GOOS: windows
           GOARCH: 386
           CGO_ENABLED: 1
+          GOFLAGS: -mod=mod
           APP_VERSION: ${{ needs.meta.outputs.version }}
         run: |
           set -e
@@ -490,7 +503,7 @@ jobs:
             objdump -f rsrc.syso || true
           fi
 
-          go build -v \
+          go build -modfile=go.win7.mod -v \
             -tags desktop \
             -trimpath \
             -ldflags "-s -w -H windowsgui -X main.Version=$APP_VERSION" \
@@ -499,7 +512,7 @@ jobs:
           ls -lh dist/singbox-launcher-win7-32.exe
 
       - name: Upload artifacts (Win7 x86)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: artifacts-windows-win7-32
           path: dist/singbox-launcher-win7-32.exe
@@ -551,7 +564,7 @@ jobs:
           fi
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           path: release-artifacts
 

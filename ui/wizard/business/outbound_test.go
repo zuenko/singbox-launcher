@@ -1,6 +1,8 @@
 package business
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 
 	"singbox-launcher/core/config"
@@ -77,6 +79,29 @@ func TestGetAvailableOutbounds(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestGetAvailableOutbounds_MemoJSONPath(t *testing.T) {
+	jsonText := `{
+					"ParserConfig": {
+						"outbounds": [
+							{"tag": "memo-test-out", "type": "selector"}
+						]
+					}
+				}`
+	model := &wizardmodels.WizardModel{ParserConfigJSON: jsonText}
+	a := GetAvailableOutbounds(model)
+	b := GetAvailableOutbounds(model)
+	if !reflect.DeepEqual(a, b) {
+		t.Fatalf("second call should return same tags as memo hit: a=%v b=%v", a, b)
+	}
+	if model.AvailableOutboundsMemoKey != strings.TrimSpace(jsonText) {
+		t.Fatalf("memo key not set: got %q", model.AvailableOutboundsMemoKey)
+	}
+	InvalidatePreviewCache(model)
+	if model.AvailableOutboundsMemoKey != "" {
+		t.Fatal("InvalidatePreviewCache should clear outbound memo")
 	}
 }
 

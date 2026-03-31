@@ -8,9 +8,8 @@
 //   - UpdateSaveProgress, UpdateSaveButtonText - управление прогрессом и кнопкой Save
 //
 // UIUpdater позволяет бизнес-логике обновлять GUI без прямой зависимости от Fyne виджетов.
-// Все методы обеспечивают безопасное обновление GUI из других горутин через SafeFyneDo
-// (определена в presenter.go), что предотвращает паники при обновлении Fyne виджетов
-// не из главного потока.
+// Большинство методов шлют работу в UI через SafeFyneDo (presenter.go). Исключение:
+// UpdateParserConfig обновляет entry синхронно на потоке вызывающего кода (см. комментарий у метода).
 //
 // Реализация UIUpdater - это отдельная ответственность от других методов презентера.
 // Содержит много однотипных методов обновления разных виджетов.
@@ -22,15 +21,29 @@
 //   - presenter_async.go - вызывает UpdateTemplatePreview при обновлении preview
 package presentation
 
-// UpdateParserConfig обновляет текст ParserConfig.
+import "singbox-launcher/internal/locale"
+
+// UpdateParserConfig обновляет текст поля ParserConfig и список конфигуратора outbounds.
+//
+// Выполняется синхронно на потоке вызывающего кода. Нельзя откладывать через fyne.Do без ожидания:
+// иначе следующий MergeGUIToModel (например второе нажатие Add подряд) прочитает устаревший текст
+// entry и затрёт model.ParserConfigJSON — append снова посчитает len(proxies) как до первого Add
+// и выдаст тот же числовой tag_prefix.
+//
+// Все текущие вызовы идут из обработчиков UI Fyne (главный поток).
 func (p *WizardPresenter) UpdateParserConfig(text string) {
-	p.UpdateUI(func() {
-		if p.guiState.ParserConfigEntry != nil {
-			p.guiState.ParserConfigUpdating = true
-			p.guiState.ParserConfigEntry.SetText(text)
-			p.guiState.ParserConfigUpdating = false
-		}
-	})
+	if p.guiState == nil {
+		return
+	}
+	if p.guiState.ParserConfigEntry != nil {
+		p.guiState.ParserConfigUpdating = true
+		p.guiState.ParserConfigEntry.SetText(text)
+		p.guiState.ParserConfigUpdating = false
+	}
+	p.guiState.LastValidParserConfigJSON = text
+	if p.guiState.RefreshOutboundsConfiguratorList != nil {
+		p.guiState.RefreshOutboundsConfiguratorList()
+	}
 }
 
 // UpdateTemplatePreview обновляет текст preview шаблона.
@@ -41,9 +54,9 @@ func (p *WizardPresenter) UpdateTemplatePreview(text string) {
 
 	if len(text) > 50000 {
 		p.UpdateUI(func() {
-			p.guiState.TemplatePreviewEntry.SetText("Loading large preview...")
+			p.guiState.TemplatePreviewEntry.SetText(locale.T("wizard.preview.loading_large"))
 			if p.guiState.TemplatePreviewStatusLabel != nil {
-				p.guiState.TemplatePreviewStatusLabel.SetText("⏳ Loading large preview...")
+				p.guiState.TemplatePreviewStatusLabel.SetText(locale.T("wizard.preview.status_loading_large"))
 			}
 		})
 
