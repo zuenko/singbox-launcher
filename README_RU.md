@@ -939,7 +939,6 @@ git clone https://github.com/Leadaxe/singbox-launcher.git
 cd singbox-launcher
 
 # Соберите универсальный бинарник (по умолчанию)
-chmod +x build/build_darwin.sh
 ./build/build_darwin.sh
 # или явно:
 ./build/build_darwin.sh universal
@@ -1007,7 +1006,6 @@ cd singbox-launcher
 go mod download
 
 # Соберите проект
-chmod +x build/build_linux.sh
 ./build/build_linux.sh
 ```
 

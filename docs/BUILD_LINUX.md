@@ -36,7 +36,6 @@
 
 ```bash
 cd /path/to/singbox-launcher
-chmod +x build/build_linux.sh
 ./build/build_linux.sh
 ```
 

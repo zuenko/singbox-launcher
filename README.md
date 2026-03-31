@@ -738,7 +738,6 @@ git clone https://github.com/Leadaxe/singbox-launcher.git
 cd singbox-launcher
 
 # Build universal binary (default)
-chmod +x build/build_darwin.sh
 ./build/build_darwin.sh
 # or explicitly:
 ./build/build_darwin.sh universal
@@ -815,7 +814,6 @@ cd singbox-launcher
 
 go mod download
 
-chmod +x build/build_linux.sh
 ./build/build_linux.sh
 ```
 

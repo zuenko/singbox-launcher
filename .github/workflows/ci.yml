@@ -305,8 +305,7 @@ jobs:
           GOOS: darwin
           APP_VERSION: ${{ needs.meta.outputs.version }}
         run: |
-          chmod +x build/build_darwin.sh
-          build/build_darwin.sh universal
+          ./build/build_darwin.sh universal
           mkdir -p dist
           mv -f singbox-launcher.app dist/
 
@@ -317,8 +316,7 @@ jobs:
           GOOS: darwin
           APP_VERSION: ${{ needs.meta.outputs.version }}
         run: |
-          chmod +x build/build_darwin.sh
-          build/build_darwin.sh catalina
+          ./build/build_darwin.sh catalina
           mkdir -p dist
           if [ -d "singbox-launcher.app" ]; then
             mv -f singbox-launcher.app dist/singbox-launcher-macos-catalina.app
