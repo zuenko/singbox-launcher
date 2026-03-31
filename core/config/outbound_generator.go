@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"strings"
 
+	"singbox-launcher/core/config/subscription"
 	"singbox-launcher/internal/debuglog"
 )
 
@@ -400,6 +401,7 @@ func GenerateNodeJSON(node *ParsedNode) (string, error) {
 						utlsParts = append(utlsParts, fmt.Sprintf(`"enabled":%v`, utlsEnabled))
 					}
 					if fingerprint, ok := utls["fingerprint"].(string); ok {
+						fingerprint = subscription.NormalizeUTLSFingerprint(fingerprint)
 						utlsParts = append(utlsParts, fmt.Sprintf(`"fingerprint":%s`, marshalJSONString(fingerprint)))
 					}
 					utlsJSON := "{" + strings.Join(utlsParts, ",") + "}"

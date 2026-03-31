@@ -40,8 +40,9 @@ func tlsInsecureTrue(q url.Values) bool {
 	return false
 }
 
-// normalizeUTLSFingerprint maps subscription variants to sing-box utls names (lowercase).
-func normalizeUTLSFingerprint(fp string) string {
+// NormalizeUTLSFingerprint maps subscription variants to sing-box utls names (lowercase).
+// sing-box rejects values like "QQ"; the canonical name is "qq".
+func NormalizeUTLSFingerprint(fp string) string {
 	fp = strings.TrimSpace(strings.ToLower(fp))
 	if fp == "" {
 		return ""
@@ -194,7 +195,10 @@ func vlessTLSFromNode(node *configtypes.ParsedNode) (map[string]interface{}, boo
 	if sni == "" {
 		sni = node.Server
 	}
-	fp := normalizeUTLSFingerprint(queryGetFold(q, "fp"))
+	fp := NormalizeUTLSFingerprint(queryGetFold(q, "fp"))
+	if fp == "" {
+		fp = NormalizeUTLSFingerprint(queryGetFold(q, "fingerprint"))
+	}
 	if fp == "" {
 		fp = "random"
 	}
@@ -271,7 +275,7 @@ func trojanTLSFromNode(node *configtypes.ParsedNode) map[string]interface{} {
 		"enabled":     true,
 		"server_name": sni,
 	}
-	if fp := normalizeUTLSFingerprint(queryGetFold(q, "fp")); fp != "" {
+	if fp := NormalizeUTLSFingerprint(queryGetFold(q, "fp")); fp != "" {
 		tlsData["utls"] = map[string]interface{}{
 			"enabled":     true,
 			"fingerprint": fp,

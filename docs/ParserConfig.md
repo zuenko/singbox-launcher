@@ -541,7 +541,7 @@ Round-trip и выборочные сценарии: `core/config/subscription/s
 - `flow` — подпротокол VLESS в sing-box (например `xtls-rprx-vision`), см. [доку VLESS](https://sing-box.sagernet.org/configuration/outbound/vless/). Если в ссылке **нет** `flow`, но задан **REALITY** (`pbk` + обычно `sid`) и транспорт **не** `ws` / `grpc` / `http` / `xhttp` / `httpupgrade` (только «голый» TCP), в outbound подставляется `flow: xtls-rprx-vision` — многие серверы без этого не поднимают сессию.
 - `security` — `none` | `tls` | `reality`; при `none` TLS в outbound не добавляется
 - `sni` — имя для SNI / проверки сертификата → `tls.server_name`; при пустом `sni` используется **`peer`** (тот же смысл в части подписок)
-- `fp` — отпечаток uTLS → `tls.utls.fingerprint` (значения: `chrome`, `firefox`, `qq`, `random`, …)
+- `fp`, **`fingerprint`** — отпечаток uTLS → `tls.utls.fingerprint`. Допустимые строки — как в [документации sing-box (TLS, utls, fingerprint)](https://sing-box.sagernet.org/configuration/shared/tls/#outbound): перечисление там в **нижнем регистре** (`chrome`, `firefox`, `qq`, `random`, `randomized`, …). Значения из ссылок и поле при **генерации** `config.json` приводятся к нижнему регистру, иначе sing-box может вернуть ошибку вида `unknown uTLS fingerprint` для вариантов вроде `QQ`.
 - `alpn` — список через запятую → `tls.alpn`
 - `insecure`, `allowInsecure` / `allowinsecure` — при `1` / `true` → `tls.insecure`
 - `pbk`, `sid` — Reality → `tls.reality.public_key`, `short_id`

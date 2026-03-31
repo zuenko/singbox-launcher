@@ -678,7 +678,7 @@ func buildOutbound(node *configtypes.ParsedNode) map[string]interface{} {
 				tlsData["alpn"] = alpnList
 			}
 
-			if fp := normalizeUTLSFingerprint(node.Query.Get("fp")); fp != "" {
+			if fp := NormalizeUTLSFingerprint(queryGetFold(node.Query, "fp")); fp != "" {
 				tlsData["utls"] = map[string]interface{}{
 					"enabled":     true,
 					"fingerprint": fp,

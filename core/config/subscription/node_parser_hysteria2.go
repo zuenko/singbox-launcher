@@ -88,9 +88,9 @@ func buildHysteria2TLS(node *configtypes.ParsedNode, outbound map[string]interfa
 		tlsData["insecure"] = true
 	}
 
-	fp := normalizeUTLSFingerprint(queryGetFold(q, "fp"))
+	fp := NormalizeUTLSFingerprint(queryGetFold(q, "fp"))
 	if fp == "" {
-		fp = normalizeUTLSFingerprint(queryGetFold(q, "fingerprint"))
+		fp = NormalizeUTLSFingerprint(queryGetFold(q, "fingerprint"))
 	}
 	if fp != "" {
 		tlsData["utls"] = map[string]interface{}{

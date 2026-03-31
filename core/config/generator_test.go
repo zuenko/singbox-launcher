@@ -320,6 +320,51 @@ func TestGenerateNodeJSON_VLESS_WSTransportNoTLS(t *testing.T) {
 	}
 }
 
+// sing-box rejects uTLS fingerprints with wrong casing (e.g. "QQ"); emit lowercase (issue #45).
+func TestGenerateNodeJSON_UTLSFingerprintLowercase(t *testing.T) {
+	node := &ParsedNode{
+		Scheme: "vless",
+		Tag:    "t-fp",
+		Server: "example.com",
+		Port:   443,
+		UUID:   "a0ee37a5-1844-4087-bc5c-1db6f416d38c",
+		Outbound: map[string]interface{}{
+			"tls": map[string]interface{}{
+				"enabled":     true,
+				"server_name": "example.com",
+				"utls": map[string]interface{}{
+					"enabled":     true,
+					"fingerprint": "QQ",
+				},
+			},
+		},
+	}
+	jsonStr, err := GenerateNodeJSON(node)
+	if err != nil {
+		t.Fatalf("GenerateNodeJSON: %v", err)
+	}
+	if strings.Contains(jsonStr, `"QQ"`) {
+		t.Fatalf("expected no uppercase QQ in JSON:\n%s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"fingerprint":"qq"`) {
+		t.Fatalf("expected lowercase qq fingerprint:\n%s", jsonStr)
+	}
+}
+
+// VLESS URI may use fingerprint= instead of fp=; same normalization as hysteria2.
+func TestParseNode_VLESS_FingerprintQueryAlias(t *testing.T) {
+	uri := "vless://a0ee37a5-1844-4087-bc5c-1db6f416d38c@example.com:443?encryption=none&security=tls&sni=example.com&fingerprint=QQ#t"
+	node, err := subscription.ParseNode(uri, nil)
+	if err != nil || node == nil {
+		t.Fatalf("ParseNode: %v", err)
+	}
+	tls := node.Outbound["tls"].(map[string]interface{})
+	ut := tls["utls"].(map[string]interface{})
+	if ut["fingerprint"] != "qq" {
+		t.Fatalf("fingerprint: %+v", ut)
+	}
+}
+
 // GenerateNodeJSON must emit username and password for SOCKS5 (from node.Outbound / URI userinfo).
 func TestGenerateNodeJSON_SOCKS5_WithAuth(t *testing.T) {
 	uri := "socks5://myuser:mypass@proxy.example.com:1080#Office"
