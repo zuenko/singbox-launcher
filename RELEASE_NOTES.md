@@ -4,47 +4,19 @@
 
 ---
 
-### Выжимка (RU)
+### Выжимка (RU) — v0.8.5
 
-- **Визард и главное окно**  
-  Отступ под скролл (Rules, Sources, DNS — только список серверов, вкладка **Servers** — внутри строки прокси). **Rules:** один список **`custom_rules`** в `state.json` (v3, **Add from library**), см. **docs/WIZARD_STATE.md**; порядок ↑/↓, удаление с подтверждением; обновление outbound не сбрасывает несохранённые правки. Sources: компактно «подпись + копирование»; **Изменить** — окно источника (настройки; просмотр: локальные outbounds и серверы; JSON только чтение; **исключить из глобальных**, **теги в глобальных группах** — см. **docs/ParserConfig.md**). Тихий sync при смене вкладок и корректный **hasChanges**, в том числе после правок списка Outbounds. Списки строк (Rules, Sources, outbounds на вкладке Outbounds, DNS, библиотека правил): лёгкая подсветка при наведении (**`HoverRow`**).
+Кратко: визард (DNS, Rules v3, Sources, gutter, hover-строки, правка источника, несохранённое), парсер и генерация (лимит узлов 3000, URI/UTF-8/sing-box check), вкладка Servers (ПКМ, share URI, фильтр ошибок пинга, мультивыбор, ScrollToTop), Clash API (кодирование имён), настройки пинга, сборка Linux/macOS, шаблон DNS и sing-box 1.13+.
 
-- **Вкладка DNS**  
-  `dns.servers`, `dns.rules` одним JSON `{"rules":[...]}`, final, strategy, кэш, default domain resolver. Состояние в **`dns_options`** в `state.json`. Чекбоксы **enabled**, скелетные строки из шаблона, тултипы, частичный refresh селектов вместо полной пересборки списка.
+**Полный список изменений:** [docs/release_notes/0-8-5.md](docs/release_notes/0-8-5.md).
 
-- **Парсер и sing-box**  
-  VLESS / Trojan / VMess: транспорты и TLS из URI; для Xray `xtls-rprx-vision-udp443` в сгенерированном JSON — vision и при необходимости `packet_encoding`. SOCKS5: `socks5://` и `socks://` → в конфиге `type: socks`, `version: "5"`, при наличии в URI — `username` / `password`. Подписка: `tag_prefix` из `#fragment` в URL. UTF-8 (обрезка по рунам), нормализация тегов вроде `❯` → ` > `.
+### Draft highlights (EN) — v0.8.5
 
-- **Clash API**  
-  Percent-encode имён прокси/групп в delay и switch (исправление 404 на сложных тегах).
+Wizard (DNS tab, Rules v3, Sources, scroll gutters, row hover, per-source edit, unsaved flow), parser and config generation (3000 nodes cap, URI edge cases, `sing-box check`), Servers tab (context menu, share URI, ping-error filter, multi-select, scroll after switch), Clash API path encoding, launcher ping settings, Linux/macOS build notes, wizard template DNS and sing-box 1.13+ mixed inbound.
 
-- **Вкладка Servers — ПКМ и share-ссылка**  
-  Правый клик по **строке** списка (обёртка **`SecondaryTapWrap`**): первая строка меню — тип из **`GET /proxies`** (`ProxyInfo.ClashType`, в нижнем регистре, или «тип неизвестен»); вторая — **«Копировать ссылку»** — сборка URI из **`config.json`** без повторной загрузки подписок: сначала **`outbounds[]`** по тегу, иначе **WireGuard** в **`endpoints[]`** (`ShareProxyURIForOutboundTag`, один разбор JSON на действие). Поддерживаемые протоколы кодировщика — как в **docs/ParserConfig.md** (раздел Share URI). Неподдерживаемые outbounds — локализованное сообщение (`ErrShareURINotSupported`). Подробная спецификация и отчёт: **[SPECS/025-F-C-SERVERS_CONTEXT_MENU_SHARE_URI/](SPECS/025-F-C-SERVERS_CONTEXT_MENU_SHARE_URI/)** (SPEC / PLAN / TASKS / **IMPLEMENTATION_REPORT**).
+**Full changelog:** [docs/release_notes/0-8-5.md](docs/release_notes/0-8-5.md).
 
-- **Настройки лаунчера (`bin/settings.json`)**  
-  Опционально **`ping_test_url`** (URL для query `url` в Clash delay) и **`ping_test_all_concurrency`** (параллелизм массового пинга на Servers); читаются при старте в **`main.go`**.
-
-- **Сборка**  
-  Linux: проверка зависимостей, [docs/BUILD_LINUX.md](docs/BUILD_LINUX.md), опциональный Docker. macOS: `build_darwin.sh` (`-i`, `arm64`, справка).
-
-- **Шаблон визарда**  
-  Переработан блок DNS в `bin/wizard_template.json`; рекомендуется сбросить сохранённый шаблон в каталоге данных приложения.
-
-- **Внутреннее**  
-  `MergeGUIToModel`, `NewCheckWithContent`, **`HoverRow`** / **`HoverForward*`** (визард), `NewSecondaryTapWrap`, `ShareURIFromOutbound` / `outbound_share`, обновления документации и локалей.
-
-### Draft highlights (EN)
-
-- **Wizard & UI:** Scrollbar gutters; **Rules** — single **`custom_rules`** list, **Add from library**, state v3 (**docs/WIZARD_STATE.md**); Sources / DNS UX; **Edit** per source (settings + preview with local outbounds + servers + read-only JSON, `exclude_from_global`, `expose_group_tags_to_global` — **docs/ParserConfig.md**); DNS tab with JSON `dns.rules`, `dns_options` in state, enabled servers, tooltips, faster DNS-related updates. List rows (Rules, Sources, Outbounds list, DNS, library modal): **hover row highlight** (**`internal/fynewidget.HoverRow`**).
-- **Unsaved changes:** Quieter tab sync; Outbounds list correctly marks config dirty after edits.
-- **Parser:** VLESS/Trojan/VMess transports & TLS from URI; vision-udp443 → sing-box–compatible JSON; SOCKS5 with credentials and `version: "5"`; subscription `#fragment` → `tag_prefix`; UTF-8 and tag normalization.
-- **Clash API:** Encoded proxy/group names in API paths.
-- **Servers tab — context menu & share link:** Right-click the **proxy row** (`SecondaryTapWrap`): first menu line is Clash **`type`** (lowercase, from `ProxyInfo.ClashType`) or a localized unknown label; second line **Copy link** builds a subscription-style URI from **`config.json`** (`outbounds[]`, else WireGuard `endpoints[]`) in one JSON parse per action (`ShareProxyURIForOutboundTag`, `subscription.ShareURIFromOutbound` / `ShareURIFromWireGuardEndpoint`). See **docs/ParserConfig.md** (Share URI) and full spec **[SPECS/025-F-C-SERVERS_CONTEXT_MENU_SHARE_URI/](SPECS/025-F-C-SERVERS_CONTEXT_MENU_SHARE_URI/)**.
-- **Launcher settings:** Optional **`ping_test_url`** and **`ping_test_all_concurrency`** in **`bin/settings.json`** (applied at startup from **`main.go`**).
-- **Build:** Linux dependency checks + docs + optional Docker; macOS script options (`-i`, `arm64`).
-- **Template:** Wizard DNS defaults reworked — see full draft.
-
-*Details:* [docs/release_notes/upcoming.md](docs/release_notes/upcoming.md)
+*Черновик следующего релиза:* [docs/release_notes/upcoming.md](docs/release_notes/upcoming.md)
 
 ---
 
@@ -52,6 +24,7 @@
 
 | Версия | Описание |
 |--------|----------|
+| **v0.8.5** | [docs/release_notes/0-8-5.md](docs/release_notes/0-8-5.md) |
 | **v0.8.4** | [docs/release_notes/0-8-4.md](docs/release_notes/0-8-4.md) |
 | **v0.8.3** | [docs/release_notes/0-8-3.md](docs/release_notes/0-8-3.md) |
 | **v0.8.2** | [docs/release_notes/0-8-2.md](docs/release_notes/0-8-2.md) |
