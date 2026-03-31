@@ -68,6 +68,8 @@
 
 - **macOS build script:** `build_darwin.sh` supports `-i` (if the app already exists in `/Applications`, only the executable is updated so `Contents/MacOS/bin/` and logs are kept; otherwise full `.app` copy; then removes the built `.app` from the project directory), `arm64` for a fast Apple Silicon–only build, and `-h` / `--help` (parsed before `go mod tidy`). README documents the options.
 
+- **Wizard template — sing-box 1.13+ (macOS mixed):** Default `bin/wizard_template.json` drops deprecated listen fields `sniff` and `sniff_override_destination` from the `mixed` inbound (`proxy-in`); prepends `route.rules` with `action: resolve` and `action: sniff` for that inbound. `set_system_proxy` is unchanged. Closes [Issue #46](https://github.com/Leadaxe/singbox-launcher/issues/46).
+
 - **Wizard template — DNS:** The default `bin/wizard_template.json` DNS section was reworked: `local` resolver, separate UDP servers (e.g. Cloudflare 1.1.1.1 and a Google UDP bootstrap for DoH), Google DoH endpoints use host `dns.google` with `domain_resolver`, and `dns.final` targets the system local resolver. Legacy `bin/config_template.json` and `bin/config_template_macos.json` were removed from the repo. **Recommendation:** delete or reset your saved wizard/parser template in the app data directory so the next run picks up the bundled template and new DNS defaults (otherwise an old copy keeps the previous DNS block).
 
 ### Technical / Internal
@@ -177,6 +179,8 @@
 - **Сборка на Linux:** скрипт `build_linux.sh` проверяет наличие системных пакетов (OpenGL/X11) и выводит команды установки для Debian/Ubuntu и Fedora. В README и в новом `docs/BUILD_LINUX.md` описаны зависимости; добавлен опциональный `build/Dockerfile.linux` для сборки без установки dev-пакетов (см. [Issue #40](https://github.com/Leadaxe/singbox-launcher/issues/40)).
 
 - **Сборка macOS:** в `build_darwin.sh` флаг `-i` при уже установленном приложении обновляет только исполняемый файл (сохраняются `Contents/MacOS/bin/` и логи), при первой установке копируется весь `.app`, после успеха удаляется собранный `.app` из каталога проекта; режим `arm64`; `-h` / `--help` до `go mod tidy`. В README описаны опции.
+
+- **Шаблон визарда — sing-box 1.13+ (macOS, mixed):** в `bin/wizard_template.json` у inbound `mixed` (`proxy-in`) убраны устаревшие listen-поля **`sniff`** и **`sniff_override_destination`**; в начало **`route.rules`** добавлены действия **`resolve`** и **`sniff`** для этого inbound. **`set_system_proxy`** без изменений. Закрывает [Issue #46](https://github.com/Leadaxe/singbox-launcher/issues/46).
 
 - **Шаблон визарда — DNS:** в дефолтном `bin/wizard_template.json` сильно переработана секция DNS: локальный резолвер, отдельные UDP-серверы (в т.ч. Cloudflare 1.1.1.1 и UDP-bootstrap под Google DoH), для Google DoH указан хост `dns.google` с `domain_resolver`, `dns.final` ведёт на системный локальный DNS. Из репозитория убраны устаревшие `bin/config_template.json` и `bin/config_template_macos.json`. **Рекомендация:** удалить или сбросить сохранённый шаблон визарда/парсера в каталоге данных приложения, чтобы при следующем запуске подтянулся встроенный шаблон и новые настройки DNS (иначе останется старая копия с прежней DNS-секцией).
 

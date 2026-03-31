@@ -117,7 +117,6 @@
   },
 
   "dns_options": {
-    "strategy": "prefer_ipv4",
     "independent_cache": false,
     "servers": [
       {
@@ -473,8 +472,6 @@
           "tag": "proxy-in",
           "listen": "127.0.0.1",
           "listen_port": 7890,
-          "sniff": true,
-          "sniff_override_destination": true,
           "set_system_proxy": true
         }
       ],
@@ -487,6 +484,15 @@
       "value": [
         { "inbound": "tun-in", "action": "resolve", "strategy": "prefer_ipv4" },
         { "inbound": "tun-in", "action": "sniff", "timeout": "1s" }
+      ]
+    },
+    {
+      "name": "route.rules",
+      "platforms": ["darwin"],
+      "mode": "prepend",
+      "value": [
+        { "inbound": "proxy-in", "action": "resolve", "strategy": "prefer_ipv4" },
+        { "inbound": "proxy-in", "action": "sniff", "timeout": "1s" }
       ]
     }
   ]
