@@ -415,7 +415,7 @@ When a rule has an `outbound` field, the wizard provides a dropdown with the fol
 
 **Example Template Structure:**
 
-```json
+```jsonc
 {
   "parser_config": {
     "ParserConfig": {
@@ -476,7 +476,7 @@ In addition to template rules, users can create their own rules directly in the 
 
 Custom rules are saved in the standard sing-box rule format:
 
-```json
+```jsonc
 {
   "route": {
     "rules": [

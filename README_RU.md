@@ -518,7 +518,7 @@ singbox-launcher/
 
 **Пример структуры шаблона:**
 
-```json
+```jsonc
 {
   "parser_config": {
     "ParserConfig": {
@@ -579,7 +579,7 @@ singbox-launcher/
 
 Пользовательские правила сохраняются в стандартном формате правил sing-box:
 
-```json
+```jsonc
 {
   "route": {
     "rules": [
