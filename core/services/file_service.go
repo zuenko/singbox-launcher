@@ -3,7 +3,7 @@
 // FileService управляет файловыми путями и лог-файлами приложения.
 //
 // Ответственности:
-//   - Определение путей к исполняемым файлам и конфигурации (ExecDir, ConfigPath, SingboxPath)
+//   - Определение путей к исполняемым файлам и конфигурации (ExecDir, ConfigPath, SingboxPath, SingboxBundledPath)
 //   - Создание необходимых директорий (logs/, bin/) при старте
 //   - Управление жизненным циклом лог-файлов (открытие, закрытие)
 //   - Ротация логов при превышении размера (максимум 1 старый файл на каждый лог)
@@ -49,7 +49,10 @@ type FileService struct {
 	// ConfigPath — полный путь к config.json (платформозависимый).
 	ConfigPath string
 
-	// SingboxPath — полный путь к исполняемому файлу sing-box (bin/sing-box или bin/sing-box.exe).
+	// SingboxBundledPath — локальный bin/sing-box (или .exe): цель установки ядра из лаунчера (Core → Download).
+	SingboxBundledPath string
+
+	// SingboxPath — путь для запуска sing-box, проверки версии и capabilities (на Linux может быть из PATH).
 	SingboxPath string
 
 	// WintunPath — полный путь к wintun.dll (только Windows, пустая строка на других платформах).
@@ -89,7 +92,8 @@ func NewFileService() (*FileService, error) {
 
 	fs.ConfigPath = platform.GetConfigPath(fs.ExecDir)
 	singboxName := platform.GetExecutableNames()
-	fs.SingboxPath = filepath.Join(fs.ExecDir, "bin", singboxName)
+	fs.SingboxBundledPath = filepath.Join(fs.ExecDir, "bin", singboxName)
+	fs.SingboxPath = platform.ResolveSingboxExecPath(fs.ExecDir, fs.SingboxBundledPath)
 	fs.WintunPath = platform.GetWintunPath(fs.ExecDir)
 
 	return fs, nil

@@ -612,7 +612,7 @@ singbox-launcher/
 - `GetMainLogFile()` - получение основного лог-файла
 - `GetChildLogFile()` - получение лог-файла дочернего процесса
 - `GetApiLogFile()` - получение лог-файла API
-- Поля: `ExecDir`, `ConfigPath`, `SingboxPath`, `WintunPath`
+- Поля: `ExecDir`, `ConfigPath`, `SingboxPath` (запуск/версия; на Linux может указывать на `PATH`), `SingboxBundledPath` (локальный `bin/` — установка из лаунчера), `WintunPath`
 
 #### Config (`core/config/`)
 

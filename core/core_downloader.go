@@ -100,7 +100,7 @@ func (ac *AppController) DownloadCore(ctx context.Context, version string, progr
 
 	// 6. Copy binary to target directory
 	progressChan <- DownloadProgress{Progress: 90, Message: "Installing binary...", Status: "extracting"}
-	if err := ac.installBinary(binaryPath, ac.FileService.SingboxPath); err != nil {
+	if err := ac.installBinary(binaryPath, ac.FileService.SingboxBundledPath); err != nil {
 		progressChan <- DownloadProgress{Progress: 0, Message: fmt.Sprintf("Installation failed: %v", err), Status: "error", Error: fmt.Errorf("DownloadCore: %w", err)}
 		return
 	}

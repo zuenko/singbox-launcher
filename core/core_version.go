@@ -61,15 +61,12 @@ func (ac *AppController) GetInstalledCoreVersion() (string, error) {
 
 // GetCoreBinaryPath возвращает путь к бинарнику sing-box для отображения
 func (ac *AppController) GetCoreBinaryPath() string {
-	singboxName := platform.GetExecutableNames()
-	// Для отображения убираем полный путь, оставляем только bin/sing-box.exe или bin/sing-box
-	binDir := platform.GetBinDir(ac.FileService.ExecDir)
-	relPath, err := filepath.Rel(ac.FileService.ExecDir, binDir)
-	if err != nil {
-		// Если не удалось получить относительный путь, возвращаем просто имя
-		return singboxName
+	p := ac.FileService.SingboxPath
+	rel, err := filepath.Rel(ac.FileService.ExecDir, p)
+	if err == nil && rel != "" && !strings.HasPrefix(rel, "..") {
+		return rel
 	}
-	return filepath.Join(relPath, singboxName)
+	return p
 }
 
 // CoreVersionInfo содержит информацию о версии sing-box

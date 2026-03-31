@@ -368,6 +368,8 @@ singbox-launcher/
 - Download the correct version from GitHub or SourceForge mirror (if GitHub is blocked)
 - Install files to the correct location
 
+**Linux:** If an executable named `sing-box` is on `PATH` (e.g. from a distro package), the launcher runs that binary; otherwise it expects `bin/sing-box` next to the launcher. **Core → Download** always writes to the local `bin/` folder.
+
 **Platform Support**: Windows and macOS are fully supported.
 
 ### Configuring config.json

@@ -81,4 +81,6 @@ GOOS=linux GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -o singbox-lau
 ./singbox-launcher
 ```
 
+Если `sing-box` установлен из пакета дистрибутива и доступен в `PATH`, лаунчер использует его; иначе положите бинарник в `bin/sing-box` рядом с лаунчером или скачайте через вкладку **Core**.
+
 При необходимости настройки TUN см. основной README (раздел про Linux capabilities и `setcap`).
