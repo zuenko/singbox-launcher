@@ -37,6 +37,22 @@ func SRSFileExists(execDir string, tag string) bool {
 // SRSDownloadTimeout — таймаут на скачивание одного SRS файла (60 сек по спецификации)
 const SRSDownloadTimeout = 60 * time.Second
 
+// CreateHTTPClientFunc allows core package to inject a shared HTTP client factory.
+// If not set, DownloadSRS uses a local fallback client.
+var CreateHTTPClientFunc func(timeout time.Duration) *http.Client
+
+func createSRSHTTPClient(timeout time.Duration) *http.Client {
+	if CreateHTTPClientFunc != nil {
+		return CreateHTTPClientFunc(timeout)
+	}
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+		},
+	}
+}
+
 // DownloadSRS скачивает SRS файл по URL и сохраняет в destPath.
 // При ctx.Done() прерывает загрузку; частичный файл удаляется.
 func DownloadSRS(ctx context.Context, url string, destPath string) error {
@@ -48,12 +64,7 @@ func DownloadSRS(ctx context.Context, url string, destPath string) error {
 	ctx, cancel := context.WithTimeout(ctx, SRSDownloadTimeout)
 	defer cancel()
 
-	client := &http.Client{
-		Timeout: SRSDownloadTimeout,
-		Transport: &http.Transport{
-			DialContext: (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
-		},
-	}
+	client := createSRSHTTPClient(SRSDownloadTimeout)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("DownloadSRS: failed to create request: %w", err)

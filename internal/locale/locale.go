@@ -38,6 +38,10 @@ var (
 	catalogs map[string]map[string]string
 )
 
+// CreateHTTPClientFunc allows injecting a shared HTTP client factory from core.
+// If not set, locale downloads use a local default client with timeout.
+var CreateHTTPClientFunc func(timeout time.Duration) *http.Client
+
 func init() {
 	catalogs = map[string]map[string]string{
 		"en": mustParse(enJSON),
@@ -191,7 +195,8 @@ func DownloadLocale(langCode, localeDir string) error {
 		return fmt.Errorf("create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	client := createLocaleHTTPClient(30 * time.Second)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("download %s: %w", langCode, err)
 	}
@@ -228,6 +233,13 @@ func DownloadLocale(langCode, localeDir string) error {
 
 	debuglog.InfoLog("locale: downloaded and loaded %q (%d keys)", langCode, len(m))
 	return nil
+}
+
+func createLocaleHTTPClient(timeout time.Duration) *http.Client {
+	if CreateHTTPClientFunc != nil {
+		return CreateHTTPClientFunc(timeout)
+	}
+	return &http.Client{Timeout: timeout}
 }
 
 // DownloadAllRemoteLocales downloads all known remote languages.

@@ -8,6 +8,7 @@ import (
 	"singbox-launcher/core/config"
 	"singbox-launcher/core/config/parser"
 	"singbox-launcher/core/config/subscription"
+	"singbox-launcher/core/services"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
 )
@@ -23,6 +24,10 @@ type ConfigService struct {
 // NewConfigService constructs a ConfigService bound to the controller.
 // The service requires an initialized AppController with valid ConfigPath.
 func NewConfigService(ac *AppController) *ConfigService {
+	subscription.CreateHTTPClientFunc = CreateHTTPClient
+	subscription.IsNetworkErrorFunc = IsNetworkError
+	subscription.GetNetworkErrorMessageFunc = GetNetworkErrorMessage
+	services.CreateHTTPClientFunc = CreateHTTPClient
 	return &ConfigService{ac: ac}
 }
 

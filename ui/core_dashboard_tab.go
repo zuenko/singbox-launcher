@@ -751,7 +751,8 @@ func (tab *CoreDashboardTab) downloadConfigTemplate() {
 			return
 		}
 
-		resp, err := http.DefaultClient.Do(req)
+		client := core.CreateHTTPClient(30 * time.Second)
+		resp, err := client.Do(req)
 		defer func() {
 			if resp != nil {
 				debuglog.RunAndLog("downloadConfigTemplate: close response body", resp.Body.Close)
