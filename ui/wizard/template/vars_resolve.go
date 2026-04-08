@@ -27,13 +27,15 @@ func ClashSecretUnresolved(s string) bool {
 
 // TemplateVar описывает элемент секции vars шаблона.
 type TemplateVar struct {
+	// Separator: декоративная горизонтальная линия на вкладке Settings (без name/type/плейсхолдеров).
+	Separator    bool            `json:"separator,omitempty"`
 	Name         string          `json:"name"`
 	Type         string          `json:"type"`
 	DefaultValue VarDefaultValue `json:"default_value,omitempty"`
 	DefaultNode  string          `json:"default_node,omitempty"`
-	Options      []string `json:"options,omitempty"`
-	WizardUI     string   `json:"wizard_ui,omitempty"`
-	Platforms    []string `json:"platforms,omitempty"`
+	Options      []string        `json:"options,omitempty"`
+	WizardUI     string          `json:"wizard_ui,omitempty"`
+	Platforms    []string        `json:"platforms,omitempty"`
 	// Title подпись строки на вкладке Settings; при пустом используется name.
 	Title string `json:"title,omitempty"`
 	// Tooltip всплывающая подсказка для строки (виджеты с поддержкой SetToolTip).
@@ -112,6 +114,9 @@ func ResolveTemplateVars(vars []TemplateVar, state map[string]string, rawTemplat
 		_ = json.Unmarshal(rawTemplate, &root)
 	}
 	for _, v := range vars {
+		if v.Separator {
+			continue
+		}
 		out[v.Name] = resolveOneVar(v, state[v.Name], root)
 	}
 	return out
@@ -287,6 +292,9 @@ func ParamIfOrSatisfied(ifOrNames []string, varByName map[string]TemplateVar, re
 func VarIndex(vars []TemplateVar) map[string]TemplateVar {
 	m := make(map[string]TemplateVar, len(vars))
 	for _, v := range vars {
+		if v.Separator {
+			continue
+		}
 		m[v.Name] = v
 	}
 	return m

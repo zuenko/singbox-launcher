@@ -119,6 +119,7 @@
       "title": "TUN stack",
       "tooltip": "sing-box inbound tun stack (system, gvisor, mixed). Mixed uses system TCP stack and gvisor UDP stack."
     },
+    {"separator": true},
     {
       "name": "auto_detect_interface",
       "type": "bool",
@@ -145,6 +146,7 @@
       "title": "Route resolve strategy",
       "tooltip": "Resolution strategy for route rules with action resolve on tun-in and proxy-in (sing-box: prefer_ipv4, prefer_ipv6, ipv4_only, ipv6_only)."
     },
+    {"separator": true},
     {
       "name": "log_level",
       "type": "enum",
@@ -154,6 +156,7 @@
       "title": "Log level",
       "tooltip": "Sing-box log.level (trace, debug, info, warn, error, fatal, panic)."
     },
+    {"separator": true},
     {
       "name": "clash_api",
       "type": "text",

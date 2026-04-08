@@ -12,7 +12,7 @@
 
 ### Highlights
 
-- **Wizard — Settings:** `wizard_template.json` declares configurable **`vars`**; the wizard **Settings** tab shows them, saves values in wizard state, and they substitute **`@name`** placeholders in the generated config.
+- **Wizard — Settings:** `wizard_template.json` declares configurable **`vars`**; the wizard **Settings** tab shows them, saves values in wizard state, and they substitute **`@name`** placeholders in the generated config. Optional **`{"separator": true}`** entries draw horizontal rules between rows (layout only).
 
 - **Win7 wizard:** The Win7 x86 launcher uses the same **`params`** TUN block as **`windows`/`linux`** (no separate **`win7`** section). Unset **`tun_stack`** defaults to **`gvisor`** on **`windows/386`** via **`default_value`** object in **`wizard_template.json`** (e.g. **`{"win7":"gvisor","default":"system"}`**); **`vars[].default_value`** may be a scalar or a platform-keyed JSON object (**`VarDefaultValue`**).
 
@@ -36,7 +36,7 @@
 
 ### Основное
 
-- **Визард — «Настройки»:** В шаблоне (`wizard_template.json`) объявляются пользовательские **`vars`**; лаунчер выводит их на вкладку **«Настройки»**, сохраняет в состоянии визарда и подставляет в собираемый конфиг по плейсхолдерам **`@name`**.
+- **Визард — «Настройки»:** В шаблоне (`wizard_template.json`) объявляются пользовательские **`vars`**; лаунчер выводит их на вкладку **«Настройки»**, сохраняет в состоянии визарда и подставляет в собираемый конфиг по плейсхолдерам **`@name`**. Опционально **`{"separator": true}`** — горизонтальные линии между строками (только оформление).
 
 - **Визард Win7:** Win7 x86 использует тот же блок TUN в **`params`**, что и **`windows`/`linux`** (без отдельной секции **`win7`**). Незаданный **`tun_stack`** на **windows/386** — **`gvisor`** через объект **`default_value`** в **`wizard_template.json`** (например **`{"win7":"gvisor","default":"system"}`**); у **`vars`** поле **`default_value`** может быть скаляром или JSON-объектом с ключами платформ (**`VarDefaultValue`**).
 

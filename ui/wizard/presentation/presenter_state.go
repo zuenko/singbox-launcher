@@ -99,6 +99,9 @@ func (p *WizardPresenter) CreateStateFromModel(comment, id string) *wizardmodels
 
 	if p.model.TemplateData != nil {
 		for _, vd := range p.model.TemplateData.Vars {
+			if vd.Separator {
+				continue
+			}
 			if val, ok := p.model.SettingsVars[vd.Name]; ok {
 				state.Vars = append(state.Vars, wizardmodels.PersistedSettingVar{Name: vd.Name, Value: val})
 			}
@@ -290,6 +293,9 @@ func (p *WizardPresenter) restoreConfigParams(stateFile *wizardmodels.WizardStat
 	allowed := make(map[string]struct{})
 	if p.model.TemplateData != nil {
 		for _, vd := range p.model.TemplateData.Vars {
+			if vd.Separator {
+				continue
+			}
 			allowed[vd.Name] = struct{}{}
 		}
 	}

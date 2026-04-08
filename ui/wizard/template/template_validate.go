@@ -43,6 +43,12 @@ func ValidateWizardTemplate(vars []TemplateVar, params []TemplateParam, config j
 	names := make(map[string]struct{})
 	varByName := make(map[string]TemplateVar, len(vars))
 	for i, v := range vars {
+		if v.Separator {
+			if err := validateVarsSeparator(i, v); err != nil {
+				return err
+			}
+			continue
+		}
 		nm := strings.TrimSpace(v.Name)
 		if nm == "" {
 			return fmt.Errorf("vars[%d]: empty name", i)
@@ -88,6 +94,34 @@ func ValidateWizardTemplate(vars []TemplateVar, params []TemplateParam, config j
 		if _, ok := names[ref]; !ok {
 			return fmt.Errorf("config: @%q is not declared in vars", ref)
 		}
+	}
+	return nil
+}
+
+// validateVarsSeparator: {"separator": true} — только оформление Settings; без name и плейсхолдеров.
+func validateVarsSeparator(i int, v TemplateVar) error {
+	ctx := fmt.Sprintf("vars[%d]", i)
+	if strings.TrimSpace(v.Name) != "" {
+		return fmt.Errorf("%s: separator must not set name", ctx)
+	}
+	if strings.TrimSpace(v.Type) != "" {
+		return fmt.Errorf("%s: separator must not set type", ctx)
+	}
+	if !v.DefaultValue.IsEmpty() || strings.TrimSpace(v.DefaultNode) != "" {
+		return fmt.Errorf("%s: separator must not set default_value or default_node", ctx)
+	}
+	if len(v.Options) > 0 {
+		return fmt.Errorf("%s: separator must not set options", ctx)
+	}
+	if strings.TrimSpace(v.Title) != "" || strings.TrimSpace(v.Tooltip) != "" {
+		return fmt.Errorf("%s: separator must not set title or tooltip", ctx)
+	}
+	if len(v.If) > 0 || len(v.IfOr) > 0 {
+		return fmt.Errorf("%s: separator must not set if or if_or", ctx)
+	}
+	wu := strings.ToLower(strings.TrimSpace(v.WizardUI))
+	if wu != "" && wu != "hidden" {
+		return fmt.Errorf("%s: separator wizard_ui must be empty or \"hidden\"", ctx)
 	}
 	return nil
 }

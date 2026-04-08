@@ -13,6 +13,9 @@ import (
 func SubstituteVarsInJSON(data []byte, vars []TemplateVar, resolved map[string]ResolvedVar) ([]byte, error) {
 	varTypes := make(map[string]string, len(vars))
 	for _, v := range vars {
+		if v.Separator {
+			continue
+		}
 		varTypes[v.Name] = v.Type
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))

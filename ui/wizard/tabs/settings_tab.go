@@ -1,10 +1,12 @@
 package tabs
 
 import (
+	"image/color"
 	"runtime"
 	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -96,6 +98,27 @@ func newSettingsTitleLabel(text string) *ttwidget.Label {
 	return l
 }
 
+// settingsSeparatorBlock — горизонтальная линия между строками Settings (vars.separator).
+// Цвет InputBorder заметнее стандартного theme.Separator в тёмной теме; сверху/снизу — отступ.
+func settingsSeparatorBlock() fyne.CanvasObject {
+	gap := float32(theme.InnerPadding()) / 2
+	if gap < 6 {
+		gap = 6
+	}
+	top := canvas.NewRectangle(color.Transparent)
+	top.SetMinSize(fyne.NewSize(1, gap))
+	bot := canvas.NewRectangle(color.Transparent)
+	bot.SetMinSize(fyne.NewSize(1, gap))
+
+	var lineCol color.Color = color.Gray{Y: 0x55}
+	if app := fyne.CurrentApp(); app != nil {
+		lineCol = app.Settings().Theme().Color(theme.ColorNameInputBorder, app.Settings().ThemeVariant())
+	}
+	line := canvas.NewRectangle(lineCol)
+	line.SetMinSize(fyne.NewSize(1, 2))
+	return container.NewVBox(top, line, bot)
+}
+
 func setVarFieldToolTip(tip string, widgets ...fyne.CanvasObject) {
 	tip = strings.TrimSpace(tip)
 	if tip == "" {
@@ -130,6 +153,10 @@ func CreateSettingsTab(presenter *wizardpresentation.WizardPresenter) fyne.Canva
 		resolved := wizardtemplate.ResolveTemplateVars(td.Vars, model.SettingsVars, td.RawTemplate)
 		for _, vd := range td.Vars {
 			if !settingsVarVisible(vd, goos) {
+				continue
+			}
+			if vd.Separator {
+				box.Add(settingsSeparatorBlock())
 				continue
 			}
 			if strings.EqualFold(strings.TrimSpace(vd.Type), "custom") && !clashSecretCustomVar(vd) {

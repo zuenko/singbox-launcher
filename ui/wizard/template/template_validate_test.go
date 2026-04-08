@@ -88,6 +88,25 @@ func TestValidateWizardTemplate_varIfAndIfOrRejected(t *testing.T) {
 	}
 }
 
+func TestValidateWizardTemplate_separatorOk(t *testing.T) {
+	vars := []TemplateVar{
+		{Name: "a", Type: "text"},
+		{Separator: true},
+		{Name: "b", Type: "text"},
+	}
+	if err := ValidateWizardTemplate(vars, nil, json.RawMessage(`{"k":"@a","m":"@b"}`)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateWizardTemplate_separatorWithNameRejected(t *testing.T) {
+	vars := []TemplateVar{{Separator: true, Name: "x"}}
+	err := ValidateWizardTemplate(vars, nil, json.RawMessage(`{}`))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestValidateWizardTemplate_varIfNotBool(t *testing.T) {
 	vars := []TemplateVar{
 		{Name: "x", Type: "text"},
