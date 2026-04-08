@@ -367,7 +367,8 @@ singbox-launcher/
 │       │   │   │   - deleteCustomRule() / moveCustomRuleUp|Down
 │       │   │   │   - buildRulesTabContainer() / CreateRulesScroll()  # Прокрутка с gutter
 │       │   ├── settings_tab.go   # Вкладка настроек шаблона (vars)
-│       │   │   │   - CreateSettingsTab()                   # Поля из TemplateData.Vars; optional vars.if/if_or → Disable до выполнения условия; Reset → снять override
+│       │   │   │   - CreateSettingsTab()                   # Поля из TemplateData.Vars; vars.separator → горизонтальная линия; optional vars.if/if_or → Disable до выполнения условия; Reset → снять override
+│       │   ├── settings_tun_darwin.go / settings_tun_stub.go  # darwin: при снятии bool `tun` — блок, если ядро Running; иначе привилегированный rm: cache под bin/ + logs/sing-box.log(.old) под ExecDir (см. CREATE_WIZARD_TEMPLATE)
 │       │   ├── library_rules_dialog.go  # Модалка пресетов шаблона
 │       │   │   │   - ShowRulesLibraryDialog()                # Чекбоксы, подсветка строк, Add selected → append в CustomRules
 │       │   │   │
@@ -611,6 +612,7 @@ singbox-launcher/
 - `NewFileService()` - создание сервиса
 - `OpenLogFiles()` - открытие лог-файлов
 - `CloseLogFiles()` - закрытие лог-файлов
+- `ReopenChildLogFile()` - после внешнего удаления `logs/sing-box.log` заново открыть файл (macOS: визард после привилегированного rm)
 - `GetMainLogFile()` - получение основного лог-файла
 - `GetChildLogFile()` - получение лог-файла дочернего процесса
 - `GetApiLogFile()` - получение лог-файла API
@@ -860,7 +862,11 @@ singbox-launcher/
   - `CreateRulesTab()` — единый список **`CustomRules`**, пустое состояние, SRS-кнопки по типу правила
   - `CreateRulesScroll()` — прокрутка с gutter
 - `settings_tab.go`:
-  - `CreateSettingsTab()` — переменные **`TemplateData.Vars`**, платформа и **`wizard_ui`**
+  - `CreateSettingsTab()` — переменные **`TemplateData.Vars`**, **`separator`**, платформа и **`wizard_ui`**; bool **`tun`** на darwin — см. **`maybeTunOffDarwin`** в **`settings_tun_darwin.go`** (**`settings_tun_stub.go`** на других ОС)
+- `business/create_config.go`:
+  - **`effectiveTemplateConfig()`** / публичный **`EffectiveConfigSection()`** — мерж шаблона как у превью (для чтения секции **`experimental`** при очистке кеша TUN на macOS)
+- `core/config/config_loader.go`:
+  - **`ExperimentalCacheFileFromSection()`** — разбор **`experimental.cache_file`** из JSON секции **`experimental`**
 - `library_rules_dialog.go`:
   - `ShowRulesLibraryDialog()` — пресеты **`TemplateData.SelectableRules`**, выбор строк, **Add selected**
 - `preview_tab.go`:
@@ -1254,6 +1260,7 @@ UI (core_dashboard_tab.go)
       ├─> wizard/tabs/dns_tab.go: CreateDNSTab (модель ↔ UI; частичное обновление: RefreshDNSDependentSelectsOnly / RefreshDNSListAndSelects)
       ├─> wizard/business/wizard_dns.go: ApplyWizardDNSTemplate — слияние шаблона и модели DNS
       ├─> wizard/tabs/rules_tab.go: CreateRulesTab
+      ├─> wizard/tabs/settings_tab.go: CreateSettingsTab (+ darwin: settings_tun_darwin — снятие tun / кеш + логи ядра)
       ├─> wizard/tabs/preview_tab.go: CreatePreviewTab
       │
       ├─> wizard/business/loader.go: LoadConfigFromFile()

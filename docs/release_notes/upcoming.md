@@ -14,6 +14,8 @@
 
 - **Wizard — Settings:** `wizard_template.json` declares configurable **`vars`**; the wizard **Settings** tab shows them, saves values in wizard state, and they substitute **`@name`** placeholders in the generated config. Optional **`{"separator": true}`** entries draw horizontal rules between rows (layout only).
 
+- **macOS / TUN:** Turning **TUN** off in the wizard is blocked while the core is running; the wizard also refuses if a **sing-box** process is still visible to the OS (avoids deleting cache/logs while TUN/ports stay busy). **Stop** no longer marks the core as stopped if the privileged kill was cancelled or failed. After a successful **Stop**, the launcher may prompt for admin once to remove **`experimental.cache_file.path`** under **`bin/`** and core log files **`logs/sing-box.log`** / **`.old`** so a non-admin start can recreate them.
+
 - **Win7 wizard:** The Win7 x86 launcher uses the same **`params`** TUN block as **`windows`/`linux`** (no separate **`win7`** section). Unset **`tun_stack`** defaults to **`gvisor`** on **`windows/386`** via **`default_value`** object in **`wizard_template.json`** (e.g. **`{"win7":"gvisor","default":"system"}`**); **`vars[].default_value`** may be a scalar or a platform-keyed JSON object (**`VarDefaultValue`**).
 
 - **Linux:** If `sing-box` is on `PATH` (e.g. installed from your distro package), the launcher uses it automatically; otherwise it uses `bin/sing-box` next to the launcher. **Core → Download** still installs into local `bin/` only ([issue #48](https://github.com/Leadaxe/singbox-launcher/issues/48)).
@@ -37,6 +39,8 @@
 ### Основное
 
 - **Визард — «Настройки»:** В шаблоне (`wizard_template.json`) объявляются пользовательские **`vars`**; лаунчер выводит их на вкладку **«Настройки»**, сохраняет в состоянии визарда и подставляет в собираемый конфиг по плейсхолдерам **`@name`**. Опционально **`{"separator": true}`** — горизонтальные линии между строками (только оформление).
+
+- **macOS / TUN:** Снять **TUN** в визарде нельзя, пока ядро запущено; также блокировка, если в ОС всё ещё виден процесс **sing-box** (чтобы не удалять кеш/логи при занятом TUN/портах). **Stop** больше не помечает ядро остановленным, если привилегированное завершение отменено или не удалось. После успешного **Stop** при необходимости запрашивается пароль для удаления кеша в **`bin/`** и логов **`logs/sing-box.log`** / **`.old`**.
 
 - **Визард Win7:** Win7 x86 использует тот же блок TUN в **`params`**, что и **`windows`/`linux`** (без отдельной секции **`win7`**). Незаданный **`tun_stack`** на **windows/386** — **`gvisor`** через объект **`default_value`** в **`wizard_template.json`** (например **`{"win7":"gvisor","default":"system"}`**); у **`vars`** поле **`default_value`** может быть скаляром или JSON-объектом с ключами платформ (**`VarDefaultValue`**).
 

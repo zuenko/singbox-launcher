@@ -224,10 +224,16 @@ func buildSettingsVarRow(presenter *wizardpresentation.WizardPresenter, model *w
 	switch typ {
 	case "bool":
 		var prog bool
+		var chkForDarwin *widget.Check
 		titleLbl := newSettingsTitleLabel(title)
 		onChanged := func(checked bool) {
 			if prog {
 				return
+			}
+			if !checked {
+				if maybeTunOffDarwin(presenter, model, td, name, chkForDarwin) {
+					return
+				}
 			}
 			if checked {
 				model.SettingsVars[name] = "true"
@@ -240,6 +246,7 @@ func buildSettingsVarRow(presenter *wizardpresentation.WizardPresenter, model *w
 		}
 		cwc := fynewidget.NewCheckWithContent(onChanged, titleLbl, fynewidget.CheckWithContentConfig{})
 		chk := cwc.Check
+		chkForDarwin = chk
 		prog = true
 		v, overridden := model.SettingsVars[name]
 		checked := strings.TrimSpace(wizardtemplate.DisplaySettingValue(vars, st, raw, name)) == "true"

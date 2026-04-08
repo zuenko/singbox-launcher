@@ -401,6 +401,21 @@ The stock template uses **`"if": ["tun"]`** with **`"platforms": ["darwin"]`** f
 
 **Separator (layout only):** an entry **`{"separator": true}`** renders a horizontal rule on **Settings** between rows. Do **not** set **`name`**, **`type`**, **`default_value`**, **`default_node`**, **`options`**, **`title`**, **`tooltip`**, **`if`**, or **`if_or`**. Optional **`platforms`** (same as other vars) and **`wizard_ui`**: only **`hidden`** is allowed besides empty — to hide the rule on some OSes. Separators are not variables: no **`@`** placeholders and nothing is stored in wizard state. **macOS `.app`:** the running binary loads **`Contents/MacOS/bin/wizard_template.json`** inside the bundle — not the repo copy. After editing the template in the repository, **rebuild/reinstall** or **copy** the file into the app bundle so separators (and other JSON changes) appear.
 
+#### macOS: turning `tun` off (wizard Settings)
+
+**Platform:** **`darwin`** only. **Variable name:** the logic is tied to **`name`** exactly **`tun`** (stock **`bin/wizard_template.json`**).
+
+When the user **unchecks** that bool (transition from on → off):
+
+1. **Core must be stopped (launcher state):** if **`RunningState.IsRunning()`** is true — same “running” notion as the Core tab — the launcher shows a message and **reverts** the checkbox; the value in the wizard model is **not** changed to off.
+2. **No stray sing-box process:** **`ProcessService.IsSingBoxProcessRunningOnSystem()`** (executable-name heuristic). If a process is still found, the checkbox is reverted — otherwise file cleanup could run while sing-box still holds **TUN** and ports (e.g. mixed **7890**), matching “address already in use” on the next start. This covers desync when **Stop** was cancelled at the admin password prompt: **`ProcessService.Stop`** must **not** clear **RunningState** if **`KillPrivilegedProcess`** fails (fixed behaviour).
+3. **After the checks pass:** the launcher collects paths that may be **root-owned** after privileged TUN, then runs **one** privileged **`rm -rf`** over those that exist (same **AuthorizationRef** session as other privileged actions):
+   - **experimental cache:** from the effective **`experimental`** section (**`ui/wizard/business/create_config.go`**: **`EffectiveConfigSection`**, same merge as preview via **`GetEffectiveConfig`**). **`core/config.ExperimentalCacheFileFromSection`** reads **`experimental.cache_file`**: if **`enabled`** is not **`false`** and **`path`** is non-empty, the path is resolved — relative paths are under the app **`bin/`** directory. **Only** if the resolved path is **inside** **`bin/`** and **exists**, it is added. Paths **outside** **`bin/`** are **skipped** (warn log).
+   - **Core logs:** **`logs/sing-box.log`** and **`logs/sing-box.log.old`** (rotation) under **`ExecDir`** next to the launcher binary — fixed names (**`internal/constants`**: **`LogsDirName`**, **`ChildLogFileName`**); each path is added only if it **exists** and stays **under** **`ExecDir`** (safety check).
+   If nothing is listed, no privileged call. If privileged removal **fails**, an error dialog is shown but the wizard **still** sets **`tun`** to off (user may fix permissions or delete files manually). If **core log files** were removed, **`FileService.ReopenChildLogFile()`** closes the stale descriptor and recreates/opens **`logs/sing-box.log`** so the next **Start** and the log viewer use the path on disk again.
+
+Other bool **`vars`** names do **not** trigger this path.
+
 #### Platform keys for `default_value` objects
 
 **Scope:** This subsection is **only** for keys inside a **`vars[].default_value`** JSON **object**.

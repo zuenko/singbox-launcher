@@ -406,6 +406,13 @@ func (svc *ProcessService) Stop() {
 		debuglog.InfoLog("stopSingBox: Killing privileged Sing-Box (script PID %d, sing-box PID %d)...", scriptPID, singboxPID)
 		if err := platform.KillPrivilegedProcess(scriptPID, singboxPID, pidFile); err != nil {
 			debuglog.WarnLog("stopSingBox: Privileged kill failed: %v", err)
+			ac.CmdMutex.Lock()
+			ac.StoppedByUser = false
+			ac.CmdMutex.Unlock()
+			if ac.hasUI() {
+				dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("%s: %w", locale.T("error.stop_privileged_failed"), err))
+			}
+			return
 		}
 		ac.CmdMutex.Lock()
 		ac.SingboxPrivilegedMode = false
@@ -574,6 +581,12 @@ func parseCSVLine(line string) []string {
 		parts = append(parts, current.String())
 	}
 	return parts
+}
+
+// IsSingBoxProcessRunningOnSystem returns true if a sing-box process matching the launcher
+// heuristic is running (any PID). Used when internal RunningState may be out of sync (e.g. failed privileged Stop).
+func (svc *ProcessService) IsSingBoxProcessRunningOnSystem() (bool, int) {
+	return svc.isSingBoxProcessRunning()
 }
 
 // isSingBoxProcessRunning checks if sing-box process is running on the system.

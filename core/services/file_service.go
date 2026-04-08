@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/platform"
 )
@@ -128,6 +129,32 @@ func (fs *FileService) OpenLogFiles(logFileName, childLogFileName, apiLogFileNam
 		fs.ApiLogFile = apiLogFile
 	}
 
+	return nil
+}
+
+// ReopenChildLogFile закрывает дескриптор лога sing-box и заново открывает файл по пути
+// logs/sing-box.log (создаёт при отсутствии). Нужно после внешнего удаления файла (например
+// привилегированный rm): иначе старый fd указывает на снятый с каталога inode, а путь для
+// просмотра логов и следующий Start не совпадают с реальной записью.
+func (fs *FileService) ReopenChildLogFile() error {
+	if fs == nil {
+		return nil
+	}
+	rel := fs.ChildLogRelativePath
+	if rel == "" {
+		rel = filepath.Join(constants.LogsDirName, constants.ChildLogFileName)
+	}
+	full := filepath.Join(fs.ExecDir, rel)
+	if fs.ChildLogFile != nil {
+		debuglog.RunAndLog("ReopenChildLogFile: close stale child log", fs.ChildLogFile.Close)
+		fs.ChildLogFile = nil
+	}
+	f, err := fs.OpenLogFileWithRotation(full)
+	if err != nil {
+		debuglog.WarnLog("ReopenChildLogFile: cannot open %s: %v", full, err)
+		return err
+	}
+	fs.ChildLogFile = f
 	return nil
 }
 

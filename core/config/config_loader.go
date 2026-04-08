@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/muhammadmuzzammil1998/jsonc"
 )
@@ -150,4 +151,27 @@ func ConfigHasTun(configPath string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// ExperimentalCacheFileFromSection parses experimental.cache_file from the JSON value of the top-level
+// "experimental" key (not the full config). Returns whether removal should be attempted and the path string
+// from JSON (may be relative to the sing-box working directory, typically bin/).
+func ExperimentalCacheFileFromSection(raw json.RawMessage) (shouldRemove bool, path string) {
+	var exp struct {
+		CacheFile *struct {
+			Enabled *bool  `json:"enabled"`
+			Path    string `json:"path"`
+		} `json:"cache_file"`
+	}
+	if err := json.Unmarshal(raw, &exp); err != nil || exp.CacheFile == nil {
+		return false, ""
+	}
+	path = strings.TrimSpace(exp.CacheFile.Path)
+	if path == "" {
+		return false, ""
+	}
+	if exp.CacheFile.Enabled != nil && !*exp.CacheFile.Enabled {
+		return false, ""
+	}
+	return true, path
 }

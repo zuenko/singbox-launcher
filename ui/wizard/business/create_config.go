@@ -128,28 +128,47 @@ func normalizeParserConfig(text string, timing *debuglog.TimingContext) string {
 	return string(serialized)
 }
 
+// effectiveTemplateConfig returns the merged top-level config map and key order (same rules as buildConfigSections).
+func effectiveTemplateConfig(model *wizardmodels.WizardModel) (map[string]json.RawMessage, []string) {
+	if model == nil || model.TemplateData == nil {
+		return nil, nil
+	}
+	td := model.TemplateData
+	config, order := td.Config, td.ConfigOrder
+	if len(td.RawConfig) > 0 && (len(td.Params) > 0 || len(td.Vars) > 0) {
+		effective, ord, err := wizardtemplate.GetEffectiveConfig(
+			td.RawConfig,
+			td.Params,
+			runtime.GOOS,
+			td.Vars,
+			model.SettingsVars,
+			td.RawTemplate,
+		)
+		if err == nil {
+			return effective, ord
+		}
+		debuglog.WarnLog("effectiveTemplateConfig: GetEffectiveConfig: %v", err)
+	}
+	return config, order
+}
+
+// EffectiveConfigSection returns merged template JSON for one top-level config key (e.g. "experimental").
+func EffectiveConfigSection(model *wizardmodels.WizardModel, sectionKey string) (json.RawMessage, bool, error) {
+	if model == nil || model.TemplateData == nil {
+		return nil, false, fmt.Errorf("no template data")
+	}
+	MaterializeClashSecretIfNeeded(model)
+	config, _ := effectiveTemplateConfig(model)
+	raw, ok := config[sectionKey]
+	return raw, ok, nil
+}
+
 // buildConfigSections строит форматированные JSON-секции конфига.
 func buildConfigSections(model *wizardmodels.WizardModel, forPreview bool, timing *debuglog.TimingContext) ([]string, error) {
 	start := time.Now()
 	var sections []string
 
-	config, order := model.TemplateData.Config, model.TemplateData.ConfigOrder
-	// Нужен GetEffectiveConfig, если есть params и/или vars с @ в config (params могут быть пустым — тогда только подстановка).
-	if len(model.TemplateData.RawConfig) > 0 && (len(model.TemplateData.Params) > 0 || len(model.TemplateData.Vars) > 0) {
-		effective, ord, err := wizardtemplate.GetEffectiveConfig(
-			model.TemplateData.RawConfig,
-			model.TemplateData.Params,
-			runtime.GOOS,
-			model.TemplateData.Vars,
-			model.SettingsVars,
-			model.TemplateData.RawTemplate,
-		)
-		if err == nil {
-			config, order = effective, ord
-		} else {
-			debuglog.WarnLog("buildConfigSections: GetEffectiveConfig: %v", err)
-		}
-	}
+	config, order := effectiveTemplateConfig(model)
 
 	for _, key := range order {
 		raw, ok := config[key]
