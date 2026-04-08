@@ -2,7 +2,7 @@
 //
 // Файл rules_tab.go — вкладка Rules: единый список CustomRules (027), библиотека пресетов шаблона в library_rules_dialog.
 //   - Над скроллом: Add Rule, Add from library и подпись столбца Outbound в одной строке (Border); в скролле — строки без «Outbound:» на каждой строке
-//   - Final outbound; на macOS — TUN (fynewidget.CheckWithContent + тултип)
+//   - Final outbound; TUN для macOS — вкладка Settings (vars.tun)
 //
 // RuleWidget в GUIState связывает виджеты с *RuleState при пересоздании вкладки.
 //
@@ -19,7 +19,6 @@ import (
 	"context"
 	"image/color"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -151,7 +150,7 @@ func CreateRulesTab(presenter *wizardpresentation.WizardPresenter, showAddRuleDi
 	presenter.RefreshOutboundOptions()
 
 	// Build final container
-	return buildRulesTabContainer(presenter, headerRow, rulesScroll, finalSelect)
+	return buildRulesTabContainer(headerRow, rulesScroll, finalSelect)
 }
 
 // createTemplateNotFoundMessage создает сообщение об отсутствии шаблона.
@@ -575,27 +574,12 @@ func createFinalOutboundSelect(
 }
 
 // buildRulesTabContainer создает финальный контейнер таба правил.
-func buildRulesTabContainer(presenter *wizardpresentation.WizardPresenter, headerRow, rulesScroll fyne.CanvasObject, finalSelect *widget.Select) fyne.CanvasObject {
-	model := presenter.Model()
+func buildRulesTabContainer(headerRow, rulesScroll fyne.CanvasObject, finalSelect *widget.Select) fyne.CanvasObject {
 	row := container.NewHBox(
 		widget.NewLabel(locale.T("wizard.rules.label_final_outbound")),
 		finalSelect,
 		layout.NewSpacer(),
 	)
-	if runtime.GOOS == "darwin" {
-		tunLabel := ttwidget.NewLabel(locale.T("wizard.rules.checkbox_tun"))
-		tunLabel.Wrapping = fyne.TextWrapOff
-		tunCwc := fynewidget.NewCheckWithContent(func(checked bool) {
-			model.EnableTunForMacOS = checked
-			model.TemplatePreviewNeedsUpdate = true
-			presenter.MarkAsChanged()
-		}, tunLabel, fynewidget.CheckWithContentConfig{
-			ContentToolTip: locale.T("wizard.rules.tun_help"),
-		})
-		tunCwc.Check.SetChecked(model.EnableTunForMacOS)
-		tunBlock := container.NewBorder(nil, nil, tunCwc.Check, nil, tunCwc.Content)
-		row.Add(tunBlock)
-	}
 	return container.NewVBox(
 		headerRow,
 		rulesScroll,

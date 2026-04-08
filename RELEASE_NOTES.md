@@ -2,6 +2,10 @@
 
 Полный черновик следующего релиза: [docs/release_notes/upcoming.md](docs/release_notes/upcoming.md)
 
+**Черновик (следующий релиз), кратко:** вкладка визарда **«Настройки»** (Settings), переменные шаблона **`vars`** и **`state.vars`**, перенос переключателя TUN для macOS с **«Правил»** на **«Настройки»** — подробности в [upcoming.md](docs/release_notes/upcoming.md) (и **SPECS/032-F-C-WIZARD_SETTINGS_TAB/**).
+
+**Draft (next release), short:** wizard **Settings** tab, template **`vars`** and **`state.vars`**, macOS TUN toggle moved from **Rules** to **Settings** — see [upcoming.md](docs/release_notes/upcoming.md) and **SPECS/032-F-C-WIZARD_SETTINGS_TAB/**.
+
 ---
 
 ### Выжимка (RU) — v0.8.5

@@ -31,6 +31,39 @@ import (
 	wizardutils "singbox-launcher/ui/wizard/utils"
 )
 
+// MaterializeClashSecretIfNeeded один раз кладёт сгенерированный clash_secret в model.SettingsVars,
+// пока ключа нет (после Сброса ключа снова нет — сгенерируется снова при следующем вызове).
+// Иначе MaybeGenerateClashSecret при каждом GetEffectiveConfig выдавал бы новый секрет в превью.
+func MaterializeClashSecretIfNeeded(model *wizardmodels.WizardModel) {
+	if model == nil || model.TemplateData == nil {
+		return
+	}
+	td := model.TemplateData
+	hasVar := false
+	for _, v := range td.Vars {
+		if v.Name == "clash_secret" {
+			hasVar = true
+			break
+		}
+	}
+	if !hasVar {
+		return
+	}
+	if model.SettingsVars == nil {
+		model.SettingsVars = make(map[string]string)
+	}
+	if s, ok := model.SettingsVars["clash_secret"]; ok && !wizardtemplate.ClashSecretUnresolved(s) {
+		return
+	}
+	resolved := wizardtemplate.ResolveTemplateVars(td.Vars, model.SettingsVars, td.RawTemplate)
+	wizardtemplate.MaybeGenerateClashSecret(resolved)
+	if rv, ok := resolved["clash_secret"]; ok {
+		if s := strings.TrimSpace(rv.Scalar); s != "" {
+			model.SettingsVars["clash_secret"] = s
+		}
+	}
+}
+
 // BuildTemplateConfig строит финальную конфигурацию из шаблона и модели визарда.
 func BuildTemplateConfig(model *wizardmodels.WizardModel, forPreview bool) (string, error) {
 	timing := debuglog.StartTiming("BuildTemplateConfig")
@@ -39,6 +72,8 @@ func BuildTemplateConfig(model *wizardmodels.WizardModel, forPreview bool) (stri
 	if model.TemplateData == nil {
 		return "", fmt.Errorf("template data not available")
 	}
+
+	MaterializeClashSecretIfNeeded(model)
 
 	parserConfigText := strings.TrimSpace(model.ParserConfigJSON)
 	if parserConfigText == "" {
@@ -99,10 +134,20 @@ func buildConfigSections(model *wizardmodels.WizardModel, forPreview bool, timin
 	var sections []string
 
 	config, order := model.TemplateData.Config, model.TemplateData.ConfigOrder
-	if runtime.GOOS == "darwin" && len(model.TemplateData.RawConfig) > 0 && len(model.TemplateData.Params) > 0 {
-		effective, ord, err := wizardtemplate.GetEffectiveConfig(model.TemplateData.RawConfig, model.TemplateData.Params, runtime.GOOS, model.EnableTunForMacOS)
+	// Нужен GetEffectiveConfig, если есть params и/или vars с @ в config (params могут быть пустым — тогда только подстановка).
+	if len(model.TemplateData.RawConfig) > 0 && (len(model.TemplateData.Params) > 0 || len(model.TemplateData.Vars) > 0) {
+		effective, ord, err := wizardtemplate.GetEffectiveConfig(
+			model.TemplateData.RawConfig,
+			model.TemplateData.Params,
+			runtime.GOOS,
+			model.TemplateData.Vars,
+			model.SettingsVars,
+			model.TemplateData.RawTemplate,
+		)
 		if err == nil {
 			config, order = effective, ord
+		} else {
+			debuglog.WarnLog("buildConfigSections: GetEffectiveConfig: %v", err)
 		}
 	}
 

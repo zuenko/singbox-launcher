@@ -24,7 +24,7 @@ Cross-platform GUI launcher for [sing-box](https://github.com/SagerNet/sing-box)
   - [Config Wizard (v0.2.0)](#config-wizard-v020)
   - [System Tray](#system-tray)
 - [⚙️ Configuration](#️-configuration)
-  - [Config Template (config_template.json)](#config-template-config_templatejson)
+  - [Wizard template (wizard_template.json)](#wizard-template-wizard_templatejson)
   - [Enabling Clash API](#enabling-clash-api)
   - [Subscription Parser Configuration](#subscription-parser-configuration)
 - [🔄 Subscription Parser](#-subscription-parser)
@@ -220,7 +220,7 @@ Replace `v0.8.5` with the version you want to install.
 
 2. **Configure using Wizard**:
    - If `config.json` is missing, click the blue **"Wizard"** button in the **"Core"** tab
-   - If `config_template.json` is missing, click **"Download Config Template"** first
+   - If `wizard_template.json` is missing, click **"Download Config Template"** first
    - Follow the wizard steps:
      - **Tab 1 (Sources & ParserConfig)**: Enter subscription URL, configure ParserConfig
      - **Tab 2 (Rules)**: Select routing rules, configure outbound selectors
@@ -253,7 +253,7 @@ Replace `v0.8.5` with the version you want to install.
 - **Config Status** - Shows config.json status and last modification date (YYYY-MM-DD)
 - **Wizard** button (⚙️) - Open configuration wizard (blue if config.json is missing)
 - **Update Config** button (🔄) - Update configuration from subscriptions (disabled if config.json is missing)
-- **Download Config Template** button - Download config_template.json (blue if template is missing)
+- **Download Config Template** button - Download wizard_template.json (blue if template is missing)
 - Automatic fallback to SourceForge mirror if GitHub is unavailable
 
 #### "Diagnostics" Tab
@@ -328,7 +328,7 @@ The Config Wizard provides a visual interface for configuring sing-box without m
 
 **Features:**
 - Loads existing configuration if available
-- Uses `config_template.json` for default rules
+- Uses `wizard_template.json` for default rules
 - Supports custom user-defined rules (IP addresses or domains/URLs)
 - Automatic preview regeneration when switching tabs after rule changes
 - Supports JSONC (JSON with comments)
@@ -355,7 +355,7 @@ singbox-launcher/
 │   ├── sing-box.exe (or sing-box for Unix) - auto-downloaded via Core tab
 │   ├── wintun.dll (Windows only) - auto-downloaded via Core tab
 │   ├── config.json - main configuration (created via wizard or manually)
-│   └── config_template.json - template for wizard (auto-downloaded if missing)
+│   └── wizard_template.json - template for wizard (auto-downloaded if missing)
 ├── logs/
 │   ├── singbox-launcher.log
 │   ├── sing-box.log
@@ -363,7 +363,7 @@ singbox-launcher/
 └── singbox-launcher.exe (or singbox-launcher for Unix)
 ```
 
-**Note:** `sing-box`, `wintun.dll`, and `config_template.json` can be downloaded automatically through the **Core** tab. The launcher will:
+**Note:** `sing-box`, `wintun.dll`, and `wizard_template.json` can be downloaded automatically through the **Core** tab. The launcher will:
 - Automatically detect your platform (Windows/macOS/Linux) and architecture (amd64/arm64)
 - Download the correct version from GitHub or SourceForge mirror (if GitHub is blocked)
 - Install files to the correct location
@@ -387,9 +387,9 @@ The easiest way to configure is using the **Config Wizard**:
 
 If you prefer to edit `config.json` manually, see the sections below.
 
-#### Config Template (config_template.json)
+#### Wizard template (`wizard_template.json`)
 
-The `config_template.json` file provides a template for the Config Wizard and defines selectable routing rules. **This single file works for all platforms** (Windows, macOS, Linux).
+The `wizard_template.json` file provides a template for the Config Wizard and defines selectable routing rules. **This single file works for all platforms** (Windows, macOS, Linux).
 
 **Template Structure:**
 
@@ -454,10 +454,10 @@ When a rule has an `outbound` field, the wizard provides a dropdown with the fol
 
 **Creating Custom Templates:**
 
-You can create your own `config_template.json` file to customize the rules available in the Config Wizard:
+You can create your own `wizard_template.json` file to customize the rules available in the Config Wizard:
 
 1. **Start with the default template**: Download the default template using the **"Download Config Template"** button
-2. **Edit the template**: Modify `config_template.json` in the `bin/` folder
+2. **Edit the template**: Modify `wizard_template.json` in the `bin/` folder
 3. **Add custom rules**: Add entries to the `selectable_rules` array with `label`, `description`, `rule`, and optional `rule_set`
 4. **Customize ParserConfig**: Modify the `parser_config` section to set default subscription settings
 5. **Add platform-specific settings**: Use the `params` section to add platform-specific configurations
@@ -498,7 +498,7 @@ Custom rules are saved in the standard sing-box rule format:
 
 **📖 Complete Guide for VPN Providers:**
 
-For detailed instructions on creating your own `config_template.json` template, see:
+For detailed instructions on creating your own `wizard_template.json` template, see:
 - **[docs/CREATE_WIZARD_TEMPLATE.md](docs/CREATE_WIZARD_TEMPLATE.md)** - Complete guide with examples and best practices
 - The guide covers the unified JSON structure, platform-specific configurations, DNS setup, TUN vs System Proxy, and local traffic rules
 
@@ -521,7 +521,7 @@ To use the "Clash API" tab, add to `config.json`:
 
 #### Subscription Parser Configuration
 
-For automatic configuration updates from subscriptions, configure the `parser_config` section in `config_template.json` or use the Config Wizard.
+For automatic configuration updates from subscriptions, configure the `parser_config` section in `wizard_template.json` or use the Config Wizard.
 
 **Using Config Wizard (Recommended):**
 
@@ -533,7 +533,7 @@ For automatic configuration updates from subscriptions, configure the `parser_co
 
 **Manual Configuration:**
 
-If you prefer to edit manually, the parser configuration is stored in `config.json` (loaded from `config_template.json` by default). The structure follows the ParserConfig format:
+If you prefer to edit manually, the parser configuration is stored in `config.json` (loaded from `wizard_template.json` by default). The structure follows the ParserConfig format:
 
 ```json
 {
@@ -578,7 +578,7 @@ The subscription parser automatically updates the proxy server list in `config.j
 
 ### Overview
 
-The parser reads the `ParserConfig` section from `config.json` (or `config_template.json`), downloads subscriptions, filters nodes, and generates selectors according to your configuration.
+The parser reads the `ParserConfig` section from `config.json` (or `wizard_template.json`), downloads subscriptions, filters nodes, and generates selectors according to your configuration.
 
 **Key Features:**
 - Supports multiple subscription URLs and direct links (vless://, vmess://, trojan://, ss://, hysteria2://, ssh://)
@@ -639,7 +639,7 @@ Platform-specific functions are in the `internal/platform` package.
 
 1. **Download config template** if missing:
    - Click **"Download Config Template"** button in the **"Core"** tab
-2. Make sure `config_template.json` exists in the `bin/` folder
+2. Make sure `wizard_template.json` exists in the `bin/` folder
 3. Check that the template file is valid JSON
 
 ### Clash API not working
@@ -869,6 +869,8 @@ We welcome contributions to the project! Please:
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
+
+For **substantial features** (spec-driven workflow, TASKS, docs before merge), see **[SPECS/README.md](SPECS/README.md#closing-task-checklist)** (closing checklist) and root **[AGENTS.md](AGENTS.md)** for agents/contributors.
 
 ### Code Style
 

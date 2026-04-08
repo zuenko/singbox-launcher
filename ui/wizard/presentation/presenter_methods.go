@@ -206,6 +206,7 @@ func (p *WizardPresenter) InitializeTemplateState() {
 	}
 
 	wizardbusiness.EnsureFinalSelected(p.model, options)
+	wizardbusiness.MaterializeClashSecretIfNeeded(p.model)
 }
 
 // SetTemplatePreviewText устанавливает текст предпросмотра шаблона.

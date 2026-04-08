@@ -366,6 +366,8 @@ singbox-launcher/
 │       │   │   │   - createCustomRuleActionButtons()         # ↑↓ Edit Del
 │       │   │   │   - deleteCustomRule() / moveCustomRuleUp|Down
 │       │   │   │   - buildRulesTabContainer() / CreateRulesScroll()  # Прокрутка с gutter
+│       │   ├── settings_tab.go   # Вкладка настроек шаблона (vars)
+│       │   │   │   - CreateSettingsTab()                   # Поля из TemplateData.Vars; optional vars.if/if_or → Disable до выполнения условия; Reset → снять override
 │       │   ├── library_rules_dialog.go  # Модалка пресетов шаблона
 │       │   │   │   - ShowRulesLibraryDialog()                # Чекбоксы, подсветка строк, Add selected → append в CustomRules
 │       │   │   │
@@ -857,6 +859,8 @@ singbox-launcher/
 - `rules_tab.go`:
   - `CreateRulesTab()` — единый список **`CustomRules`**, пустое состояние, SRS-кнопки по типу правила
   - `CreateRulesScroll()` — прокрутка с gutter
+- `settings_tab.go`:
+  - `CreateSettingsTab()` — переменные **`TemplateData.Vars`**, платформа и **`wizard_ui`**
 - `library_rules_dialog.go`:
   - `ShowRulesLibraryDialog()` — пресеты **`TemplateData.SelectableRules`**, выбор строк, **Add selected**
 - `preview_tab.go`:
@@ -948,7 +952,7 @@ singbox-launcher/
 
 **template/** - Работа с единым шаблоном конфигурации
 - `loader.go`:
-  - `LoadTemplateData()` - загрузка единого JSON-шаблона (`wizard_template.json`), парсинг секций, применение `params` по текущей платформе, фильтрация `selectable_rules` по `platforms`
+  - `LoadTemplateData()` - загрузка единого JSON-шаблона (`wizard_template.json`), парсинг секций, применение `params` по текущей платформе, фильтрация `selectable_rules` по `platforms`; условия **`params.if`** / **`params.if_or`** смотрят на bool-**`vars`**: при несовпадении **`vars[].platforms`** с текущей ОС переменная даёт **false** в условии (см. **`VarAppliesOnGOOS`** / **`ParamBoolVarTrue`** в **`ui/wizard/template/vars_resolve.go`**, **docs/CREATE_WIZARD_TEMPLATE.md**)
   - `GetTemplateFileName()` - возврат имени файла шаблона (`wizard_template.json`, единый для всех платформ)
   - `GetTemplateURL()` - возврат URL для загрузки шаблона с GitHub
   - `UnifiedTemplate` struct - структура JSON-шаблона (`parser_config`, `config`, `selectable_rules`, `params`)

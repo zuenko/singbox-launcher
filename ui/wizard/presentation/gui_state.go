@@ -88,6 +88,9 @@ type GUIState struct {
 	DNSIndependentCacheCheck *widget.Check
 	RefreshDNSList           func()
 
+	// RefreshSettingsFromModel пересобирает вкладку Settings из model.TemplateData.Vars (после LoadState / шаблона).
+	RefreshSettingsFromModel func()
+
 	// Last valid ParserConfig JSON for revert on validation error (e.g. on tab switch from Outbounds tab).
 	LastValidParserConfigJSON string
 

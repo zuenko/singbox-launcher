@@ -63,8 +63,10 @@ type WizardModel struct {
 	SelectableRuleStates   []*RuleState
 	CustomRules            []*RuleState
 	RulesLibraryMerged     bool // true после миграции/засева; сериализуется в state.json
-	SelectedFinalOutbound  string
-	EnableTunForMacOS      bool // на darwin при сборке конфига: true — добавлять TUN inbound (требует пароль при Start/Stop)
+	SelectedFinalOutbound string
+
+	// SettingsVars — переопределения вкладки Settings (name → value); пустое значение ключа = дефолт шаблона.
+	SettingsVars map[string]string `json:"-"`
 
 	// Флаги состояния бизнес-операций
 	PreviewNeedsParse           bool
@@ -102,7 +104,7 @@ type WizardModel struct {
 func NewWizardModel() *WizardModel {
 	return &WizardModel{
 		PreviewNeedsParse:    true,
-		EnableTunForMacOS:    true,
+		SettingsVars:         make(map[string]string),
 		SelectableRuleStates: make([]*RuleState, 0),
 		CustomRules:          make([]*RuleState, 0),
 		GeneratedOutbounds:   make([]string, 0),

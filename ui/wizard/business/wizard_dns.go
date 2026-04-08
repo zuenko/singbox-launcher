@@ -78,14 +78,21 @@ func effectiveWizardConfig(model *wizardmodels.WizardModel) map[string]json.RawM
 	if model == nil || model.TemplateData == nil {
 		return nil
 	}
+	MaterializeClashSecretIfNeeded(model)
 	config := model.TemplateData.Config
-	if runtime.GOOS == "darwin" && len(model.TemplateData.RawConfig) > 0 && len(model.TemplateData.Params) > 0 {
+	if len(model.TemplateData.RawConfig) > 0 && (len(model.TemplateData.Params) > 0 || len(model.TemplateData.Vars) > 0) {
 		effective, _, err := wizardtemplate.GetEffectiveConfig(
-			model.TemplateData.RawConfig, model.TemplateData.Params, runtime.GOOS, model.EnableTunForMacOS)
+			model.TemplateData.RawConfig,
+			model.TemplateData.Params,
+			runtime.GOOS,
+			model.TemplateData.Vars,
+			model.SettingsVars,
+			model.TemplateData.RawTemplate,
+		)
 		if err == nil {
 			config = effective
 		} else {
-			debuglog.DebugLog("effectiveWizardConfig: GetEffectiveConfig: %v", err)
+			debuglog.WarnLog("effectiveWizardConfig: GetEffectiveConfig: %v", err)
 		}
 	}
 	return config

@@ -64,10 +64,18 @@ type WizardStateFile struct {
 	RulesLibraryMerged bool `json:"rules_library_merged,omitempty"`
 	// DNSOptions — снимок вкладки DNS визарда; в JSON ключ dns_options (как в wizard_template.json).
 	DNSOptions *PersistedDNSState `json:"dns_options,omitempty"`
+	// Vars — переопределения переменных шаблона (Settings); только объявлённые в wizard_template.json имена.
+	Vars []PersistedSettingVar `json:"vars,omitempty"`
 }
 
 // ConfigParam представляет параметр конфигурации.
 type ConfigParam struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// PersistedSettingVar — переопределение переменной шаблона (вкладка Settings).
+type PersistedSettingVar struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
 }
@@ -420,7 +428,8 @@ func (wsf *WizardStateFile) UnmarshalJSON(data []byte) error {
 		SelectableRuleStates json.RawMessage `json:"selectable_rule_states"`
 		CustomRules          json.RawMessage `json:"custom_rules"`
 		RulesLibraryMerged   bool            `json:"rules_library_merged"`
-		DNSOptions           *PersistedDNSState `json:"dns_options"`
+		DNSOptions           *PersistedDNSState   `json:"dns_options"`
+		Vars                 []PersistedSettingVar `json:"vars"`
 	}
 
 	var basic BasicFields
@@ -434,6 +443,7 @@ func (wsf *WizardStateFile) UnmarshalJSON(data []byte) error {
 	wsf.ConfigParams = basic.ConfigParams
 	wsf.DNSOptions = basic.DNSOptions
 	wsf.RulesLibraryMerged = basic.RulesLibraryMerged
+	wsf.Vars = basic.Vars
 
 	// Парсим время
 	if basic.CreatedAt != "" {

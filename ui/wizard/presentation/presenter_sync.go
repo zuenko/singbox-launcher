@@ -132,6 +132,10 @@ func (p *WizardPresenter) applyWizardWidgetsFromModel() {
 		p.guiState.UpdatingOutboundOptions = false
 	}
 
+	if p.guiState.RefreshSettingsFromModel != nil {
+		p.guiState.RefreshSettingsFromModel()
+	}
+
 	p.guiState.WizardWidgetsReady = true
 	p.MarkAsSaved()
 }

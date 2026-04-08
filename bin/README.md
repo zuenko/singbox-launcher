@@ -9,10 +9,10 @@
 - `sing-box.exe` (Windows) / `sing-box` (macOS/Linux) - прокси-клиент (включен в релиз)
 
 ### Конфигурация
-- `wizard_template.json` - шаблон конфигурации для Config Wizard (новый формат, используется приложением)
-- `config_template.json` - старый шаблон для Windows/Linux (для обратной совместимости)
-- `config_template_macos.json` - старый шаблон для macOS (для обратной совместимости)
-- `config.example.json` - пример конфигурации (для справки)
+- `wizard_template.json` — единый шаблон для Config Wizard (лежит в репозитории в `bin/`; при отсутствии локально может подтягиваться через вкладку **Core**)
+- `config.example.json` — пример конфигурации (для справки)
+
+Устаревшие имена **`config_template.json`** / **`config_template_macos.json`** из старых версий и релизных заметок не используются текущим кодом; см. `docs/release_notes/0-8-5.md`.
 
 ### Дополнительные файлы (Windows)
 - `wintun.dll` - библиотека для TUN интерфейса (может быть включена в релиз)
@@ -30,10 +30,11 @@
    - Или выберите "Config Wizard" из меню
 
 3. **Настройте конфигурацию через визард**:
-   - **Sources tab**: Введите URL подписки или прямые ссылки на прокси
-   - **Rules tab**: Выберите правила, которые хотите включить
-   - **Preview tab**: Просмотрите сгенерированный `config.json`
-   - Нажмите "Save" для сохранения конфигурации
+   - **Sources**: URL подписки или прямые ссылки на прокси
+   - **Rules**: правила маршрута
+   - **Settings**: переменные шаблона (`vars` в `wizard_template.json` — лог, Clash API, TUN на macOS и т.д.)
+   - **Preview**: просмотр `config.json`
+   - **Save** для сохранения
 
 4. **Запустите VPN**:
    - Вернитесь в главное окно
@@ -77,8 +78,6 @@ singbox-launcher/
 │   ├── sing-box.exe (или sing-box)
 │   ├── wintun.dll (только Windows)
 │   ├── wizard_template.json (шаблон для Config Wizard)
-│   ├── config_template.json (старый шаблон, для совместимости)
-│   ├── config_template_macos.json (старый шаблон, для совместимости)
 │   ├── config.json (создается Config Wizard или вручную)
 │   └── config.example.json (пример конфигурации)
 ├── logs/ (создается автоматически)
@@ -99,9 +98,8 @@ singbox-launcher/
 - 💾 Сохранение и загрузка состояний конфигурации
 - 🔄 Автоматический парсинг подписок
 
-### Файлы шаблонов:
-- **`wizard_template.json`** - новый унифицированный шаблон (используется приложением)
-- **`config_template.json`** и **`config_template_macos.json`** - старые шаблоны (для обратной совместимости со старыми версиями)
+### Файл шаблона:
+- **`wizard_template.json`** — шаблон визарда (секции `parser_config`, `config`, `selectable_rules`, `params`, `vars`, …)
 
 Подробнее о создании собственных шаблонов: [docs/CREATE_WIZARD_TEMPLATE.md](../docs/CREATE_WIZARD_TEMPLATE.md)
 

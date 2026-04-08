@@ -1,12 +1,12 @@
 # Creating Your Own Config Wizard Template
 
-This guide is for **VPN providers and service administrators** who want to create a custom configuration template (`config_template.json`) that users can configure through the built-in wizard interface.
+This guide is for **VPN providers and service administrators** who want to create a custom configuration template (`wizard_template.json`) that users can configure through the built-in wizard interface.
 
 ---
 
 ## What is the Config Wizard?
 
-The Config Wizard is a visual interface that helps users create their `config.json` file without manually editing JSON. As a provider, you create a template file (`config_template.json`) that defines:
+The Config Wizard is a visual interface that helps users create their `config.json` file without manually editing JSON. As a provider, you create a template file (`wizard_template.json`) that defines:
 
 - Default settings (DNS, logging, routing rules)
 - Which rules users can enable/disable via checkboxes
@@ -25,7 +25,7 @@ Users simply:
 
 ### Step 1: Create the Template File
 
-Create a file named `config_template.json` in the `bin/` folder (next to the application executable). **This single file works for all platforms** (Windows, macOS, Linux).
+Create a file named `wizard_template.json` in the `bin/` folder (next to the application executable). **This single file works for all platforms** (Windows, macOS, Linux).
 
 ### Step 2: Use This Minimal Template
 
@@ -382,6 +382,26 @@ The unified template consists of five main sections:
   }
 }
 ```
+
+---
+
+### Template variables (`vars`) and `@` placeholders
+
+**Purpose:** Declare values that appear on the wizard **Settings** tab and are stored in `state.json` under **`vars`** as `{ "name", "value" }` strings. In **`config`** and **`params`**, string literals like `"@var_name"` (and single-element arrays `["@var_name"]` where supported) are replaced when building the effective config. Numeric template fields use **`@tun_mtu`** and **`@mixed_listen_port`** (resolved as integers).
+
+**`params.if`:** Optional array of **boolean** variable names, e.g. `"if": ["tun"]`. The param is applied only if **every** listed variable is true **on the current OS** (see **`vars[].platforms`**: if the var is scoped to other platforms, it counts as false here).
+
+**`params.if_or`:** Optional array of boolean variable names, e.g. `"if_or": ["tun_builtin", "tun"]`. The param is applied if **at least one** listed variable is true on the current OS. **`if`** and **`if_or`** cannot be set on the same param.
+
+**How `vars[].platforms` interacts with `if` / `if_or`:** For each name in **`if`** or **`if_or`**, the launcher checks whether that variable **applies to the current OS** (empty **`platforms`** → all OSes; otherwise **`runtime.GOOS`** must appear in the list, with **`win7`** also matching **Windows x86** builds). If the variable does **not** apply, it contributes **`false`** to the AND/OR — **before** reading the resolved value from wizard state. A saved **`"true"`** in **`state.vars`** for e.g. **`tun`** does **not** make **`if: ["tun"]`** pass on Linux if **`tun`** is **`darwin`**-only in the template. (Implementation: **`VarAppliesOnGOOS`** / **`ParamBoolVarTrue`** in **`ui/wizard/template/vars_resolve.go`**.)
+
+The stock template uses **`"if": ["tun"]`** with **`"platforms": ["darwin"]`** for macOS TUN **inbounds**, and a single **`route.rules`** prepend with **`"if_or": ["tun_builtin", "tun"]`** and **`"platforms": ["windows", "linux", "darwin"]`**. Do not use the legacy label **`darwin-tun`** in **`platforms`**: it never equals **`runtime.GOOS`** on macOS (**`darwin`**). Use **`darwin`** with **`if`** / **`if_or`** for TUN-specific blocks.
+
+**Variable fields (in `vars` array):** `name` (recommended: `[A-Za-z_][A-Za-z0-9_]*` — enforced at load), `type` (`text`, `bool`, `enum`, `text_list`, `custom`), `default_value`, optional `default_node`, `options` (for `enum`), `platforms`, `wizard_ui` (`edit` / `view` read-only / `hidden`), **`title`** (short row label on **Settings**; if omitted or blank, **`name`** is shown), **`tooltip`** (optional hover hint on supported widgets). Optional **`if`** / **`if_or`** (same semantics as **`params`**, mutually exclusive): on the **Settings** tab the row stays visible (subject to **`platforms`** / **`wizard_ui`**) but **controls are disabled** until the condition is met — e.g. TUN address/MTU with **`"if_or": ["tun_builtin", "tun"]`** until the platform-relevant TUN flag is on. Changing a bool var that others reference **refreshes** dependent rows. Type **`custom`** does not create a row on Settings **except** the built-in pair **`name`: `clash_secret`**, **`type`: `custom`** (Clash API secret: same resolution as `text`, dedicated regenerate control). Other `custom` vars are for `if` / internal markers only.
+
+The stock app template **`bin/wizard_template.json`** includes a full example (`tun`, `tun_address`, `tun_mtu`, `mixed_listen_port`, `log_level`, `clash_api`, `clash_secret`).
+
+At load time the wizard rejects a template if any **`@name`** in **`config`** or **`params[].value`** is missing from **`vars`**, if **`vars`** contains duplicate **`name`**, if **`params[].if`** / **`params[].if_or`** or **`vars[].if`** / **`vars[].if_or`** references a non-boolean variable, or if both **`if`** and **`if_or`** are set on the same **`params`** or **`vars`** entry.
 
 ---
 
@@ -1283,7 +1303,7 @@ Ensure all `tag` values referenced in `route.rules` exist in:
 Your template must be valid JSON. Test it:
 ```bash
 # Using jq (if installed)
-cat config_template.json | jq . > /dev/null
+cat wizard_template.json | jq . > /dev/null
 
 # Or use an online JSON validator
 ```
@@ -1315,7 +1335,7 @@ Use the `platforms` field in `selectable_rules` to create platform-specific rule
 
 ### Step 1: Place the File
 
-Put `config_template.json` in the `bin/` folder next to the executable.
+Put `wizard_template.json` in the `bin/` folder next to the executable.
 
 ### Step 2: Launch the Wizard
 
@@ -1358,7 +1378,7 @@ Put `config_template.json` in the `bin/` folder next to the executable.
 **Problem**: Wizard shows "Template file not found" or JSON errors.
 
 **Solutions**:
-- Ensure file is named exactly `config_template.json` (case-sensitive)
+- Ensure file is named exactly `wizard_template.json` (case-sensitive)
 - Ensure file is in `bin/` folder
 - Validate JSON syntax (use `jq` or online validator)
 - Check for trailing commas or syntax errors
@@ -1512,7 +1532,7 @@ Then reference it in `selectable_rules` without defining it again:
 
 When distributing your customized launcher:
 
-1. Include `config_template.json` in your release package
+1. Include `wizard_template.json` in your release package
 2. Place it in `bin/` folder
 3. Users will automatically use it when opening the Config Wizard
 4. Consider documenting your specific rules and options in a separate README

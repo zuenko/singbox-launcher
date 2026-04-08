@@ -74,6 +74,8 @@
 
 ## 6. Чеклист перед завершением
 
+Полный ритуал закрытия задачи в стиле Spec Kit (порядок шагов, доки, переименование папки **…-C-…**): **[SPECS/README.md — «Закрытие задачи (чеклист)»](SPECS/README.md#closing-task-checklist)**.
+
 - [ ] Сборка и тесты: `go build ./...`, `go test ./...`, `go vet ./...`.
 - [ ] Соблюдены **SPECS/IMPLEMENTATION_PROMPT.md** и **SPECS/CONSTITUTION.md** (логирование, ошибки, Git, стиль).
 - [ ] Изменены только файлы из TASKS.md; новые файлы — только если указаны в SPEC/PLAN.

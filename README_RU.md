@@ -31,7 +31,7 @@
   - [System Tray](#system-tray)
   - [Параметры командной строки](#параметры-командной-строки)
 - [⚙️ Конфигурация](#️-конфигурация)
-  - [Config Template (config_template.json)](#config-template-config_templatejson)
+  - [Шаблон визарда (wizard_template.json)](#шаблон-визарда-wizard_templatejson)
   - [Включение Clash API](#включение-clash-api)
   - [Настройка парсера подписок](#настройка-парсера-подписок)
 - [🔄 Парсер подписок](#-парсер-подписок)
@@ -227,7 +227,7 @@ curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scrip
 
 2. **Настройте через Wizard**:
    - Если `config.json` отсутствует, нажмите синюю кнопку **"Wizard"** (⚙️) на вкладке **"Core"**
-   - Если `config_template.json` отсутствует, сначала нажмите **"Download Config Template"**
+   - Если `wizard_template.json` отсутствует, сначала нажмите **"Download Config Template"**
    - Следуйте шагам визарда:
      - **Вкладка 1 (Sources & ParserConfig)**: Введите URL подписки, настройте ParserConfig
      - **Вкладка 2 (Rules)**: Выберите правила маршрутизации, настройте селекторы outbound
@@ -261,7 +261,7 @@ curl -fsSL https://raw.githubusercontent.com/Leadaxe/singbox-launcher/main/scrip
 - **Config Status** - Показывает статус config.json и дату последней модификации (ГГГГ-ММ-ДД)
 - Кнопка **"Wizard"** (⚙️) - Открыть визард конфигурации (синяя, если config.json отсутствует)
 - Кнопка **"Update Config"** (🔄) - Обновить конфигурацию из подписок (отключена, если config.json отсутствует)
-- Кнопка **"Download Config Template"** - Скачать config_template.json (синяя, если шаблон отсутствует)
+- Кнопка **"Download Config Template"** - Скачать wizard_template.json (синяя, если шаблон отсутствует)
 - Автоматический fallback на зеркало SourceForge, если GitHub недоступен
 
 #### Вкладка "Diagnostics"
@@ -335,7 +335,7 @@ Config Wizard предоставляет визуальный интерфейс
 
 **Особенности:**
 - Загружает существующую конфигурацию, если доступна
-- Использует `config_template.json` для правил по умолчанию
+- Использует `wizard_template.json` для правил по умолчанию
 - Поддержка JSONC (JSON с комментариями)
 - Автоматический бэкап перед сохранением
 - Навигация: кнопки Close/Next на первых двух вкладках, Close/Save на последней
@@ -457,7 +457,7 @@ singbox-launcher/
 │   ├── sing-box.exe (или sing-box для Unix) - автоматически скачивается через вкладку Core
 │   ├── wintun.dll (только Windows) - автоматически скачивается через вкладку Core
 │   ├── config.json - основная конфигурация (создается через визард или вручную)
-│   └── config_template.json - шаблон для визарда (автоматически скачивается, если отсутствует)
+│   └── wizard_template.json - шаблон для визарда (автоматически скачивается, если отсутствует)
 ├── logs/
 │   ├── singbox-launcher.log
 │   ├── sing-box.log
@@ -465,7 +465,7 @@ singbox-launcher/
 └── singbox-launcher.exe (или singbox-launcher для Unix)
 ```
 
-**Примечание:** `sing-box`, `wintun.dll` и `config_template.json` можно скачать автоматически через вкладку **Core**. Лаунчер:
+**Примечание:** `sing-box`, `wintun.dll` и `wizard_template.json` можно скачать автоматически через вкладку **Core**. Лаунчер:
 - Автоматически определит вашу платформу (Windows/macOS/Linux) и архитектуру (amd64/arm64)
 - Скачает правильную версию с GitHub или зеркала SourceForge (если GitHub заблокирован)
 - Установит файлы в правильное расположение
@@ -490,9 +490,9 @@ singbox-launcher/
 
 Если вы предпочитаете редактировать `config.json` вручную, см. разделы ниже.
 
-#### Config Template (config_template.json)
+#### Шаблон визарда (`wizard_template.json`)
 
-Файл `config_template.json` предоставляет шаблон для Config Wizard и определяет выбираемые правила маршрутизации. **Этот единый файл работает для всех платформ** (Windows, macOS, Linux).
+Файл `wizard_template.json` предоставляет шаблон для Config Wizard и определяет выбираемые правила маршрутизации. **Этот единый файл работает для всех платформ** (Windows, macOS, Linux).
 
 **Структура шаблона:**
 
@@ -557,10 +557,10 @@ singbox-launcher/
 
 **Создание собственных шаблонов:**
 
-Вы можете создать свой собственный файл `config_template.json` для настройки правил, доступных в Config Wizard:
+Вы можете создать свой собственный файл `wizard_template.json` для настройки правил, доступных в Config Wizard:
 
 1. **Начните с шаблона по умолчанию**: Скачайте шаблон по умолчанию через кнопку **"Download Config Template"**
-2. **Отредактируйте шаблон**: Измените `config_template.json` в папке `bin/`
+2. **Отредактируйте шаблон**: Измените `wizard_template.json` в папке `bin/`
 3. **Добавьте свои правила**: Добавьте записи в массив `selectable_rules` с `label`, `description`, `rule` и опциональным `rule_set`
 4. **Настройте ParserConfig**: Измените секцию `parser_config` для установки настроек подписок по умолчанию
 5. **Добавьте платформо-зависимые настройки**: Используйте секцию `params` для добавления платформо-зависимых конфигураций
@@ -601,7 +601,7 @@ singbox-launcher/
 
 **📖 Полное руководство для провайдеров VPN:**
 
-Подробные инструкции по созданию собственного шаблона `config_template.json`:
+Подробные инструкции по созданию собственного шаблона `wizard_template.json`:
 - **[docs/CREATE_WIZARD_TEMPLATE_RU.md](docs/CREATE_WIZARD_TEMPLATE_RU.md)** - Полное руководство с примерами и лучшими практиками
 - Руководство охватывает унифицированную JSON-структуру, платформо-зависимые конфигурации, настройку DNS, TUN vs Системный прокси и правила локального трафика
 
@@ -624,7 +624,7 @@ singbox-launcher/
 
 #### Настройка парсера подписок
 
-Для автоматического обновления конфигурации из подписок настройте секцию `parser_config` в `config_template.json` или используйте Config Wizard.
+Для автоматического обновления конфигурации из подписок настройте секцию `parser_config` в `wizard_template.json` или используйте Config Wizard.
 
 **Использование Config Wizard (Рекомендуется):**
 
@@ -636,7 +636,7 @@ singbox-launcher/
 
 **Ручная настройка:**
 
-Если вы предпочитаете редактировать вручную, конфигурация парсера хранится в `config.json` (загружается из `config_template.json` по умолчанию). Структура следует формату ParserConfig:
+Если вы предпочитаете редактировать вручную, конфигурация парсера хранится в `config.json` (загружается из `wizard_template.json` по умолчанию). Структура следует формату ParserConfig:
 
 ```json
 {
@@ -687,7 +687,7 @@ singbox-launcher/
 
 ### Быстрый старт
 
-Конфигурация парсера хранится в секции `ParserConfig` в `config.json` (загружается из `config_template.json` по умолчанию):
+Конфигурация парсера хранится в секции `ParserConfig` в `config.json` (загружается из `wizard_template.json` по умолчанию):
 
 ```json
 {
@@ -838,7 +838,7 @@ singbox-launcher/
 
 1. **Скачайте шаблон конфигурации**, если он отсутствует:
    - Нажмите кнопку **"Download Config Template"** на вкладке **"Core"**
-2. Убедитесь, что `config_template.json` существует в папке `bin/`
+2. Убедитесь, что `wizard_template.json` существует в папке `bin/`
 3. Проверьте, что файл шаблона является валидным JSON
 
 ### Clash API не работает
@@ -1027,6 +1027,8 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o singbox-launcher
 3. Закоммитьте изменения (`git commit -m 'Add some AmazingFeature'`)
 4. Запушьте в ветку (`git push origin feature/AmazingFeature`)
 5. Откройте Pull Request
+
+Крупные фичи ведём по **Spec Kit**: чеклист закрытия задачи — **[SPECS/README.md](SPECS/README.md#closing-task-checklist)**; для агентов и правил репозитория см. **[AGENTS.md](AGENTS.md)**.
 
 ### Стиль кода
 

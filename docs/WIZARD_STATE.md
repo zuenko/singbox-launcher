@@ -14,12 +14,17 @@
 |------|----------------------------------------|---------------------------------------------------|
 | **Шаблон целиком** | Всегда читается **до** state: каркас `config`, дефолты DNS/selectable, сырой `dns_options` шаблона, `DefaultFinal` и т.д. State **не** заменяет шаблон целиком — по полям правила разные (строки таблицы ниже). | Тот же шаблон; парсер может прийти из **`config.json`**, если там есть валидный `@ParserConfig`. |
 | **`parser_config`** | **Только state.** Шаблонный парсер на этом шаге **не** подмешивается. | **`config.json`** (приоритет) или **шаблон**. |
-| **`config_params`** (`route.final`, `enable_tun_macos`, …) | **State**; если параметра нет — **`DefaultFinal`** и т.п. из **шаблона**. `route.default_domain_resolver` здесь не норма (одноразовая миграция → см. DNS). | Обычно нет файла state → final задаётся из шаблона / **`EnsureFinalSelected`** после инициализации **`custom_rules`**. |
+| **`config_params`** (`route.final`, …) | **State**; если параметра нет — **`DefaultFinal`** из **шаблона**. Устаревший **`enable_tun_macos`** при загрузке мигрирует в **`vars.tun`** (см. **`vars`**). `route.default_domain_resolver` здесь не норма (одноразовая миграция → см. DNS). | Обычно нет файла state → final задаётся из шаблона / **`EnsureFinalSelected`** после инициализации **`custom_rules`**. |
+| **`vars`** | **State**: переопределения переменных шаблона (вкладка **Settings**), пары **`name`** / **`value`**. Сироты (имена не из текущего шаблона) при **LoadState** не попадают в модель; при **Save** в файл уходят только имена из шаблона. Повтор **`name`** в массиве JSON — при загрузке побеждает **последняя** запись. После **`restoreConfigParams`** для плейсхолдера **`clash_secret`** вызывается **`MaterializeClashSecretIfNeeded`**: сгенерированный секрет один раз попадает в **`SettingsVars`**, чтобы превью/DNS не меняли значение на каждом обновлении (пока пользователь не нажмёт **Сброс** для этого поля). | Нет ключа → дефолты из **`wizard_template.json`** (`vars[].default_value` / `default_node`). |
 | **`dns_options`** | Снимок из **state** в модель, затем **`ApplyWizardDNSTemplate`**: список серверов **сшивается** с **текущим** шаблоном; **пустые** поля модели добираются из шаблона (скелет `config.dns` + `dns_options` шаблона по правилам в коде). | Нет снимка → **`ApplyWizardDNSTemplate`** только из **шаблона** (если список DNS в модели ещё пуст). |
 | **`selectable_rule_states`** | **Только формат до `rules_library_merged` (версия 2 без флага):** до **`LoadState`** миграция **`ApplyRulesLibraryMigration`** переносит записи в начало **`custom_rules`** и очищает selectable. В сохранённом файле **3** ключа обычно нет. | Не используется: первый запуск без state — **`InitializeTemplateState`** засевает **`custom_rules`** из пресетов шаблона с **`default: true`**. |
 | **`custom_rules`** | **Единственный список правил маршрута** в модели после миграции: полные объекты, порядок = порядок в `route.rules` при генерации. | См. **`selectable_rule_states`** / засев из шаблона. |
 
 **Итог одной фразой:** для **парсера** и **`custom_rules`** при **`LoadState`** приоритет у **state** (после однократной миграции library selectable→custom); пресеты **`selectable_rules`** в шаблоне — только **библиотека** для кнопки «Add from library», не отдельный слой в модели; для **DNS** — **снимок state + обязательная сшивка с шаблоном** и добор пустот из шаблона.
+
+### `vars` и условия `params.if` / `params.if_or`
+
+При сборке эффективного конфига из шаблона для каждого имени в **`if`** или **`if_or`** проверяется, входит ли текущая ОС в **`vars[].platforms`** (пустой список — на всех ОС; для **windows/386** учитывается метка **`win7`**). Если **нет**, переменная для этого условия считается **ложной**, **даже если** в **`state.vars`** сохранено **`"true"`** (например, профиль перенесён с другой ОС). Подробнее — **docs/CREATE_WIZARD_TEMPLATE.md** (раздел про **`vars`** и **`if`**), **`ui/wizard/template/vars_resolve.go`**.
 
 ## Версия формата
 
@@ -38,7 +43,8 @@
 | `created_at` | string | RFC3339 (обязательное) |
 | `updated_at` | string | RFC3339 (обязательное) |
 | `parser_config` | object | Конфигурация парсера (proxies, outbounds, parser) |
-| `config_params` | array | Параметры без отдельной секции в state (например `route.final`, `enable_tun_macos`, секреты для генерации конфига). **Не** используется для `route.default_domain_resolver` — см. **`dns_options`**. |
+| `config_params` | array | Параметры без отдельной секции в state (в первую очередь **`route.final`**). Устаревший **`enable_tun_macos`** читается только для миграции в **`vars`**. **Не** используется для `route.default_domain_resolver` — см. **`dns_options`**. |
+| `vars` | array | Переопределения шаблонных переменных: объекты **`{ "name": string, "value": string }`**. TUN на macOS — переменная **`tun`** (`"true"` / `"false"`). |
 | `dns_options` | object | Состояние вкладки DNS визарда (опционально; см. ниже). Имя ключа совпадает с секцией шаблона `wizard_template.json`. |
 | `selectable_rule_states` | array | Устарело при **`rules_library_merged`**: в формате **3** не используется для route (миграция с версии **2**) |
 | `rules_library_merged` | bool | **`true`** после миграции/нового формата: только **`custom_rules`** задают порядок правил в маршруте |
@@ -47,7 +53,8 @@
 Краткие резюме по ключам JSON (детали — в разделах ниже и в **«Резюме по блокам»**):
 
 - **`parser_config`** — при `LoadState`: вся правда в этом объекте из файла.
-- **`config_params`** — мелкие параметры генерации и UI; резолвер DNS сюда не кладём.
+- **`config_params`** — в т.ч. **`route.final`**; резолвер DNS сюда не кладём.
+- **`vars`** — пользовательские значения для **`wizard_template.json`** → **`vars`** (Settings); TUN macOS — **`tun`**.
 - **`dns_options`** — снимок вкладки DNS + сшивка с шаблоном после загрузки.
 - **`selectable_rule_states`** — устаревший слой (v2); при отсутствии **`rules_library_merged`** сливается в **`custom_rules`** при загрузке.
 - **`rules_library_merged`** — после **`true`** в файле и модели нет отдельного списка selectable-state; в **`custom_rules`** лежат все правила маршрута.
@@ -73,7 +80,7 @@
 
 Дефолт из шаблона: в **`wizard_template.json`** в секции **`dns_options`** — поле `default_domain_resolver` или строковый ключ **`route.default_domain_resolver`**, иначе `config.route.default_domain_resolver`. Стартовый список серверов и правила при первом запуске могут задаваться там же (`servers`, `rules`, **`dns.final`** / `final`, `strategy`, `independent_cache`); у серверов поля `description` и `enabled` только для визарда и не попадают в sing-box; если в шаблонном `dns_options.servers` нет `type: local`, локальный резолвер дописывается из `config.dns.servers`.
 
-**Порядок при `LoadState`:** сначала **`config_params`** (`route.final`, `enable_tun_macos`, прочее — **без** резолвера DNS), затем **`restoreDNS`**: при наличии **`dns_options`** — **`LoadPersistedWizardDNS`** (в модель попадают **все** поля снимка из state, в т.ч. **`strategy`**, **`final`**, серверы и т.д.), при необходимости подхват старого **`route.default_domain_resolver`** из **`config_params`**, затем всегда **`ApplyWizardDNSTemplate`** — слияние списка серверов с шаблоном и подстановка **только пустых** полей из шаблона. Для **`strategy`** из шаблона (если в модели после state всё ещё пусто): база — **`config.dns.strategy`**, поверх — **`dns_options.strategy`** шаблона (второе перекрывает первое).
+**Порядок при `LoadState`:** миграция **`enable_tun_macos` → `vars.tun`** (если **`tun`** ещё нет), затем **`config_params`** (`route.final`, прочее — **без** резолвера DNS), затем **`restoreDNS`**: при наличии **`dns_options`** — **`LoadPersistedWizardDNS`** (в модель попадают **все** поля снимка из state, в т.ч. **`strategy`**, **`final`**, серверы и т.д.), при необходимости подхват старого **`route.default_domain_resolver`** из **`config_params`**, затем всегда **`ApplyWizardDNSTemplate`** — слияние списка серверов с шаблоном и подстановка **только пустых** полей из шаблона. Для **`strategy`** из шаблона (если в модели после state всё ещё пусто): база — **`config.dns.strategy`**, поверх — **`dns_options.strategy`** шаблона (второе перекрывает первое).
 
 **`ApplyWizardDNSTemplate`** пересобирает список серверов в порядке `config.dns.servers` (закреплённые теги), затем **`dns_options.servers`** с остальными тегами, затем осиротевшие сохранённые теги. Для **одинакового `tag`** между **`config.dns.servers`** (скелет) и **`dns_options.servers`**: при включённой галочке «в конфиг» строка берётся из **`dns_options`**, при выключенной — форма остаётся как в скелете **`config.dns`**. Пустые / плейсхолдер **правил** (текст редактора после загрузки **`rules`**), пустые **`final`** / **`strategy`**, отсутствующий **`independent_cache`** и пустой **`default_domain_resolver`** (если не «не задан») добираются из шаблона; при необходимости в начало списка добавляется **`local`** из `config.dns`.
 
@@ -96,7 +103,7 @@
 
 > **Резюме (`parser_config`):** при **`LoadState`** в модель попадает **только** содержимое из файла state (**`restoreParserConfig`**). Шаблонный парсер на этом шаге **не** смешивается.
 
-> **Резюме (`config_params`):** из state читаются **`route.final`**, **`enable_tun_macos`** и остальные пары `name`/`value`; если **`route.final`** в state нет — **`DefaultFinal`** из шаблона. **`route.default_domain_resolver`** в `config_params` — устаревший дубль; подхватывается **один раз** в **`restoreDNS`**, если после **`dns_options`** резолвер в модели пуст и не режим unset.
+> **Резюме (`config_params`):** из state читаются **`route.final`** и остальные пары `name`/`value`; если **`route.final`** в state нет — **`DefaultFinal`** из шаблона. **`enable_tun_macos`** не используется как источник истины: до **`restoreConfigParams`** выполняется миграция в **`vars.tun`**. **`route.default_domain_resolver`** в `config_params` — устаревший дубль; подхватывается **один раз** в **`restoreDNS`**, если после **`dns_options`** резолвер в модели пуст и не режим unset.
 
 Схема **`parser_config`** в JSON и миграции — **SPECS/002-F-C-WIZARD_STATE/WIZARD_STATE_JSON_SCHEMA.md**, **`WizardStateFile.UnmarshalJSON`**.
 
@@ -167,13 +174,13 @@
 2. **`presenter.LoadState(stateFile)`** (порядок шагов в коде):
    - **`restoreParserConfig`** — **`parser_config` целиком из state** перезаписывает модель (`ParserConfig`, `ParserConfigJSON`); шаблонный парсер здесь не используется.
    - **`SourceURLs = ""`** — поле ввода URL только для добавления; список источников из **`ParserConfig.Proxies`**.
-   - **`restoreConfigParams`** — из **`config_params`**: `route.final` → **`SelectedFinalOutbound`**, `enable_tun_macos` → флаг TUN; если `route.final` нет — **`DefaultFinal`** из шаблона. **`route.default_domain_resolver` в `config_params`** на этом шаге не читается (только миграция в **`restoreDNS`**).
+   - **`restoreConfigParams`** — из **`config_params`**: `route.final` → **`SelectedFinalOutbound`**; если `route.final` нет — **`DefaultFinal`** из шаблона. Из **`vars`** в state — в **`model.SettingsVars`** (TUN macOS — ключ **`tun`**). Затем **`MaterializeClashSecretIfNeeded`** — стабилизация автогенерации **`clash_secret`** в модели (см. строку таблицы про **`vars`**). **`route.default_domain_resolver` в `config_params`** на этом шаге не читается (только миграция в **`restoreDNS`**).
    - **`restoreDNS`** — см. раздел **dns_options** и **Поток DNS** выше: **`LoadPersistedWizardDNS`** (если в state есть **`dns_options`**) копирует в модель **весь** снимок DNS из файла; при необходимости подхват старого резолвера из **`config_params`**; затем **`ApplyWizardDNSTemplate`** (слияние списка серверов с **текущим** шаблоном + подстановка **пустых** полей из шаблона).
    - **`ApplyRulesLibraryMigration(stateFile, TemplateData, ExecDir)`** — если миграция library ещё не выполнена: объединение selectable+template order и существующих **`custom_rules`** в один список в **`stateFile.CustomRules`**, **`RulesLibraryMerged = true`**, **`SelectableRuleStates = nil`**.
    - **`model.RulesLibraryMerged`**, **`model.SelectableRuleStates = nil`**, затем **`restoreCustomRules(stateFile.CustomRules)`** — единственный источник правил маршрута в модели.
    - **`PreviewNeedsParse = true`**, **`SyncModelToGUI`**, **`RefreshOutboundOptions`**. Если миграция только что записала флаг merged — **`SaveWizardState`** текущего файла (идемпотентность при повторном открытии) и **`MarkAsSaved`**; иначе **`MarkAsSaved`**.
 
-Итог: при **LoadState** источники правды — **state** для парсера, **config_params** для final/TUN, **dns_options + шаблон** для DNS (см. DNS-раздел), **`custom_rules` (после миграции)** для маршрута.
+Итог: при **LoadState** источники правды — **state** для парсера, **config_params** для final, **`vars`** для настроек шаблона (в т.ч. TUN), **dns_options + шаблон** для DNS (см. DNS-раздел), **`custom_rules` (после миграции)** для маршрута.
 
 ### 3. Старт визарда **без** `state.json`
 
@@ -201,7 +208,8 @@
 |---------|-------------------|--------------|
 | Парсер, источники, outbounds в JSON | **`parser_config` в state** | Не подмешивается при LoadState |
 | Поле URL на Sources | Пустое; список из **Proxies** | — |
-| **`route.final` / TUN** | **`config_params` state** | Fallback **`DefaultFinal`** шаблона, если параметра нет |
+| **`route.final`** | **`config_params` state** | Fallback **`DefaultFinal`** шаблона, если параметра нет |
+| **Переменные шаблона / TUN macOS** | **`vars` state** (в т.ч. `tun`) | Дефолты из **`wizard_template.json`** (`vars`) |
 | Вкладка DNS | **`dns_options` state** + **`ApplyWizardDNSTemplate`** | Скелет **`config.dns`**, сырой **`dns_options`**, блокировки тегов |
 | Правила маршрута (`custom_rules`) | **`custom_rules` state** (после миграции — единственный список) | Первый запуск: засев из **`selectable_rules`** с **`default: true`**; шаблон **`selectable_rules`** — библиотека для UI |
 

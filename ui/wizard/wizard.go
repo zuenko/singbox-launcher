@@ -275,8 +275,11 @@ func createWizardTabs(presenter *wizardpresentation.WizardPresenter, guiState *w
 
 	if templateTab := wizardtabs.CreateRulesTab(presenter, showAddRuleDialogWrapper); templateTab != nil {
 		rulesTabItem = container.NewTabItem(locale.T("wizard.tab_rules"), templateTab)
+		settingsTab := wizardtabs.CreateSettingsTab(presenter)
+		settingsTabItem := container.NewTabItem(locale.T("wizard.tab_settings"), settingsTab)
 		previewTabItem = container.NewTabItem(locale.T("wizard.tab_preview"), wizardtabs.CreatePreviewTab(presenter))
 		tabs.Append(rulesTabItem)
+		tabs.Append(settingsTabItem)
 		tabs.Append(previewTabItem)
 	}
 

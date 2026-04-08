@@ -55,9 +55,12 @@ type TemplateData struct {
 	// ConfigOrder — порядок секций конфига (log, dns, inbounds, ...).
 	ConfigOrder []string
 
-	// RawConfig и Params — исходный config и params из шаблона; для darwin при сборке конфига применяются заново с учётом EnableTunForMacOS.
+	// RawConfig и Params — исходный config и params из шаблона; при сборке применяются заново с учётом vars / Settings.
 	RawConfig json.RawMessage
 	Params    []TemplateParam
+	// Vars — объявления переменных шаблона; RawTemplate — полный JSON файла для default_node и ResolveTemplateVars.
+	Vars        []TemplateVar
+	RawTemplate json.RawMessage `json:"-"`
 
 	// SelectableRules — правила маршрутизации для визарда (уже отфильтрованные по платформе).
 	SelectableRules []TemplateSelectableRule
@@ -113,6 +116,9 @@ type TemplateParam struct {
 	Platforms []string        `json:"platforms"`
 	Value     json.RawMessage `json:"value"`
 	Mode      string          `json:"mode"` // "replace", "prepend", "append"
+	If        []string        `json:"if,omitempty"`
+	// IfOr: хотя бы одна перечисленная bool-переменная истинна на текущей ОС (см. ParamBoolVarTrue).
+	IfOr []string `json:"if_or,omitempty"`
 }
 
 // jsonSelectableRule — промежуточная структура для десериализации selectable_rules из JSON.
@@ -157,9 +163,14 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 		DNSOptions      json.RawMessage      `json:"dns_options,omitempty"`
 		SelectableRules []jsonSelectableRule `json:"selectable_rules"`
 		Params          []TemplateParam      `json:"params"`
+		Vars            []TemplateVar        `json:"vars"`
 	}
 	if err := json.Unmarshal(raw, &root); err != nil {
 		return nil, fmt.Errorf("invalid JSON in %s: %w", TemplateFileName, err)
+	}
+
+	if err := ValidateWizardTemplate(root.Vars, root.Params, root.Config); err != nil {
+		return nil, fmt.Errorf("%s: %w", TemplateFileName, err)
 	}
 
 	// 1. ParserConfig → оборачиваем содержимое parser_config в объект ParserConfig и форматируем
@@ -180,10 +191,10 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 	}
 	debuglog.DebugLog("TemplateLoader: ParserConfig длина: %d", len(parserConfigStr))
 
-	// 2. Сохраняем сырой config и params для переприменения при сборке (darwin + галочка TUN)
+	// 2. Сохраняем сырой config и params; применяем params + vars (дефолты шаблона, state пуст)
 	rawConfig := root.Config
-	enableTunDefault := true
-	configJSON, err := applyParams(root.Config, root.Params, runtime.GOOS, enableTunDefault)
+	rawFull := json.RawMessage(append([]byte(nil), raw...))
+	configJSON, err := ApplyTemplateWithVars(root.Config, root.Params, runtime.GOOS, root.Vars, nil, rawFull)
 	if err != nil {
 		return nil, fmt.Errorf("error applying params: %w", err)
 	}
@@ -215,6 +226,8 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 		ConfigOrder:             configOrder,
 		RawConfig:               rawConfig,
 		Params:                  root.Params,
+		Vars:                    root.Vars,
+		RawTemplate:             rawFull,
 		SelectableRules:         selectableRules,
 		DefaultFinal:            defaultFinal,
 		DefaultDomainResolver:   defaultDomainResolver,
@@ -222,9 +235,27 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 	}, nil
 }
 
-// applyParams применяет платформозависимые параметры к config.
-// enableTunForDarwin: при goos=="darwin" params с platforms ["darwin-tun"] применяются только если true.
-func applyParams(configJSON json.RawMessage, params []TemplateParam, goos string, enableTunForDarwin bool) (json.RawMessage, error) {
+// ApplyTemplateWithVars применяет params (платформа, if, if_or) и подставляет @name из vars.
+func ApplyTemplateWithVars(configJSON json.RawMessage, params []TemplateParam, goos string, vars []TemplateVar, stateVars map[string]string, rawFull json.RawMessage) (json.RawMessage, error) {
+	resolved := ResolveTemplateVars(vars, stateVars, rawFull)
+	MaybeGenerateClashSecret(resolved)
+	vi := VarIndex(vars)
+	out, err := applyParamsFiltered(configJSON, params, goos, vi, resolved)
+	if err != nil {
+		return nil, err
+	}
+	if len(vars) == 0 {
+		return out, nil
+	}
+	return SubstituteVarsInJSON(out, vars, resolved)
+}
+
+// applyParams применяет платформозависимые параметры к config (без if и без подстановки @).
+func applyParams(configJSON json.RawMessage, params []TemplateParam, goos string) (json.RawMessage, error) {
+	return applyParamsFiltered(configJSON, params, goos, nil, nil)
+}
+
+func applyParamsFiltered(configJSON json.RawMessage, params []TemplateParam, goos string, vi map[string]TemplateVar, resolved map[string]ResolvedVar) (json.RawMessage, error) {
 	if len(params) == 0 {
 		return configJSON, nil
 	}
@@ -235,8 +266,19 @@ func applyParams(configJSON json.RawMessage, params []TemplateParam, goos string
 	}
 
 	for _, param := range params {
-		if !matchesPlatform(param.Platforms, goos, enableTunForDarwin) {
+		if !matchesPlatform(param.Platforms, goos) {
 			continue
+		}
+		if vi != nil && resolved != nil {
+			if len(param.If) > 0 && len(param.IfOr) > 0 {
+				return nil, fmt.Errorf("param %q: if and if_or cannot both be set", param.Name)
+			}
+			if len(param.If) > 0 && !ParamIfSatisfied(param.If, vi, resolved, goos) {
+				continue
+			}
+			if len(param.IfOr) > 0 && !ParamIfOrSatisfied(param.IfOr, vi, resolved, goos) {
+				continue
+			}
 		}
 		mode := param.Mode
 		if mode == "" {
@@ -333,12 +375,12 @@ func mergeArrays(config map[string]json.RawMessage, key string, first, second js
 	return nil
 }
 
-// GetEffectiveConfig применяет params к rawConfig с учётом enableTunForDarwin и возвращает секции и порядок ключей.
-func GetEffectiveConfig(rawConfig json.RawMessage, params []TemplateParam, goos string, enableTunForDarwin bool) (map[string]json.RawMessage, []string, error) {
+// GetEffectiveConfig применяет params и vars к rawConfig и возвращает секции и порядок ключей.
+func GetEffectiveConfig(rawConfig json.RawMessage, params []TemplateParam, goos string, vars []TemplateVar, stateVars map[string]string, rawFull json.RawMessage) (map[string]json.RawMessage, []string, error) {
 	if len(rawConfig) == 0 {
 		return nil, nil, fmt.Errorf("raw config is empty")
 	}
-	applied, err := applyParams(rawConfig, params, goos, enableTunForDarwin)
+	applied, err := ApplyTemplateWithVars(rawConfig, params, goos, vars, stateVars, rawFull)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -346,17 +388,13 @@ func GetEffectiveConfig(rawConfig json.RawMessage, params []TemplateParam, goos 
 }
 
 // matchesPlatform проверяет, подходит ли текущая платформа.
-// При goos=="darwin" и enableTunForDarwin также матчится "darwin-tun".
 // При сборке Win7 (GOOS=windows, GOARCH=386) также матчится "win7" вместе с "windows".
-func matchesPlatform(platforms []string, goos string, enableTunForDarwin bool) bool {
+func matchesPlatform(platforms []string, goos string) bool {
 	if len(platforms) == 0 {
 		return true
 	}
 	for _, p := range platforms {
 		if p == goos {
-			return true
-		}
-		if goos == "darwin" && enableTunForDarwin && p == "darwin-tun" {
 			return true
 		}
 		if goos == "windows" && runtime.GOARCH == "386" && p == "win7" {
@@ -370,7 +408,7 @@ func matchesPlatform(platforms []string, goos string, enableTunForDarwin bool) b
 func filterAndConvertRules(jsonRules []jsonSelectableRule, platform string) []TemplateSelectableRule {
 	var result []TemplateSelectableRule
 	for _, jr := range jsonRules {
-		if !matchesPlatform(jr.Platforms, platform, true) {
+		if !matchesPlatform(jr.Platforms, platform) {
 			continue
 		}
 		rule := TemplateSelectableRule{

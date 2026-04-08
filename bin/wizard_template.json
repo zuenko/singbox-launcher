@@ -63,9 +63,82 @@
     }
   },
 
+  "vars": [
+    {
+      "name": "tun",
+      "type": "bool",
+      "default_value": "true",
+      "wizard_ui": "edit",
+      "platforms": ["darwin"],
+      "title": "Enable TUN (macOS)",
+      "tooltip": "Route traffic through sing-box TUN. Requires administrator privileges on macOS."
+    },
+    {
+      "name": "tun_builtin",
+      "type": "bool",
+      "default_value": "true",
+      "wizard_ui": "hidden",
+      "platforms": ["windows", "linux"],
+      "title": "TUN (Windows/Linux)",
+      "tooltip": "TUN inbound is always merged on these platforms. Used for template conditions (params.if); not user-editable."
+    },
+    {
+      "name": "tun_address",
+      "type": "text",
+      "default_value": "172.16.0.1/30",
+      "wizard_ui": "edit",
+      "if_or": ["tun_builtin", "tun"],
+      "title": "TUN interface address",
+      "tooltip": "IPv4 CIDR for the TUN interface (inbounds address). Enabled when TUN is on for this platform."
+    },
+    {
+      "name": "tun_mtu",
+      "type": "text",
+      "default_value": "1492",
+      "wizard_ui": "edit",
+      "if_or": ["tun_builtin", "tun"],
+      "title": "TUN MTU",
+      "tooltip": "Maximum transmission unit for the TUN interface (numeric value in JSON)."
+    },
+    {
+      "name": "mixed_listen_port",
+      "type": "text",
+      "default_value": "7890",
+      "wizard_ui": "edit",
+      "platforms": ["darwin"],
+      "title": "Mixed inbound port",
+      "tooltip": "Listen port for the mixed inbound when TUN is off (macOS only)."
+    },
+    {
+      "name": "log_level",
+      "type": "enum",
+      "default_value": "warn",
+      "options": ["trace", "debug", "info", "warn", "error", "fatal", "panic"],
+      "wizard_ui": "edit",
+      "title": "Log level",
+      "tooltip": "Sing-box log.level (trace, debug, info, warn, error, fatal, panic)."
+    },
+    {
+      "name": "clash_api",
+      "type": "text",
+      "default_value": "127.0.0.1:9090",
+      "wizard_ui": "edit",
+      "title": "Clash API address",
+      "tooltip": "Host:port for external_controller (Clash-compatible REST API)."
+    },
+    {
+      "name": "clash_secret",
+      "type": "custom",
+      "default_value": "CHANGE_THIS_TO_YOUR_SECRET_TOKEN",
+      "wizard_ui": "edit",
+      "title": "Clash API secret",
+      "tooltip": "Secret for the Clash API. Use the refresh button to generate a random value."
+    }
+  ],
+
   "config": {
     "log": {
-      "level": "warn",
+      "level": "@log_level",
       "timestamp": true
     },
     "dns": {
@@ -106,8 +179,8 @@
     },
     "experimental": {
       "clash_api": {
-        "external_controller": "127.0.0.1:9090",
-        "secret": "CHANGE_THIS_TO_YOUR_SECRET_TOKEN"
+        "external_controller": "@clash_api",
+        "secret": "@clash_secret"
       },
       "cache_file": {
         "enabled": true,
@@ -435,8 +508,8 @@
           "type": "tun",
           "tag": "tun-in",
           "interface_name": "singbox-tun0",
-          "address": ["172.16.0.1/30"],
-          "mtu": 1492,
+          "address": ["@tun_address"],
+          "mtu": "@tun_mtu",
           "auto_route": true,
           "strict_route": false,
           "stack": "system"
@@ -451,8 +524,8 @@
           "type": "tun",
           "tag": "tun-in",
           "interface_name": "singbox-tun0",
-          "address": ["172.16.0.1/30"],
-          "mtu": 1492,
+          "address": ["@tun_address"],
+          "mtu": "@tun_mtu",
           "auto_route": true,
           "strict_route": false,
           "stack": "gvisor"
@@ -461,13 +534,14 @@
     },
     {
       "name": "inbounds",
-      "platforms": ["darwin-tun"],
+      "platforms": ["darwin"],
+      "if": ["tun"],
       "value": [
         {
           "type": "tun",
           "tag": "tun-in",
-          "address": ["172.16.0.1/30"],
-          "mtu": 1492,
+          "address": ["@tun_address"],
+          "mtu": "@tun_mtu",
           "auto_route": true,
           "strict_route": false,
           "stack": "system"
@@ -482,7 +556,7 @@
           "type": "mixed",
           "tag": "proxy-in",
           "listen": "127.0.0.1",
-          "listen_port": 7890,
+          "listen_port": "@mixed_listen_port",
           "set_system_proxy": true
         }
       ],
@@ -490,7 +564,8 @@
     },
     {
       "name": "route.rules",
-      "platforms": ["windows", "linux", "darwin-tun"],
+      "platforms": ["windows", "linux", "darwin"],
+      "if_or": ["tun_builtin", "tun"],
       "mode": "prepend",
       "value": [
         { "inbound": "tun-in", "action": "resolve", "strategy": "prefer_ipv4" },

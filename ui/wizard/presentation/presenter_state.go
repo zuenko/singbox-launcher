@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -98,6 +97,14 @@ func (p *WizardPresenter) CreateStateFromModel(comment, id string) *wizardmodels
 	}
 	state.DNSOptions = dnsState
 
+	if p.model.TemplateData != nil {
+		for _, vd := range p.model.TemplateData.Vars {
+			if val, ok := p.model.SettingsVars[vd.Name]; ok {
+				state.Vars = append(state.Vars, wizardmodels.PersistedSettingVar{Name: vd.Name, Value: val})
+			}
+		}
+	}
+
 	return state
 }
 
@@ -125,14 +132,6 @@ func (p *WizardPresenter) extractConfigParams() []wizardmodels.ConfigParam {
 			Name:  "route.final",
 			Value: p.model.TemplateData.DefaultFinal,
 		})
-	}
-
-	if runtime.GOOS == "darwin" {
-		v := "false"
-		if p.model.EnableTunForMacOS {
-			v = "true"
-		}
-		params = append(params, wizardmodels.ConfigParam{Name: "enable_tun_macos", Value: v})
 	}
 
 	// route.default_domain_resolver не дублируем в config_params — только dns_options в state.json (см. docs/WIZARD_STATE.md).
@@ -206,8 +205,11 @@ func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) err
 	// Keep it empty on load so the field is for adding new URLs only; existing sources are shown from Proxies.
 	p.model.SourceURLs = ""
 
-	// Восстановление config_params (шаг 4)
-	p.restoreConfigParams(stateFile.ConfigParams)
+	wizardmodels.MigrateSettingsVarsFromConfigParams(stateFile)
+
+	// Восстановление config_params и vars (шаг 4)
+	p.restoreConfigParams(stateFile)
+	wizardbusiness.MaterializeClashSecretIfNeeded(p.model)
 
 	// Восстановление DNS вкладки (шаг 4b)
 	p.restoreDNS(stateFile)
@@ -272,8 +274,9 @@ func (p *WizardPresenter) restoreCustomRules(persistedRules []wizardmodels.Persi
 	}
 }
 
-// restoreConfigParams восстанавливает config_params и маппинг в модель.
-func (p *WizardPresenter) restoreConfigParams(configParams []wizardmodels.ConfigParam) {
+// restoreConfigParams восстанавливает config_params и vars в модель.
+func (p *WizardPresenter) restoreConfigParams(stateFile *wizardmodels.WizardStateFile) {
+	configParams := stateFile.ConfigParams
 	// Ищем route.final в параметрах
 	finalOutbound := p.findConfigParamValue(configParams, "route.final")
 
@@ -284,8 +287,18 @@ func (p *WizardPresenter) restoreConfigParams(configParams []wizardmodels.Config
 		p.model.SelectedFinalOutbound = p.getDefaultFinalOutbound()
 	}
 
-	if v := p.findConfigParamValue(configParams, "enable_tun_macos"); v != "" {
-		p.model.EnableTunForMacOS = v == "true"
+	allowed := make(map[string]struct{})
+	if p.model.TemplateData != nil {
+		for _, vd := range p.model.TemplateData.Vars {
+			allowed[vd.Name] = struct{}{}
+		}
+	}
+	p.model.SettingsVars = make(map[string]string)
+	for _, x := range stateFile.Vars {
+		if _, ok := allowed[x.Name]; !ok {
+			continue // сироты: имя не из текущего шаблона (SPEC 032)
+		}
+		p.model.SettingsVars[x.Name] = x.Value // при дубликатах name в массиве JSON — последняя запись выигрывает
 	}
 
 	// Резолвер по умолчанию — только из dns_options (+ миграция из config_params в restoreDNS для старых файлов).

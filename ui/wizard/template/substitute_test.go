@@ -1,0 +1,53 @@
+package template
+
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestSubstituteVarsInJSON_scalars(t *testing.T) {
+	vars := []TemplateVar{
+		{Name: "log_level", Type: "enum"},
+		{Name: "tun_mtu", Type: "text"},
+	}
+	resolved := map[string]ResolvedVar{
+		"log_level": {Scalar: "info"},
+		"tun_mtu":   {Scalar: "1400"},
+	}
+	raw := json.RawMessage(`{"log":{"level":"@log_level"},"mtu":"@tun_mtu"}`)
+	out, err := SubstituteVarsInJSON(raw, vars, resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(out, &m); err != nil {
+		t.Fatal(err)
+	}
+	log := m["log"].(map[string]interface{})
+	if log["level"] != "info" {
+		t.Fatalf("log.level: %v", log["level"])
+	}
+	if m["mtu"] != float64(1400) { // json.Unmarshal numbers default to float64
+		t.Fatalf("mtu: %v want 1400", m["mtu"])
+	}
+}
+
+func TestSubstituteVarsInJSON_textList(t *testing.T) {
+	vars := []TemplateVar{{Name: "addrs", Type: "text_list"}}
+	resolved := map[string]ResolvedVar{
+		"addrs": {List: []string{"10.0.0.1/32", "10.0.0.2/32"}},
+	}
+	raw := json.RawMessage(`{"address":["@addrs"]}`)
+	out, err := SubstituteVarsInJSON(raw, vars, resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(out, &m); err != nil {
+		t.Fatal(err)
+	}
+	arr := m["address"].([]interface{})
+	if len(arr) != 2 || arr[0] != "10.0.0.1/32" {
+		t.Fatalf("address: %v", m["address"])
+	}
+}
