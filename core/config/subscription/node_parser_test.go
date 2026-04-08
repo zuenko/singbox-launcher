@@ -1108,6 +1108,65 @@ func TestParseNode_Hysteria2(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:        "Hysteria2 mport comma-separated (official multi-port)",
+			uri:         "hysteria2://pw@example.com:443?mport=41000,42000-43000&sni=example.com#t",
+			expectError: false,
+			checkFields: func(t *testing.T, node *config.ParsedNode) {
+				if node == nil {
+					t.Fatal("Expected node, got nil")
+				}
+				sp, ok := node.Outbound["server_ports"].([]string)
+				if !ok || len(sp) != 2 || sp[0] != "41000:41000" || sp[1] != "42000:43000" {
+					t.Fatalf("server_ports: %#v", node.Outbound["server_ports"])
+				}
+			},
+		},
+		{
+			name:        "Hysteria2 ports= query alias",
+			uri:         "hysteria2://pw@example.com:443?ports=5000-6000&sni=example.com#t",
+			expectError: false,
+			checkFields: func(t *testing.T, node *config.ParsedNode) {
+				sp, ok := node.Outbound["server_ports"].([]string)
+				if !ok || len(sp) != 1 || sp[0] != "5000:6000" {
+					t.Fatalf("server_ports: %#v", node.Outbound["server_ports"])
+				}
+			},
+		},
+		{
+			name:        "Hysteria2 multi-port in authority (net/url cannot parse; recovery)",
+			uri:         "hysteria2://secret@example.com:443,20000-30000/?insecure=1#hop",
+			expectError: false,
+			checkFields: func(t *testing.T, node *config.ParsedNode) {
+				if node == nil {
+					t.Fatal("Expected node, got nil")
+				}
+				if node.Port != 443 {
+					t.Errorf("port want 443 got %d", node.Port)
+				}
+				if node.Query.Get("mport") != "443,20000-30000" {
+					t.Errorf("mport merge: %q", node.Query.Get("mport"))
+				}
+				sp, ok := node.Outbound["server_ports"].([]string)
+				if !ok || len(sp) != 2 || sp[0] != "443:443" || sp[1] != "20000:30000" {
+					t.Fatalf("server_ports: %#v", node.Outbound["server_ports"])
+				}
+			},
+		},
+		{
+			name:        "Hysteria2 authority port range only",
+			uri:         "hysteria2://p@example.com:20000-50000/?sni=example.com#r",
+			expectError: false,
+			checkFields: func(t *testing.T, node *config.ParsedNode) {
+				if node.Port != 20000 {
+					t.Errorf("port want 20000 got %d", node.Port)
+				}
+				sp, ok := node.Outbound["server_ports"].([]string)
+				if !ok || len(sp) != 1 || sp[0] != "20000:50000" {
+					t.Fatalf("server_ports: %#v", node.Outbound["server_ports"])
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -1224,6 +1283,46 @@ func TestBuildOutbound_Hysteria2(t *testing.T) {
 		}
 		if len(alpn) != 1 || alpn[0] != "h3" {
 			t.Errorf("Expected ALPN ['h3'], got '%v'", alpn)
+		}
+	})
+
+	t.Run("Hysteria2 mport comma-separated in outbound", func(t *testing.T) {
+		node := &config.ParsedNode{
+			Tag:    "hy2-comma",
+			Scheme: "hysteria2",
+			Server: "example.com",
+			Port:   443,
+			UUID:   "x",
+			Query:  make(map[string][]string),
+		}
+		node.Query.Set("mport", "443,10000-11000")
+		node.Query.Set("insecure", "1")
+		out := buildOutbound(node)
+		sp, ok := out["server_ports"].([]string)
+		if !ok || len(sp) != 2 || sp[0] != "443:443" || sp[1] != "10000:11000" {
+			t.Fatalf("server_ports %#v", out["server_ports"])
+		}
+	})
+
+	t.Run("Hysteria2 mport single port becomes start:end for sing-box", func(t *testing.T) {
+		node := &config.ParsedNode{
+			Tag:    "test-hy2-mport",
+			Scheme: "hysteria2",
+			Server: "62.210.30.179",
+			Port:   40022,
+			UUID:   "secret",
+			Query:  make(map[string][]string),
+		}
+		node.Query.Set("mport", "41000")
+		node.Query.Set("insecure", "1")
+
+		outbound := buildOutbound(node)
+		serverPorts, ok := outbound["server_ports"].([]string)
+		if !ok {
+			t.Fatalf("Expected server_ports []string, got %T", outbound["server_ports"])
+		}
+		if len(serverPorts) != 1 || serverPorts[0] != "41000:41000" {
+			t.Errorf("Expected server_ports ['41000:41000'], got %v", serverPorts)
 		}
 	})
 

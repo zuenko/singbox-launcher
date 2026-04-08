@@ -526,12 +526,20 @@ func shareURIFromHysteria2(out map[string]interface{}) (string, error) {
 		}
 	}
 	if sp, ok := out["server_ports"].([]interface{}); ok && len(sp) > 0 {
-		s0 := mapGetString(map[string]interface{}{"v": sp[0]}, "v")
-		if s0 != "" {
-			q.Set("mport", strings.ReplaceAll(s0, ":", "-"))
+		parts := make([]string, 0, len(sp))
+		for _, v := range sp {
+			s := mapGetString(map[string]interface{}{"v": v}, "v")
+			if s != "" {
+				parts = append(parts, s)
+			}
+		}
+		if mq := hysteria2ServerPortsToMportQuery(parts); mq != "" {
+			q.Set("mport", mq)
 		}
 	} else if sp, ok := out["server_ports"].([]string); ok && len(sp) > 0 {
-		q.Set("mport", strings.ReplaceAll(sp[0], ":", "-"))
+		if mq := hysteria2ServerPortsToMportQuery(sp); mq != "" {
+			q.Set("mport", mq)
+		}
 	}
 	if obfs, ok := out["obfs"].(map[string]interface{}); ok {
 		if ot := mapGetString(obfs, "type"); ot != "" {

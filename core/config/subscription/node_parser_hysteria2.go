@@ -23,14 +23,14 @@ func buildHysteria2Outbound(node *configtypes.ParsedNode, outbound map[string]in
 		debuglog.WarnLog("Parser: Hysteria2 link missing password. URI might be invalid.")
 	}
 
-	// Optional: ports range (mport parameter) - converted to server_ports array for sing-box 1.9+
-	// Format: "27200-28000" or "27200:28000" -> ["27200:28000"]
-	if mport := node.Query.Get("mport"); mport != "" {
-		// Convert mport format (can be "27200-28000" or "27200:28000") to sing-box format
-		// sing-box expects array of port ranges in format "start:end"
-		portRange := strings.ReplaceAll(mport, "-", ":")
-		serverPorts := []string{portRange}
-		outbound["server_ports"] = serverPorts
+	// Optional: mport / ports query — Hysteria2 multi-port (comma-separated ports and ranges, hyphen in URI).
+	// See https://v2.hysteria.network/docs/advanced/Port-Hopping/
+	mport := strings.TrimSpace(queryGetFold(node.Query, "mport"))
+	if mport == "" {
+		mport = strings.TrimSpace(queryGetFold(node.Query, "ports"))
+	}
+	if sp := hysteria2MportSpecToSingBoxServerPorts(mport); len(sp) > 0 {
+		outbound["server_ports"] = sp
 	}
 
 	// Optional: obfs (obfuscation)

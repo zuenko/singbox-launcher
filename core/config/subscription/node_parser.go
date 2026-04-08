@@ -202,6 +202,12 @@ func ParseNode(uri string, skipFilters []map[string]string) (*configtypes.Parsed
 
 	// Parse URI
 	parsedURL, err := url.Parse(uriToParse)
+	hy2AuthPortList := ""
+	if err != nil && scheme == "hysteria2" {
+		if u, plist, recErr := hysteria2RecoverMultiPortAuthority(uriToParse); recErr == nil && u != nil {
+			parsedURL, err, hy2AuthPortList = u, nil, plist
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse URI: %w", err)
 	}
@@ -225,6 +231,14 @@ func ParseNode(uri string, skipFilters []map[string]string) (*configtypes.Parsed
 		Scheme: scheme,
 		Server: parsedURL.Hostname(),
 		Query:  parsedURL.Query(),
+	}
+
+	if scheme == "hysteria2" && hy2AuthPortList != "" {
+		if ex := strings.TrimSpace(queryGetFold(node.Query, "mport")); ex != "" {
+			node.Query.Set("mport", hy2AuthPortList+","+ex)
+		} else {
+			node.Query.Set("mport", hy2AuthPortList)
+		}
 	}
 
 	// For SS, store method and password in Query (if extracted during parsing)

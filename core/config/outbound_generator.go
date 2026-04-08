@@ -285,6 +285,7 @@ func GenerateNodeJSON(node *ParsedNode) (string, error) {
 		}
 		// server_ports (optional) - array of port ranges for sing-box 1.9+
 		if serverPorts, ok := node.Outbound["server_ports"].([]string); ok && len(serverPorts) > 0 {
+			serverPorts = subscription.NormalizeHysteria2ServerPortsSlice(serverPorts)
 			serverPortsJSON, err := json.Marshal(serverPorts)
 			if err != nil {
 				return "", fmt.Errorf("failed to marshal hysteria2 server_ports: %w", err)

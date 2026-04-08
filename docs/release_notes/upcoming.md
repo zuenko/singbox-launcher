@@ -18,6 +18,8 @@
 
 ### Technical / Internal
 
+- **Hysteria2 ports from subscriptions:** `mport` / `ports` now follow the official Hysteria 2 list format (comma-separated ports and `start-end` ranges). Multi-port in the URI authority (e.g. `host:443,20000-30000`) is recovered when `net/url` cannot parse it. Bare single ports map to `low:high` for sing-box `server_ports`.
+
 - Build scripts `build/build_linux.sh` and `build/test_linux.sh` are stored in git with the executable bit; after clone, run `./build/...` without `chmod +x` on tracked files ([issue #49](https://github.com/Leadaxe/singbox-launcher/issues/49)).
 
 ---
@@ -33,5 +35,7 @@
 - **Linux:** если `sing-box` есть в `PATH` (например, из пакета дистрибутива), лаунчер использует его; иначе — `bin/sing-box` рядом с лаунчером. Кнопка **Core → Download** по-прежнему кладёт бинарник только в локальный `bin/` ([issue #48](https://github.com/Leadaxe/singbox-launcher/issues/48)).
 
 ### Техническое / Внутреннее
+
+- **Hysteria2 порты из подписок:** Параметры `mport` / `ports` разбираются в официальном формате Hysteria 2 (список через запятую: порты и диапазоны `начало-конец`). Multi-port в authority URI (например `host:443,20000-30000`) восстанавливается, если стандартный парсер URL не принимает строку. Одиночный порт даёт диапазон `n:n` для sing-box `server_ports`.
 
 - Скрипты `build/build_linux.sh` и `build/test_linux.sh` в репозитории с флагом исполняемого файла; после клона достаточно `./build/...` без `chmod +x` для отслеживаемых файлов ([issue #49](https://github.com/Leadaxe/singbox-launcher/issues/49)).
