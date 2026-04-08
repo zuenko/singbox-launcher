@@ -90,7 +90,9 @@ func applySettingsRowDisabled(rowEnabled bool, resetBtn *ttwidget.Button, extras
 
 func newSettingsTitleLabel(text string) *ttwidget.Label {
 	l := ttwidget.NewLabel(text)
-	l.Wrapping = fyne.TextWrapWord
+	// В container.NewBorder лейбл в позиции leading получает свою MinSize; при TextWrapWord
+	// при узкой колонке MinWidth схлопывается, текст уезжает столбиком по символам.
+	l.Wrapping = fyne.TextWrapOff
 	return l
 }
 

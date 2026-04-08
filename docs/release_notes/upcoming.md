@@ -18,6 +18,8 @@
 
 - **Linux:** If `sing-box` is on `PATH` (e.g. installed from your distro package), the launcher uses it automatically; otherwise it uses `bin/sing-box` next to the launcher. **Core → Download** still installs into local `bin/` only ([issue #48](https://github.com/Leadaxe/singbox-launcher/issues/48)).
 
+- **Closed specs:** [032 — WIZARD_SETTINGS_TAB](https://github.com/Leadaxe/singbox-launcher/blob/develop/SPECS/032-F-C-WIZARD_SETTINGS_TAB/SPEC.md), [019 — WIN7_ADAPTATION](https://github.com/Leadaxe/singbox-launcher/blob/develop/SPECS/019-F-C-WIN7_ADAPTATION/SPEC.md).
+
 ### Technical / Internal
 
 - **Hysteria2 ports from subscriptions:** `mport` / `ports` now follow the official Hysteria 2 list format (comma-separated ports and `start-end` ranges). Multi-port in the URI authority (e.g. `host:443,20000-30000`) is recovered when `net/url` cannot parse it. Bare single ports map to `low:high` for sing-box `server_ports`.
@@ -37,6 +39,8 @@
 - **Визард Win7:** Загрузка `wizard_template.json` на сборке Win7 x86 больше не падает: у `inbounds` массив, поэтому параметр `inbounds.stack` после блока TUN давал ошибку парсера. Для Win7 — отдельная полная замена `inbounds` со `stack: gvisor` (после общего параметра для `windows`/`linux`).
 
 - **Linux:** если `sing-box` есть в `PATH` (например, из пакета дистрибутива), лаунчер использует его; иначе — `bin/sing-box` рядом с лаунчером. Кнопка **Core → Download** по-прежнему кладёт бинарник только в локальный `bin/` ([issue #48](https://github.com/Leadaxe/singbox-launcher/issues/48)).
+
+- **Закрытые спеки:** [032 — WIZARD_SETTINGS_TAB](https://github.com/Leadaxe/singbox-launcher/blob/develop/SPECS/032-F-C-WIZARD_SETTINGS_TAB/SPEC.md), [019 — WIN7_ADAPTATION](https://github.com/Leadaxe/singbox-launcher/blob/develop/SPECS/019-F-C-WIN7_ADAPTATION/SPEC.md).
 
 ### Техническое / Внутреннее
 

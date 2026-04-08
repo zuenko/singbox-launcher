@@ -110,6 +110,15 @@
       "tooltip": "Listen port for the mixed inbound when TUN is off (macOS only)."
     },
     {
+      "name": "resolve_strategy",
+      "type": "enum",
+      "default_value": "prefer_ipv4",
+      "options": ["prefer_ipv4", "prefer_ipv6", "ipv4_only", "ipv6_only"],
+      "wizard_ui": "edit",
+      "title": "Route resolve strategy",
+      "tooltip": "Resolution strategy for route rules with action resolve on tun-in and proxy-in (sing-box: prefer_ipv4, prefer_ipv6, ipv4_only, ipv6_only)."
+    },
+    {
       "name": "log_level",
       "type": "enum",
       "default_value": "warn",
@@ -568,7 +577,7 @@
       "if_or": ["tun_builtin", "tun"],
       "mode": "prepend",
       "value": [
-        { "inbound": "tun-in", "action": "resolve", "strategy": "prefer_ipv4" },
+        { "inbound": "tun-in", "action": "resolve", "strategy": "@resolve_strategy" },
         { "inbound": "tun-in", "action": "sniff", "timeout": "1s" }
       ]
     },
@@ -577,7 +586,7 @@
       "platforms": ["darwin"],
       "mode": "prepend",
       "value": [
-        { "inbound": "proxy-in", "action": "resolve", "strategy": "prefer_ipv4" },
+        { "inbound": "proxy-in", "action": "resolve", "strategy": "@resolve_strategy" },
         { "inbound": "proxy-in", "action": "sniff", "timeout": "1s" }
       ]
     }
