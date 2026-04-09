@@ -19,7 +19,6 @@ import (
 	"singbox-launcher/internal/dialogs"
 	"singbox-launcher/internal/fynewidget"
 	"singbox-launcher/internal/locale"
-	"singbox-launcher/internal/platform"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
 	wizardmodels "singbox-launcher/ui/wizard/models"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
@@ -35,13 +34,19 @@ func setTooltip(o fyne.CanvasObject, text string) {
 	}
 }
 
-const dnsIndependentCacheDocURL = "https://sing-box.sagernet.org/configuration/dns/#independent_cache"
-
 func tooltipForDNSServerCheck(locked bool) string {
 	if locked {
 		return "wizard.dns.tooltip_server_locked"
 	}
 	return "wizard.dns.tooltip_server_enabled"
+}
+
+func newTooltipLabel(text, tip string) *ttwidget.Label {
+	l := ttwidget.NewLabel(text)
+	if strings.TrimSpace(tip) != "" {
+		l.SetToolTip(tip)
+	}
+	return l
 }
 
 // CreateDNSTab builds the DNS tab: servers list, strategy + cache, rules, then final + default resolver on one row.
@@ -185,8 +190,8 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 		}
 		return strings.TrimSpace(wizardtemplate.VarDisplayTooltip(vd))
 	}
-	finalLabel := widget.NewLabel(varTitle(wizardmodels.VarDNSFinal, locale.T("wizard.dns.label_final")))
-	setTooltip(finalLabel, varTooltip(wizardmodels.VarDNSFinal))
+	finalTip := varTooltip(wizardmodels.VarDNSFinal)
+	finalLabel := newTooltipLabel(varTitle(wizardmodels.VarDNSFinal, locale.T("wizard.dns.label_final")), finalTip)
 	setTooltip(guiState.DNSFinalSelect, varTooltip(wizardmodels.VarDNSFinal))
 
 	markResolverChanged := func(value string) {
@@ -222,8 +227,8 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 		}
 		markResolverChanged(sel)
 	})
-	resLabel := widget.NewLabel(varTitle(wizardmodels.VarDNSDefaultDomainResolver, locale.T("wizard.dns.label_default_resolver")))
-	setTooltip(resLabel, varTooltip(wizardmodels.VarDNSDefaultDomainResolver))
+	resTip := varTooltip(wizardmodels.VarDNSDefaultDomainResolver)
+	resLabel := newTooltipLabel(varTitle(wizardmodels.VarDNSDefaultDomainResolver, locale.T("wizard.dns.label_default_resolver")), resTip)
 	setTooltip(guiState.DNSDefaultResolverSelect, varTooltip(wizardmodels.VarDNSDefaultDomainResolver))
 
 	guiState.DNSRulesEntry = widget.NewMultiLineEntry()
@@ -245,8 +250,8 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 	rulesLabel := widget.NewLabel(locale.T("wizard.dns.label_rules"))
 	rulesLabel.Importance = widget.MediumImportance
 
-	strategyLabel := widget.NewLabel(varTitle(wizardmodels.VarDNSStrategy, locale.T("wizard.dns.label_strategy")))
-	setTooltip(strategyLabel, varTooltip(wizardmodels.VarDNSStrategy))
+	strategyTip := varTooltip(wizardmodels.VarDNSStrategy)
+	strategyLabel := newTooltipLabel(varTitle(wizardmodels.VarDNSStrategy, locale.T("wizard.dns.label_strategy")), strategyTip)
 
 	guiState.DNSStrategySelect = widget.NewSelect([]string{}, func(sel string) {
 		if guiState.DNSSelectsProgrammatic {
@@ -274,13 +279,7 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 		}
 	})
 	setTooltip(guiState.DNSIndependentCacheCheck, varTooltip(wizardmodels.VarDNSIndependentCache))
-	independentCacheHelp := widget.NewButton(locale.T("wizard.rules.button_info"), func() {
-		if err := platform.OpenURL(dnsIndependentCacheDocURL); err != nil {
-			dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.outbounds.error_open_docs"), err), dialogParent())
-		}
-	})
-	independentCacheHelp.Importance = widget.LowImportance
-	independentCacheRow := container.NewHBox(guiState.DNSIndependentCacheCheck, independentCacheHelp)
+	independentCacheRow := container.NewHBox(guiState.DNSIndependentCacheCheck)
 
 	strategyAndCacheRow := container.NewHBox(
 		strategyLabel,
