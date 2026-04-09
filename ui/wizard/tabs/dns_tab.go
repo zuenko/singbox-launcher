@@ -21,7 +21,9 @@ import (
 	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 	wizardbusiness "singbox-launcher/ui/wizard/business"
+	wizardmodels "singbox-launcher/ui/wizard/models"
 	wizardpresentation "singbox-launcher/ui/wizard/presentation"
+	wizardtemplate "singbox-launcher/ui/wizard/template"
 )
 
 func setTooltip(o fyne.CanvasObject, text string) {
@@ -45,6 +47,8 @@ func tooltipForDNSServerCheck(locked bool) string {
 // CreateDNSTab builds the DNS tab: servers list, strategy + cache, rules, then final + default resolver on one row.
 func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObject {
 	guiState := presenter.GUIState()
+	mod := presenter.Model()
+	td := mod.TemplateData
 	dialogParent := func() fyne.Window {
 		if w := presenter.DialogParent(); w != nil {
 			return w
@@ -159,15 +163,35 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 			presenter.MarkAsChanged()
 		}
 	})
-	finalLabel := widget.NewLabel(locale.T("wizard.dns.label_final"))
-
-	guiState.DNSDefaultResolverSelect = widget.NewSelect([]string{}, func(sel string) {
-		if guiState.DNSSelectsProgrammatic {
-			return
+	var templateVars []wizardtemplate.TemplateVar
+	if td != nil {
+		templateVars = td.Vars
+	}
+	varTitle := func(name, fallback string) string {
+		vd, ok := wizardtemplate.VarByName(templateVars, name)
+		if !ok {
+			return fallback
 		}
-		mod := presenter.Model()
-		notSet := locale.T("wizard.dns.resolver_not_set")
-		if sel == notSet {
+		s := strings.TrimSpace(wizardtemplate.VarDisplayTitle(vd))
+		if s == "" {
+			return fallback
+		}
+		return s
+	}
+	varTooltip := func(name string) string {
+		vd, ok := wizardtemplate.VarByName(templateVars, name)
+		if !ok {
+			return ""
+		}
+		return strings.TrimSpace(wizardtemplate.VarDisplayTooltip(vd))
+	}
+	finalLabel := widget.NewLabel(varTitle(wizardmodels.VarDNSFinal, locale.T("wizard.dns.label_final")))
+	setTooltip(finalLabel, varTooltip(wizardmodels.VarDNSFinal))
+	setTooltip(guiState.DNSFinalSelect, varTooltip(wizardmodels.VarDNSFinal))
+
+	markResolverChanged := func(value string) {
+		v := strings.TrimSpace(value)
+		if v == "" {
 			if mod.DefaultDomainResolver != "" || !mod.DefaultDomainResolverUnset {
 				mod.DefaultDomainResolver = ""
 				mod.DefaultDomainResolverUnset = true
@@ -176,14 +200,31 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 			}
 			return
 		}
-		if mod.DefaultDomainResolver != sel || mod.DefaultDomainResolverUnset {
-			mod.DefaultDomainResolver = sel
+		if mod.DefaultDomainResolver != v || mod.DefaultDomainResolverUnset {
+			mod.DefaultDomainResolver = v
 			mod.DefaultDomainResolverUnset = false
 			mod.TemplatePreviewNeedsUpdate = true
 			presenter.MarkAsChanged()
 		}
+	}
+	markStrategyChanged := func(value string) {
+		v := strings.TrimSpace(value)
+		if mod.DNSStrategy != v {
+			mod.DNSStrategy = v
+			mod.TemplatePreviewNeedsUpdate = true
+			presenter.MarkAsChanged()
+		}
+	}
+
+	guiState.DNSDefaultResolverSelect = widget.NewSelect([]string{}, func(sel string) {
+		if guiState.DNSSelectsProgrammatic {
+			return
+		}
+		markResolverChanged(sel)
 	})
-	resLabel := widget.NewLabel(locale.T("wizard.dns.label_default_resolver"))
+	resLabel := widget.NewLabel(varTitle(wizardmodels.VarDNSDefaultDomainResolver, locale.T("wizard.dns.label_default_resolver")))
+	setTooltip(resLabel, varTooltip(wizardmodels.VarDNSDefaultDomainResolver))
+	setTooltip(guiState.DNSDefaultResolverSelect, varTooltip(wizardmodels.VarDNSDefaultDomainResolver))
 
 	guiState.DNSRulesEntry = widget.NewMultiLineEntry()
 	guiState.DNSRulesEntry.SetPlaceHolder(locale.T("wizard.dns.placeholder_rules"))
@@ -204,30 +245,23 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 	rulesLabel := widget.NewLabel(locale.T("wizard.dns.label_rules"))
 	rulesLabel.Importance = widget.MediumImportance
 
+	strategyLabel := widget.NewLabel(varTitle(wizardmodels.VarDNSStrategy, locale.T("wizard.dns.label_strategy")))
+	setTooltip(strategyLabel, varTooltip(wizardmodels.VarDNSStrategy))
+
 	guiState.DNSStrategySelect = widget.NewSelect([]string{}, func(sel string) {
 		if guiState.DNSSelectsProgrammatic {
 			return
 		}
-		mod := presenter.Model()
-		def := locale.T("wizard.dns.strategy_default")
-		newStr := ""
-		if sel != def {
-			newStr = sel
-		}
-		if mod.DNSStrategy != newStr {
-			mod.DNSStrategy = newStr
-			mod.TemplatePreviewNeedsUpdate = true
-			presenter.MarkAsChanged()
-		}
+		markStrategyChanged(sel)
 	})
-	strategyLabel := widget.NewLabel(locale.T("wizard.dns.label_strategy"))
+	setTooltip(guiState.DNSStrategySelect, varTooltip(wizardmodels.VarDNSStrategy))
 
 	// Один виджет Check: галочка и подпись вместе; клик по подписи переключает состояние (как в стандартном Fyne).
-	guiState.DNSIndependentCacheCheck = widget.NewCheck(locale.T("wizard.dns.label_independent_cache"), func(checked bool) {
+	cacheLabel := varTitle(wizardmodels.VarDNSIndependentCache, locale.T("wizard.dns.label_independent_cache"))
+	guiState.DNSIndependentCacheCheck = widget.NewCheck(cacheLabel, func(checked bool) {
 		if guiState.DNSSelectsProgrammatic {
 			return
 		}
-		mod := presenter.Model()
 		cur := false
 		if mod.DNSIndependentCache != nil {
 			cur = *mod.DNSIndependentCache
@@ -239,6 +273,7 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 			presenter.MarkAsChanged()
 		}
 	})
+	setTooltip(guiState.DNSIndependentCacheCheck, varTooltip(wizardmodels.VarDNSIndependentCache))
 	independentCacheHelp := widget.NewButton(locale.T("wizard.rules.button_info"), func() {
 		if err := platform.OpenURL(dnsIndependentCacheDocURL); err != nil {
 			dialog.ShowError(fmt.Errorf("%s: %w", locale.T("wizard.outbounds.error_open_docs"), err), dialogParent())

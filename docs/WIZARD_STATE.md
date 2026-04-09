@@ -64,7 +64,7 @@
 | `updated_at` | string | RFC3339 (обязательное) |
 | `parser_config` | object | Конфигурация парсера (proxies, outbounds, parser); см. **`parser_config.version`** в **`docs/ParserConfig.md`** |
 | `config_params` | array | Параметры без отдельной секции в state (в первую очередь **`route.final`**). Устаревший **`enable_tun_macos`** читается только для миграции в **`vars`**. Устаревший **`route.default_domain_resolver`** — одноразовая миграция в **`vars`** / модель (**`restoreDNS`**). |
-| `vars` | array | Переопределения шаблонных переменных (**Settings** и скрытые **`dns_*`** с вкладки DNS): объекты **`{ "name": string, "value": string }`**. TUN на macOS — **`tun`**. Для **`dns_independent_cache`** в файле — строки **`"true"`** / **`"false"`**. |
+| `vars` | array | Переопределения шаблонных переменных (**Settings** и скрытые **`dns_*`** с вкладки DNS): объекты **`{ "name": string, "value": string }`**. TUN на macOS — **`tun`**. Переменная **`dns_independent_cache`** в шаблоне объявлена как **`type: bool`** (как **`tun_builtin`**), в файле по-прежнему строки **`"true"`** / **`"false"`**. |
 | `dns_options` | object | Состояние вкладки DNS визарда (опционально; см. ниже). Имя ключа совпадает с секцией шаблона `wizard_template.json`. |
 | `selectable_rule_states` | array | Устарело при **`rules_library_merged`**: в актуальном формате не используется для route (миграция с версии **2**) |
 | `rules_library_merged` | bool | **`true`** после миграции/нового формата: только **`custom_rules`** задают порядок правил в маршруте |

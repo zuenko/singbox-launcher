@@ -9,10 +9,10 @@ import (
 
 func TestMigrateDNSScalarsFromPersistedToSettingsVars_Idempotent(t *testing.T) {
 	vars := []wizardtemplate.TemplateVar{
-		{Name: wizardmodels.VarDNSStrategy, Type: "custom"},
-		{Name: wizardmodels.VarDNSFinal, Type: "custom"},
-		{Name: wizardmodels.VarDNSIndependentCache, Type: "custom"},
-		{Name: wizardmodels.VarDNSDefaultDomainResolver, Type: "custom"},
+		{Name: wizardmodels.VarDNSStrategy, Type: "enum"},
+		{Name: wizardmodels.VarDNSFinal, Type: "text"},
+		{Name: wizardmodels.VarDNSIndependentCache, Type: "bool"},
+		{Name: wizardmodels.VarDNSDefaultDomainResolver, Type: "text"},
 	}
 	st := map[string]string{}
 	p := &wizardmodels.PersistedDNSState{
@@ -34,7 +34,7 @@ func TestMigrateDNSScalarsFromPersistedToSettingsVars_Idempotent(t *testing.T) {
 }
 
 func TestMigrateDNSScalarsFromPersisted_DoesNotOverwriteExistingVar(t *testing.T) {
-	vars := []wizardtemplate.TemplateVar{{Name: wizardmodels.VarDNSStrategy, Type: "custom"}}
+	vars := []wizardtemplate.TemplateVar{{Name: wizardmodels.VarDNSStrategy, Type: "enum"}}
 	st := map[string]string{wizardmodels.VarDNSStrategy: "ipv4_only"}
 	p := &wizardmodels.PersistedDNSState{Strategy: "prefer_ipv6"}
 	MigrateDNSScalarsFromPersistedToSettingsVars(p, st, vars)

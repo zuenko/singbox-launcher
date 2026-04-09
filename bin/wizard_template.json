@@ -67,7 +67,7 @@
     {
       "name": "tun",
       "type": "bool",
-      "default_value": "true",
+      "default_value": {"darwin": "true", "default": "false"},
       "wizard_ui": "edit",
       "platforms": ["darwin"],
       "title": "Enable TUN (macOS)",
@@ -76,7 +76,7 @@
     {
       "name": "tun_builtin",
       "type": "bool",
-      "default_value": "true",
+      "default_value": {"windows": "true", "linux": "true", "default": "false"},
       "wizard_ui": "hidden",
       "platforms": ["windows", "linux"],
       "title": "TUN (Windows/Linux)",
@@ -167,7 +167,7 @@
     },
     {
       "name": "clash_secret",
-      "type": "custom",
+      "type": "secret",
       "default_value": "CHANGE_THIS_TO_YOUR_SECRET_TOKEN",
       "wizard_ui": "edit",
       "title": "Clash API secret",
@@ -175,30 +175,39 @@
     },
     {
       "name": "dns_strategy",
-      "type": "custom",
+      "type": "enum",
       "default_value": "prefer_ipv4",
-      "wizard_ui": "hidden",
-      "comment": "DNS tab only (hidden on Settings): sing-box config.dns.strategy."
+      "options": ["prefer_ipv4", "prefer_ipv6", "ipv4_only", "ipv6_only"],
+      "wizard_ui": "fix",
+      "title": "Strategy",
+      "comment": "DNS tab only: sing-box config.dns.strategy.",
+      "tooltip":"sing-box config.dns.strategy."
     },
     {
       "name": "dns_independent_cache",
-      "type": "custom",
+      "type": "bool",
       "default_value": "false",
-      "wizard_ui": "hidden",
-      "comment": "DNS tab only: config.dns.independent_cache (state.vars uses string true/false)."
+      "wizard_ui": "fix",
+      "title": "Independent cache",
+      "tooltip": "sing-box config.dns.independent_cache.",
+      "comment": "DNS tab only: config.dns.independent_cache; same bool+fix pattern for dedicated DNS-tab editing (not shown on Settings)."
     },
     {
       "name": "dns_default_domain_resolver",
-      "type": "custom",
+      "type": "text",
       "default_value": "direct_dns_resolver",
-      "wizard_ui": "hidden",
+      "wizard_ui": "fix",
+      "title": "Default DNS domain resolver",
+      "tooltip": "sing-box config.route.default_domain_resolver (server tag).",
       "comment": "DNS tab only: route.default_domain_resolver (server tag)."
     },
     {
       "name": "dns_final",
-      "type": "custom",
+      "type": "text",
       "default_value": "direct_dns_resolver",
-      "wizard_ui": "hidden",
+      "wizard_ui": "fix",
+      "title": "Final",
+      "tooltip": "sing-box config.dns.final (server tag).",
       "comment": "DNS tab only: config.dns.final (server tag)."
     }
   ],
@@ -631,3 +640,6 @@
     }
   ]
 }
+
+
+
