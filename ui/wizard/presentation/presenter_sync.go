@@ -197,6 +197,7 @@ func (p *WizardPresenter) refreshDNSSelectsFromModel() {
 		}
 		p.guiState.DNSIndependentCacheCheck.SetChecked(v)
 	}
+	wizardbusiness.SyncDNSModelToSettingsVars(p.model)
 }
 
 // RefreshDNSDependentSelectsOnly обновляет только селекты Final / resolver / strategy и галочку кэша,
@@ -293,6 +294,9 @@ func (p *WizardPresenter) syncGUIToModel(markDirty bool) {
 	}
 	ready := p.guiState.WizardWidgetsReady
 	changed := p.syncGUIToModelSourceParserFinal(ready) || p.syncGUIToModelDNS(ready)
+	if ready {
+		wizardbusiness.SyncDNSModelToSettingsVars(p.model)
+	}
 
 	if changed && markDirty {
 		p.MarkAsChanged()

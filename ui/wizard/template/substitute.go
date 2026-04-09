@@ -87,6 +87,13 @@ func replacementForPlaceholder(name string, varTypes map[string]string, resolved
 		}
 		return strings.EqualFold(s, "true")
 	}
+	// type custom: в state.vars строка "true"/"false", в JSON sing-box — bool
+	if name == "dns_independent_cache" {
+		if s == "" {
+			return false
+		}
+		return strings.EqualFold(s, "true")
+	}
 	if s == "" {
 		debuglog.WarnLog("substitute: empty scalar @%s", name)
 		if name == "tun_mtu" || name == "mixed_listen_port" {
