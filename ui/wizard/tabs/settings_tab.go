@@ -256,7 +256,7 @@ func buildSettingsVarRow(presenter *wizardpresentation.WizardPresenter, model *w
 		}
 		chk.SetChecked(checked)
 		prog = false
-		row := container.NewBorder(nil, nil, chk, resetBtn, cwc.Content)
+		row := container.NewBorder(nil, nil, cwc.CheckLeading, resetBtn, cwc.Content)
 		setVarFieldToolTip(toolTip, titleLbl, chk)
 		applySettingsRowDisabled(rowEnabled, resetBtn, chk)
 		return row

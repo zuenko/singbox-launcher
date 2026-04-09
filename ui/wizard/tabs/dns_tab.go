@@ -136,7 +136,7 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 				rowGutter.SetMinSize(fyne.NewSize(scrollbarGutterWidth, 0))
 				right := container.NewHBox(editBtn, delBtn, rowGutter)
 				// Border: check left, content center (tap/hover → check via fynewidget), buttons right — avoids zero-width label in HBox-only row.
-				rowInner := container.NewBorder(nil, nil, enCheck, right, cwc.Content)
+				rowInner := container.NewBorder(nil, nil, cwc.CheckLeading, right, cwc.Content)
 				row = fynewidget.NewHoverRow(rowInner, fynewidget.HoverRowConfig{})
 				row.WireTooltipLabelHover(sumLabel)
 				serversBox.Add(row)
@@ -261,9 +261,10 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 	})
 	setTooltip(guiState.DNSStrategySelect, varTooltip(wizardmodels.VarDNSStrategy))
 
-	cacheLabel := varTitle(wizardmodels.VarDNSIndependentCache, locale.T("wizard.dns.label_independent_cache"))
+	cacheLabelText := varTitle(wizardmodels.VarDNSIndependentCache, locale.T("wizard.dns.label_independent_cache"))
 	cacheTip := varTooltip(wizardmodels.VarDNSIndependentCache)
-	guiState.DNSIndependentCacheCheck = widget.NewCheck(cacheLabel, func(checked bool) {
+	cacheTitleLbl := ttwidget.NewLabel(cacheLabelText)
+	indepCacheCWC := fynewidget.NewCheckWithContent(func(checked bool) {
 		if guiState.DNSSelectsProgrammatic {
 			return
 		}
@@ -277,14 +278,15 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 			mod.TemplatePreviewNeedsUpdate = true
 			presenter.MarkAsChanged()
 		}
-	})
-	setTooltip(guiState.DNSIndependentCacheCheck, cacheTip)
+	}, cacheTitleLbl, fynewidget.CheckWithContentConfig{ContentToolTip: cacheTip})
+	guiState.DNSIndependentCacheCheck = indepCacheCWC.Check
 
 	strategyAndCacheRow := container.NewHBox(
 		strategyLabel,
 		guiState.DNSStrategySelect,
 		layout.NewSpacer(),
-		guiState.DNSIndependentCacheCheck,
+		indepCacheCWC.CheckLeading,
+		indepCacheCWC.Content,
 	)
 
 	// Final и default_domain_resolver — одна строка: две группы (лейбл+селект), spacer между ними.
