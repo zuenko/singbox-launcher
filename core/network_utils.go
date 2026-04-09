@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"regexp"
 	"time"
 )
 
@@ -23,6 +24,7 @@ func CreateHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
 			DialContext: (&net.Dialer{
 				Timeout:   NetworkDialTimeout,
 				KeepAlive: 30 * time.Second,
@@ -84,7 +86,7 @@ func GetNetworkErrorMessage(err error) string {
 		if opErr.Op == "dial" {
 			return "Network error: cannot connect to server"
 		}
-		return fmt.Sprintf("Network error: %s", opErr.Error())
+		return fmt.Sprintf("Network error: %s", sanitizeSensitiveURLInfo(opErr.Error()))
 	}
 
 	if dnsErr, ok := err.(*net.DNSError); ok {
@@ -99,5 +101,11 @@ func GetNetworkErrorMessage(err error) string {
 		return "Request canceled"
 	}
 
-	return fmt.Sprintf("Network error: %s", err.Error())
+	return fmt.Sprintf("Network error: %s", sanitizeSensitiveURLInfo(err.Error()))
+}
+
+var credentialsInURLPattern = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+\-.]*://)([^:@/\s]+):([^@/\s]+)@`)
+
+func sanitizeSensitiveURLInfo(message string) string {
+	return credentialsInURLPattern.ReplaceAllString(message, "${1}${2}:***@")
 }

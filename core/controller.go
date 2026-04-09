@@ -143,6 +143,7 @@ func (ac *AppController) isUpdatePopupShown() bool {
 // It sets the global singleton instance that can be accessed via GetController().
 func NewAppController(appIconData, greyIconData, greenIconData, redIconData []byte) (*AppController, error) {
 	ac := &AppController{}
+	locale.CreateHTTPClientFunc = CreateHTTPClient
 
 	// Initialize FileService first (needed by other services)
 	fileService, err := services.NewFileService()
