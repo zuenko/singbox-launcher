@@ -261,8 +261,8 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 	})
 	setTooltip(guiState.DNSStrategySelect, varTooltip(wizardmodels.VarDNSStrategy))
 
-	// Один виджет Check: галочка и подпись вместе; клик по подписи переключает состояние (как в стандартном Fyne).
 	cacheLabel := varTitle(wizardmodels.VarDNSIndependentCache, locale.T("wizard.dns.label_independent_cache"))
+	cacheTip := varTooltip(wizardmodels.VarDNSIndependentCache)
 	guiState.DNSIndependentCacheCheck = widget.NewCheck(cacheLabel, func(checked bool) {
 		if guiState.DNSSelectsProgrammatic {
 			return
@@ -278,14 +278,13 @@ func CreateDNSTab(presenter *wizardpresentation.WizardPresenter) fyne.CanvasObje
 			presenter.MarkAsChanged()
 		}
 	})
-	setTooltip(guiState.DNSIndependentCacheCheck, varTooltip(wizardmodels.VarDNSIndependentCache))
-	independentCacheRow := container.NewHBox(guiState.DNSIndependentCacheCheck)
+	setTooltip(guiState.DNSIndependentCacheCheck, cacheTip)
 
 	strategyAndCacheRow := container.NewHBox(
 		strategyLabel,
 		guiState.DNSStrategySelect,
 		layout.NewSpacer(),
-		independentCacheRow,
+		guiState.DNSIndependentCacheCheck,
 	)
 
 	// Final и default_domain_resolver — одна строка: две группы (лейбл+селект), spacer между ними.
