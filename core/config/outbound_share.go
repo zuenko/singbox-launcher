@@ -105,6 +105,39 @@ func ShareProxyURIForOutboundTag(configPath, tag string) (string, error) {
 	return ShareProxyURIForOutboundTagFromRoot(root, tag)
 }
 
+// ShareMainURIForOutboundTag builds a share URI for the outbound itself.
+// If detour is present, it is ignored (removed) so the main hop can still be exported.
+func ShareMainURIForOutboundTag(configPath, tag string) (string, error) {
+	out, err := GetOutboundMapByTag(configPath, tag)
+	if err != nil {
+		return "", err
+	}
+	return subscription.ShareURIFromOutbound(out)
+}
+
+// GetDetourTagForOutboundTag returns outbound.detour for the given outbound tag.
+// Empty result means no detour configured.
+func GetDetourTagForOutboundTag(configPath, tag string) (string, error) {
+	out, err := GetOutboundMapByTag(configPath, tag)
+	if err != nil {
+		return "", err
+	}
+	detour, _ := out["detour"].(string)
+	return strings.TrimSpace(detour), nil
+}
+
+// ShareJumpURIForOutboundTag builds a share URI for the jump outbound referenced by detour.
+func ShareJumpURIForOutboundTag(configPath, tag string) (string, error) {
+	detourTag, err := GetDetourTagForOutboundTag(configPath, tag)
+	if err != nil {
+		return "", err
+	}
+	if detourTag == "" {
+		return "", fmt.Errorf("outbound %q has no detour", tag)
+	}
+	return ShareProxyURIForOutboundTag(configPath, detourTag)
+}
+
 // BuildShareURILinesForOutboundTags loads config once and appends one non-empty share URI per tag in order.
 // Tags that cannot be encoded (missing outbound, unsupported type, etc.) are skipped without aborting.
 func BuildShareURILinesForOutboundTags(configPath string, tags []string) ([]string, error) {

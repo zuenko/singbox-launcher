@@ -23,9 +23,6 @@ func ShareURIFromOutbound(out map[string]interface{}) (string, error) {
 	if out == nil {
 		return "", fmt.Errorf("%w: nil outbound", ErrShareURINotSupported)
 	}
-	if d := strings.TrimSpace(mapGetString(out, "detour")); d != "" {
-		return "", fmt.Errorf("%w: outbound uses detour (chained)", ErrShareURINotSupported)
-	}
 	typ := strings.ToLower(strings.TrimSpace(mapGetString(out, "type")))
 	switch typ {
 	case "vless":
@@ -48,6 +45,15 @@ func ShareURIFromOutbound(out map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("%w: type %q", ErrShareURINotSupported, typ)
 	default:
 		return "", fmt.Errorf("%w: unknown type %q", ErrShareURINotSupported, typ)
+	}
+}
+
+func shareAppendDetourLiteral(q url.Values, out map[string]interface{}) {
+	if q == nil || out == nil {
+		return
+	}
+	if d := strings.TrimSpace(mapGetString(out, "detour")); d != "" {
+		q.Set("detour", d)
 	}
 }
 
@@ -289,6 +295,7 @@ func shareURIFromVLESS(out map[string]interface{}) (string, error) {
 	if pe := mapGetString(out, "packet_encoding"); pe != "" {
 		q.Set("packetEncoding", pe)
 	}
+	shareAppendDetourLiteral(q, out)
 	hp := hostPort(server, port)
 	u := &url.URL{
 		Scheme:   "vless",
@@ -440,6 +447,7 @@ func shareURIFromTrojan(out map[string]interface{}) (string, error) {
 	} else {
 		trojanTLSToQuery(q, nil, server)
 	}
+	shareAppendDetourLiteral(q, out)
 	u := &url.URL{
 		Scheme:   "trojan",
 		User:     url.User(url.PathEscape(pass)),
@@ -558,6 +566,7 @@ func shareURIFromHysteria2(out map[string]interface{}) (string, error) {
 	if down := mapGetInt(out, "down_mbps"); down > 0 {
 		q.Set("downmbps", strconv.Itoa(down))
 	}
+	shareAppendDetourLiteral(q, out)
 	u := &url.URL{
 		Scheme:   "hysteria2",
 		User:     url.User(url.PathEscape(pass)),
@@ -615,6 +624,7 @@ func shareURIFromSSH(out map[string]interface{}) (string, error) {
 	if pp := mapGetString(out, "private_key_passphrase"); pp != "" {
 		q.Set("private_key_passphrase", pp)
 	}
+	shareAppendDetourLiteral(q, out)
 	var ui *url.Userinfo
 	if pass != "" {
 		ui = url.UserPassword(user, pass)

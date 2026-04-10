@@ -220,9 +220,13 @@
   "servers.selector_error": "%s → error: %v",
   "servers.selector_active": "%s → %s",
   "servers.menu_copy_link": "Copy link",
+  "servers.menu_copy_server_link": "Copy server link",
+  "servers.menu_copy_jump_server_link": "Copy jump server link",
   "servers.menu_context_type_unknown": "Unknown type",
   "servers.copy_link_resolving": "Building share URI from outbound…",
   "servers.copy_link_done": "Share URI copied to clipboard",
+  "servers.copy_jump_link_resolving": "Building share URI for jump outbound…",
+  "servers.copy_jump_link_done": "Jump share URI copied to clipboard",
   "servers.copy_link_not_supported": "This outbound cannot be turned into a share link (e.g. selector, direct-out, or fields not supported by the URI encoder).",
 
   "wizard.window_title": "Config Wizard",
