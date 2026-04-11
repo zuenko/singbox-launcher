@@ -59,7 +59,7 @@
     ],
     "parser": {
       "reload": "12h",
-      "last_updated": "2026-01-30T12:00:00Z"
+      "last_updated": "2026-04-11T12:00:00Z"
     }
   },
 
@@ -402,11 +402,6 @@
         { "tag": "israel-sites", "type": "remote", "format": "binary", "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-il.srs"}
       ],
       "rule": { "rule_set": "israel-sites", "outbound": "proxy-out" }
-    },
-    {
-      "label": "Drop RU DNS over UDP",
-      "description": "Block UDP DNS queries that target Russian domains.",
-      "rule": { "rule_set": "ru-domains", "action": "reject", "method": "drop", "network": ["udp"], "port": [53] }
     },
     {
       "label": "BitTorrent direct",
