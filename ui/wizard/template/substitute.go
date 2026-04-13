@@ -89,12 +89,12 @@ func replacementForPlaceholder(name string, varTypes map[string]string, resolved
 	}
 	if s == "" {
 		debuglog.WarnLog("substitute: empty scalar @%s", name)
-		if name == "tun_mtu" || name == "mixed_listen_port" {
+		if name == "tun_mtu" || name == "mixed_listen_port" || name == "proxy_in_listen_port" {
 			return 0
 		}
 		return ""
 	}
-	if name == "tun_mtu" || name == "mixed_listen_port" {
+	if name == "tun_mtu" || name == "mixed_listen_port" || name == "proxy_in_listen_port" {
 		n, err := strconv.Atoi(s)
 		if err != nil {
 			debuglog.WarnLog("substitute: invalid int @%s: %v", name, err)
