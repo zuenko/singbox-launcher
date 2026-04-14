@@ -121,14 +121,6 @@
     },
     {"separator": true},
     {
-      "name": "auto_detect_interface",
-      "type": "bool",
-      "default_value": "true",
-      "wizard_ui": "edit",
-      "title": "Auto-detect outbound interface",
-      "tooltip": "sing-box route.auto_detect_interface: detect default interface for outbound; turn off if routing is wrong with multiple uplinks."
-    },
-    {
       "name": "enable_proxy_in",
       "type": "bool",
       "default_value": {"darwin": "true", "default": "false"},
@@ -163,6 +155,7 @@
       "title": "Proxy-in set system proxy",
       "tooltip": "Set system proxy through mixed inbound proxy-in. Some platforms require elevated privileges."
     },
+    {"separator": true},
     {
       "name": "resolve_strategy",
       "type": "enum",
@@ -171,6 +164,14 @@
       "wizard_ui": "edit",
       "title": "Route resolve strategy",
       "tooltip": "Resolution strategy for route rules with action resolve on tun-in and proxy-in (sing-box: prefer_ipv4, prefer_ipv6, ipv4_only, ipv6_only)."
+    },
+    {
+      "name": "auto_detect_interface",
+      "type": "bool",
+      "default_value": "true",
+      "wizard_ui": "edit",
+      "title": "Auto-detect outbound interface",
+      "tooltip": "sing-box route.auto_detect_interface: detect default interface for outbound; turn off if routing is wrong with multiple uplinks."
     },
     {"separator": true},
     {
