@@ -128,20 +128,6 @@ func xrayBuildVLESSFromOutbound(ob map[string]interface{}, label string) (*confi
 		tag = "vless"
 	}
 
-	// REALITY over TCP often omits flow in Xray; sing-box expects flow for VLESS (same as URI path in buildOutbound).
-	if flow == "" && network == "tcp" {
-		if tls, ok := outbound["tls"].(map[string]interface{}); ok {
-			if reality, ok := tls["reality"].(map[string]interface{}); ok {
-				if en, _ := reality["enabled"].(bool); en {
-					if pk, _ := reality["public_key"].(string); strings.TrimSpace(pk) != "" {
-						flow = "xtls-rprx-vision"
-						outbound["flow"] = flow
-					}
-				}
-			}
-		}
-	}
-
 	node := &configtypes.ParsedNode{
 		Tag:      tag,
 		Scheme:   "vless",

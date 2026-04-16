@@ -696,7 +696,7 @@ singbox-launcher/
   - `uriTransportFromQuery()` — VLESS/Trojan: ws/http/grpc; **`xhttp` и `httpupgrade` → httpupgrade**; **ws: `headers.Host` из `host`, `sni` или `obfsParam`**
   - `vlessTLSFromNode()`, `trojanTLSFromNode()` — TLS / Reality по query; **`server_name`: `sni` → `peer` → (Trojan: `host`) → сервер**
 - `node_parser.go`:
-  - `ParseNode()` - парсинг URI узла прокси; **VLESS:** REALITY без транспорта и без `flow` → `flow: xtls-rprx-vision`; лейбл после sanitize — **textnorm**; **VMess:** JSON в base64, legacy cleartext, отрезание `#` до base64
+  - `ParseNode()` - парсинг URI узла прокси; **VLESS:** `flow` в outbound только если задан в URI (или нормализация `xtls-rprx-vision-udp443`); лейбл после sanitize — **textnorm**; **VMess:** JSON в base64, legacy cleartext, отрезание `#` до base64
   - `buildOutbound()` — сборка outbound-мапы для sing-box
   - `IsDirectLink()` - проверка прямого линка
 - `node_parser_vmess.go`:
