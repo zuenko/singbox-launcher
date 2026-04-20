@@ -1,7 +1,7 @@
 # Sing-Box Launcher
 
 [![GitHub](https://img.shields.io/badge/GitHub-Leadaxe%2Fsingbox--launcher-blue)](https://github.com/Leadaxe/singbox-launcher)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.24%2B-blue)](https://golang.org/)
 [![Version](https://img.shields.io/badge/version-0.8.6-blue)](https://github.com/Leadaxe/singbox-launcher/releases)
 
@@ -1038,7 +1038,9 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o singbox-launcher
 
 ## 📄 Лицензия
 
-Этот проект распространяется под лицензией MIT. См. файл [LICENSE](LICENSE) для подробностей.
+Проект распространяется на условиях [GNU General Public License v3.0](LICENSE).
+
+Коммерческая лицензия у Leadaxe — для сценариев, несовместимых с GPLv3. **Условия коммерческой лицензии согласовываются отдельно и не публикуются** в этом репозитории. Связь: [ledaxe@gmail.com](mailto:ledaxe@gmail.com). Подробнее: [LICENSING.md](LICENSING.md).
 
 ## 🙏 Благодарности
 

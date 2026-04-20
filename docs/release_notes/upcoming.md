@@ -15,6 +15,8 @@
 
 ### Technical / Internal
 
+- **Licensing:** the project is now under **GPL-3.0** with optional commercial licensing from Leadaxe (see `LICENSING.md`); previously MIT.
+
 ---
 
 ## RU
@@ -25,3 +27,5 @@
 - **VLESS:** больше **не подставляется** автоматически **`flow: xtls-rprx-vision`**, если в ссылке или в JSON Xray **`flow` не задан** — при необходимости Vision укажите **`flow`** в подписке.
 
 ### Техническое / Внутреннее
+
+- **Лицензия:** репозиторий под **GPL-3.0**, при необходимости коммерческая лицензия — см. `LICENSING.md` (ранее MIT).
