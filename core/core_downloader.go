@@ -377,6 +377,15 @@ func (ac *AppController) downloadFileFromURL(ctx context.Context, url, destPath 
 		return fmt.Errorf("downloadFileFromURL: HTTP %d", resp.StatusCode)
 	}
 
+	// Hard upper bound on the downloaded archive. Legitimate sing-box
+	// release archives are < 20 MB; capping at 100 MB protects us from a
+	// compromised or misconfigured mirror feeding gigabytes onto disk and
+	// filling the user's drive before failing.
+	const maxDownloadSize = 100 * 1024 * 1024
+	if resp.ContentLength > maxDownloadSize {
+		return fmt.Errorf("downloadFileFromURL: advertised size %d bytes exceeds %d-byte cap", resp.ContentLength, maxDownloadSize)
+	}
+
 	file, err := os.Create(destPath)
 	if err != nil {
 		return fmt.Errorf("downloadFileFromURL: failed to create file: %w", err)
@@ -436,6 +445,11 @@ func (ac *AppController) downloadFileFromURL(ctx context.Context, url, destPath 
 				return fmt.Errorf("downloadFileFromURL: write failed: %w", writeErr)
 			}
 			downloaded += int64(written)
+			// Runtime cap for servers that lie about Content-Length (chunked /
+			// absent). Matches the pre-flight check above.
+			if downloaded > maxDownloadSize {
+				return fmt.Errorf("downloadFileFromURL: download exceeded %d-byte cap after %d bytes", maxDownloadSize, downloaded)
+			}
 
 			// Update progress (15-80%)
 			if totalSize > 0 {
