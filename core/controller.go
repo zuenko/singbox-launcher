@@ -88,7 +88,17 @@ type RunningState struct {
 	running bool
 	sync.RWMutex
 	controller *AppController
+
+	// autoPingTimer schedules a one-shot ping-all ~5s after running flips true,
+	// so the Servers tab shows fresh latency the moment the user looks. The
+	// timer is stopped when running flips back to false so a stopped process
+	// never gets pinged. Guarded by the embedded RWMutex.
+	autoPingTimer *time.Timer
 }
+
+// autoPingDelayAfterConnect is how long we wait after sing-box enters the
+// running state before triggering a background ping-all. Matches LxBox mobile.
+const autoPingDelayAfterConnect = 5 * time.Second
 
 var (
 	instance     *AppController
@@ -402,6 +412,31 @@ func (r *RunningState) Set(value bool) {
 		return
 	}
 	r.running = value
+	// On false→true: arm auto-ping timer. On true→false: cancel any pending one.
+	// Capturing ac here avoids touching r.controller in the timer goroutine after
+	// unlock, and makes the intent explicit.
+	ac := r.controller
+	if value {
+		if r.autoPingTimer != nil {
+			r.autoPingTimer.Stop()
+			r.autoPingTimer = nil
+		}
+		if ac != nil && ac.StateService != nil && ac.StateService.IsAutoPingAfterConnectEnabled() {
+			r.autoPingTimer = time.AfterFunc(autoPingDelayAfterConnect, func() {
+				// Re-check running: user may have hit Stop inside the 5s window.
+				if !r.IsRunning() {
+					return
+				}
+				if ac.UIService != nil && ac.UIService.AutoPingAfterConnectFunc != nil {
+					debuglog.DebugLog("auto-ping: triggering after %v of running state", autoPingDelayAfterConnect)
+					ac.UIService.AutoPingAfterConnectFunc()
+				}
+			})
+		}
+	} else if r.autoPingTimer != nil {
+		r.autoPingTimer.Stop()
+		r.autoPingTimer = nil
+	}
 	r.Unlock()
 
 	r.controller.UpdateUI()

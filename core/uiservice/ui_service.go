@@ -60,6 +60,11 @@ type UIService struct {
 	UpdateConfigStatusFunc   func()
 	UpdateTrayMenuFunc       func()
 	UpdateParserProgressFunc func(progress float64, status string)
+	// AutoPingAfterConnectFunc is scheduled by the controller ~5s after sing-box
+	// transitions into the running state, so node latency in the Servers tab is
+	// fresh by the time the user looks at it. Registered by the Servers tab;
+	// no-op until then. Controlled by StateService.IsAutoPingAfterConnectEnabled().
+	AutoPingAfterConnectFunc func()
 	FocusOpenChildWindows    func() // Focus one of wizard child windows (View, Outbound Edit, rule dialog) when user clicks wizard
 	ShowUpdatePopupFunc      func(currentVersion, latestVersion string) // Called to show update popup
 
@@ -114,6 +119,9 @@ func NewUIService(appIconData, greyIconData, greenIconData, redIconData []byte,
 	ui.UpdateTrayMenuFunc = func() { debuglog.DebugLog("UpdateTrayMenuFunc handler is not set yet.") }
 	ui.UpdateParserProgressFunc = func(progress float64, status string) {
 		debuglog.DebugLog("UpdateParserProgressFunc handler is not set yet. Progress: %.0f%%, Status: %s", progress, status)
+	}
+	ui.AutoPingAfterConnectFunc = func() {
+		debuglog.DebugLog("AutoPingAfterConnectFunc handler is not set yet.")
 	}
 	ui.ShowUpdatePopupFunc = func(currentVersion, latestVersion string) {
 		debuglog.DebugLog("ShowUpdatePopupFunc handler is not set yet. Current: %s, Latest: %s", currentVersion, latestVersion)

@@ -1073,6 +1073,14 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	pingAllButton = ttwidget.NewButton(locale.T("servers.button_test"), pingAllProxies)
 	pingAllButton.SetToolTip(locale.T("servers.tooltip_ping_all"))
 
+	// Let the controller trigger ping-all ~5s after VPN connects, so latency
+	// in the list is fresh when the user looks. Runs on the UI thread via
+	// fyne.Do because AutoPingAfterConnectFunc is called from a time.AfterFunc
+	// goroutine deep inside RunningState.Set.
+	ac.UIService.AutoPingAfterConnectFunc = func() {
+		fyne.Do(pingAllProxies)
+	}
+
 	// Настройки Ping test (endpoint для delay).
 	pingSettingsButton := ttwidget.NewButton("⚙", func() {
 		currentURL := api.GetPingTestURL()

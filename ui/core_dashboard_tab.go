@@ -345,7 +345,17 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 			debuglog.InfoLog("Auto-update: disabled by user (from Core Dashboard)")
 		}
 	}
-	autoUpdateRow := container.NewCenter(autoUpdateCheck)
+	autoPingCheck := widget.NewCheck(locale.T("core.auto_ping_label"), nil)
+	autoPingCheck.SetChecked(tab.controller.StateService.IsAutoPingAfterConnectEnabled())
+	autoPingCheck.OnChanged = func(enabled bool) {
+		tab.controller.StateService.SetAutoPingAfterConnectEnabled(enabled)
+		st := locale.LoadSettings(binDir)
+		st.AutoPingAfterConnectDisabled = !enabled
+		if err := locale.SaveSettings(binDir, st); err != nil {
+			debuglog.WarnLog("core_dashboard: failed to persist auto_ping_after_connect_disabled: %v", err)
+		}
+	}
+	autoUpdateRow := container.NewCenter(container.NewHBox(autoUpdateCheck, autoPingCheck))
 
 	// Отдельная строка для прогрессбара и статуса парсера (под кнопками)
 	parserProgressRow := container.NewVBox(

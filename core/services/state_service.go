@@ -24,6 +24,10 @@ type StateService struct {
 	AutoUpdateEnabled        bool
 	AutoUpdateFailedAttempts int
 	AutoUpdateMutex          sync.Mutex
+
+	// Auto-ping proxies 5s after VPN connects (default on).
+	AutoPingAfterConnect      bool
+	AutoPingAfterConnectMutex sync.RWMutex
 }
 
 // NewStateService creates and initializes a new StateService instance.
@@ -31,7 +35,23 @@ func NewStateService() *StateService {
 	return &StateService{
 		AutoUpdateEnabled:        true,
 		AutoUpdateFailedAttempts: 0,
+		AutoPingAfterConnect:     true,
 	}
+}
+
+// IsAutoPingAfterConnectEnabled reports whether the controller should
+// trigger an automatic ping-all 5s after sing-box starts running.
+func (s *StateService) IsAutoPingAfterConnectEnabled() bool {
+	s.AutoPingAfterConnectMutex.RLock()
+	defer s.AutoPingAfterConnectMutex.RUnlock()
+	return s.AutoPingAfterConnect
+}
+
+// SetAutoPingAfterConnectEnabled toggles the auto-ping-after-connect flag.
+func (s *StateService) SetAutoPingAfterConnectEnabled(enabled bool) {
+	s.AutoPingAfterConnectMutex.Lock()
+	defer s.AutoPingAfterConnectMutex.Unlock()
+	s.AutoPingAfterConnect = enabled
 }
 
 // GetCachedVersion safely gets the cached version with mutex protection.

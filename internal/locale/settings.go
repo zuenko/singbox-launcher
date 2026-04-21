@@ -21,6 +21,9 @@ type Settings struct {
 	// подписок. По умолчанию (отсутствует / false) — автообновление включено, как раньше.
 	// Manual Update всегда работает независимо от флага.
 	SubscriptionAutoUpdateDisabled bool `json:"subscription_auto_update_disabled,omitempty"`
+	// AutoPingAfterConnectDisabled — выключить автопинг нод через 5с после старта VPN.
+	// По умолчанию (отсутствует / false) — автопинг включён. Ручная «test» всегда работает.
+	AutoPingAfterConnectDisabled bool `json:"auto_ping_after_connect_disabled,omitempty"`
 }
 
 // LoadSettings reads settings from binDir/settings.json.

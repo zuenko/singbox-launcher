@@ -67,6 +67,10 @@ func main() {
 		controller.StateService.SetAutoUpdateEnabled(false)
 		debuglog.InfoLog("Auto-update: disabled by user setting (subscription_auto_update_disabled=true)")
 	}
+	if settings.AutoPingAfterConnectDisabled {
+		controller.StateService.SetAutoPingAfterConnectEnabled(false)
+		debuglog.InfoLog("Auto-ping: disabled by user setting (auto_ping_after_connect_disabled=true)")
+	}
 	debuglog.InfoLog("Locale: language set to %q, available: %v", locale.GetLang(), locale.Languages())
 
 	// Check launcher version on startup (always checks, popup shown on first window display)
