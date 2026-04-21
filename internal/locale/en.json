@@ -186,6 +186,7 @@
   "servers.label_proxy_name": "Proxy Name",
   "servers.button_ping": "Ping",
   "servers.button_test": "test",
+  "servers.button_testing": "testing…",
   "servers.tooltip_hide_ping_errors": "Hide servers with ping errors",
   "servers.tooltip_show_ping_errors": "Show all servers",
   "servers.tooltip_sort_by_name": "Sort by name (toggle A–Z / Z–A)",

@@ -186,6 +186,7 @@
   "servers.label_proxy_name": "Имя прокси",
   "servers.button_ping": "Пинг",
   "servers.button_test": "тест",
+  "servers.button_testing": "тест…",
   "servers.tooltip_hide_ping_errors": "Скрыть серверы с ошибкой пинга",
   "servers.tooltip_show_ping_errors": "Показать все серверы",
   "servers.tooltip_sort_by_name": "Сортировка по имени (↑ А…Я / ↓ Я…А)",

@@ -803,6 +803,9 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 	}
 
 	// --- Функция массового пинга всех прокси ---
+	// Forward-declared so pingAllProxies can disable/re-enable it while work is in flight.
+	// The button is assigned further down (line ~1047) — the closure captures by reference.
+	var pingAllButton *ttwidget.Button
 	pingAllProxies := func() {
 		if ac.APIService == nil {
 			ShowErrorText(ac.UIService.MainWindow, "Clash API", locale.T("servers.error_api_not_initialized"))
@@ -820,7 +823,30 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		}
 		status.SetText(locale.Tf("servers.status_pinging", len(proxies)))
 
+		// Guard against duplicate workers: disable the button for the full run.
+		// Preserve original label so we can restore it regardless of completion path.
+		var origText string
+		if pingAllButton != nil {
+			origText = pingAllButton.Text
+			pingAllButton.SetText(locale.T("servers.button_testing"))
+			pingAllButton.Disable()
+		}
+		restoreButton := func() {
+			if pingAllButton == nil {
+				return
+			}
+			if origText != "" {
+				pingAllButton.SetText(origText)
+			}
+			pingAllButton.Enable()
+		}
+
 		go func() {
+			defer func() {
+				// Always re-enable, even if a worker panicked. Routed through
+				// fyne.Do so the UI widget mutation happens on the UI thread.
+				fyne.Do(restoreButton)
+			}()
 			gen := atomic.AddUint64(&pingAllGeneration, 1)
 			baseURL, token, _ := ac.APIService.GetClashAPIConfig()
 
@@ -1044,7 +1070,7 @@ func CreateClashAPITab(ac *core.AppController) fyne.CanvasObject {
 		setListFilterStatus()
 	}
 
-	pingAllButton := ttwidget.NewButton(locale.T("servers.button_test"), pingAllProxies)
+	pingAllButton = ttwidget.NewButton(locale.T("servers.button_test"), pingAllProxies)
 	pingAllButton.SetToolTip(locale.T("servers.tooltip_ping_all"))
 
 	// Настройки Ping test (endpoint для delay).
