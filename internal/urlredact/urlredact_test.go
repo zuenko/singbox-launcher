@@ -38,3 +38,25 @@ func TestRedactURLUserinfo(t *testing.T) {
 		})
 	}
 }
+
+func TestRedactToken(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+		want  string
+	}{
+		{"empty", "", "***"},
+		{"very short", "abc", "***"},
+		{"exactly 6 chars", "abcdef", "***"},
+		{"7 chars", "abcdef1", "ab***f1"},
+		{"typical 32-char secret", "s3cr3t-t0k3n-0123456789abcdef123", "s3***23"},
+		{"prefixed API key", "sk-live-0123456789", "sk***89"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RedactToken(tt.token); got != tt.want {
+				t.Errorf("RedactToken(%q) = %q; want %q", tt.token, got, tt.want)
+			}
+		})
+	}
+}
