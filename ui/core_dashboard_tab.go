@@ -24,6 +24,7 @@ import (
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
+	"singbox-launcher/internal/fynewidget"
 	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 	"singbox-launcher/ui/wizard"
@@ -312,10 +313,34 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 		tab.configStatusLabel,
 	)
 
+	// Right-click on Update exposes the four power-user actions (Update subs
+	// / Restart / Start / Stop) without having to chase multiple buttons.
+	// Primary taps still go straight to the button; the wrap only fires on
+	// secondary (right-click / two-finger tap).
+	updateWithMenu := fynewidget.NewSecondaryTapWrap(tab.updateConfigButton)
+	updateWithMenu.OnSecondary = func(pe *fyne.PointEvent) {
+		if tab.controller.UIService == nil || tab.controller.UIService.MainWindow == nil {
+			return
+		}
+		items := []*fyne.MenuItem{
+			fyne.NewMenuItem(locale.T("core.menu_update_subs"), func() { tab.updateConfigButton.OnTapped() }),
+			fyne.NewMenuItem(locale.T("core.menu_restart_singbox"), func() {
+				if tab.restartButton != nil && tab.restartButton.OnTapped != nil {
+					tab.restartButton.OnTapped()
+				}
+			}),
+			fyne.NewMenuItem(locale.T("core.menu_start_singbox"), func() { core.StartSingBoxProcess() }),
+			fyne.NewMenuItem(locale.T("core.menu_stop_singbox"), func() { core.StopSingBoxProcess() }),
+		}
+		menu := fyne.NewMenu("", items...)
+		popup := widget.NewPopUpMenu(menu, tab.controller.UIService.MainWindow.Canvas())
+		popup.ShowAtPosition(pe.AbsolutePosition)
+	}
+
 	// Кнопки под статусом (по центру) - только кнопки, без прогрессбара
 	buttonsRow := container.NewCenter(
 		container.NewHBox(
-			tab.updateConfigButton, // Кнопка Update
+			updateWithMenu,
 			tab.wizardButton,
 			tab.templateDownloadButton,
 		),
