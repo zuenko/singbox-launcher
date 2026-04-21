@@ -246,10 +246,40 @@ func main() {
 
 	controller.UpdateUI()
 
-	// Reset Clash API HTTP connections after sleep/hibernation (platform no-op where not supported).
+	// Reset Clash API HTTP connections after sleep/hibernation and re-sync UI.
+	// Platform no-op where not supported (darwin/linux stubs).
+	//
+	// Problem: after close-lid / open-lid the launcher would often show stale
+	// ping numbers and a silent Clash API silence because Windows closes TCP
+	// connections during sleep. ResetClashHTTPTransport handles the sockets;
+	// we add a small delay-then-refresh dance so the UI visibly reconciles
+	// once network is actually back (wake event typically fires before
+	// interfaces are fully up).
 	platform.RegisterPowerResumeCallback(func() {
 		api.ResetClashHTTPTransport()
-		debuglog.InfoLog("Power resume: Clash API HTTP transport reset")
+		debuglog.InfoLog("Power resume: Clash API HTTP transport reset, scheduling re-sync")
+		// Give network interfaces a couple seconds to come back, then:
+		//   - Re-test the Clash API connection (RefreshAPIFunc → onTestAPIConnection
+		//     in clash_api_tab.go — this also reloads the proxies list).
+		//   - Trigger the auto-ping-after-connect hook if sing-box is running,
+		//     so latency numbers get refreshed instead of staying stuck at
+		//     pre-sleep values.
+		time.AfterFunc(3*time.Second, func() {
+			if controller.UIService != nil && controller.UIService.RefreshAPIFunc != nil {
+				controller.UIService.RefreshAPIFunc()
+			}
+			if controller.RunningState != nil && controller.RunningState.IsRunning() &&
+				controller.StateService != nil && controller.StateService.IsAutoPingAfterConnectEnabled() &&
+				controller.UIService != nil && controller.UIService.AutoPingAfterConnectFunc != nil {
+				// Another 2s beyond the Refresh so /proxies has repopulated.
+				time.AfterFunc(2*time.Second, func() {
+					if controller.RunningState.IsRunning() {
+						debuglog.DebugLog("Power resume: triggering post-resume auto-ping")
+						controller.UIService.AutoPingAfterConnectFunc()
+					}
+				})
+			}
+		})
 	})
 
 	// Check if config.json exists and show a warning if it doesn't
