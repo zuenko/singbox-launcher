@@ -28,6 +28,7 @@
   "core.menu_restart_singbox": "Restart sing-box",
   "core.menu_start_singbox": "Start sing-box",
   "core.menu_stop_singbox": "Stop sing-box",
+  "core.last_update_failed": "⚠ Last subscription update failed: %s",
   "core.button_wizard": "⚙️ Wizard",
   "core.button_download_template": "Download Config Template",
   "core.label_singbox": "Sing-box",

@@ -60,6 +60,7 @@ type CoreDashboardTab struct {
 	updateConfigButton        *widget.Button
 	parserProgressBar         *widget.ProgressBar // Progress bar for parser
 	parserStatusLabel         *widget.Label       // Status label for parser
+	lastUpdateErrorLabel      *widget.Label       // "Last auto-update failed: <msg>" pill; hidden when clean
 
 	// Data
 	stopAutoUpdate           chan bool
@@ -388,10 +389,18 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 		tab.parserStatusLabel,
 	)
 
+	// Last-auto-update-error pill: hidden by default, populated by
+	// updateConfigInfo when StateService has a recent failure to show.
+	tab.lastUpdateErrorLabel = widget.NewLabel("")
+	tab.lastUpdateErrorLabel.Alignment = fyne.TextAlignCenter
+	tab.lastUpdateErrorLabel.Wrapping = fyne.TextWrapWord
+	tab.lastUpdateErrorLabel.Hide()
+
 	return container.NewVBox(
 		statusRow,
 		buttonsRow,
 		autoUpdateRow,
+		tab.lastUpdateErrorLabel,
 		parserProgressRow, // Прогрессбар и статус парсера в отдельной строке
 	)
 }
@@ -746,6 +755,20 @@ func (tab *CoreDashboardTab) updateConfigInfo() {
 
 	// Обновляем статус кнопок Start/Stop, так как они зависят от наличия конфига
 	tab.updateRunningStatus()
+
+	// Last auto-update failure pill. Visible while the failure is recent
+	// (within 24h) and no successful update has happened since; hidden after
+	// a subsequent success or once the stamp ages out.
+	if tab.lastUpdateErrorLabel != nil && tab.controller.StateService != nil {
+		msg, at := tab.controller.StateService.GetLastUpdateFailure()
+		if msg != "" && !at.IsZero() && time.Since(at) < 24*time.Hour {
+			tab.lastUpdateErrorLabel.SetText(locale.Tf("core.last_update_failed", msg))
+			tab.lastUpdateErrorLabel.Show()
+		} else {
+			tab.lastUpdateErrorLabel.SetText("")
+			tab.lastUpdateErrorLabel.Hide()
+		}
+	}
 }
 
 // updateVersionInfo обновляет информацию о версии (по аналогии с updateWintunStatus).
