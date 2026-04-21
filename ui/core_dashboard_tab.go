@@ -70,6 +70,21 @@ type CoreDashboardTab struct {
 }
 
 // CreateCoreDashboardTab creates and returns the Core Dashboard tab
+// formatRelativeAge renders a short "subs updated Xm ago" hint.
+// Sub-minute resolution is noisy here; clamp to minutes / hours / days.
+func formatRelativeAge(d time.Duration) string {
+	if d < time.Minute {
+		return locale.T("core.subs_updated_just_now")
+	}
+	if d < time.Hour {
+		return locale.Tf("core.subs_updated_min_ago", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return locale.Tf("core.subs_updated_hr_ago", int(d.Hours()))
+	}
+	return locale.Tf("core.subs_updated_day_ago", int(d.Hours()/24))
+}
+
 func CreateCoreDashboardTab(ac *core.AppController) fyne.CanvasObject {
 	tab := &CoreDashboardTab{
 		controller:     ac,
@@ -688,7 +703,19 @@ func (tab *CoreDashboardTab) updateConfigInfo() {
 	configExists := false
 	if info, err := os.Stat(configPath); err == nil {
 		modTime := info.ModTime().Format("2006-01-02")
-		tab.configStatusLabel.SetText(locale.Tf("core.status_config_ok", filepath.Base(configPath), modTime))
+		// If we have a successful-update timestamp from this session, append a
+		// relative "Xm ago / Xh ago" hint so users can see the subscription
+		// freshness at a glance without digging for the pill.
+		label := locale.Tf("core.status_config_ok", filepath.Base(configPath), modTime)
+		if tab.controller.StateService != nil {
+			tab.controller.StateService.LastUpdateMutex.RLock()
+			succAt := tab.controller.StateService.LastUpdateSucceededAt
+			tab.controller.StateService.LastUpdateMutex.RUnlock()
+			if !succAt.IsZero() {
+				label += "  " + formatRelativeAge(time.Since(succAt))
+			}
+		}
+		tab.configStatusLabel.SetText(label)
 		configExists = true
 	} else if os.IsNotExist(err) {
 		tab.configStatusLabel.SetText(locale.Tf("core.status_config_not_found", filepath.Base(configPath)))

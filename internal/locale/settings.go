@@ -46,11 +46,24 @@ func LoadSettings(binDir string) Settings {
 }
 
 // SaveSettings writes settings to binDir/settings.json.
+//
+// Writes are atomic: we stage to a sibling temp file then rename over the
+// real one. Protects against power loss or a crash mid-write leaving the
+// user with a zero-byte settings.json and losing language / ping / subs
+// preferences on next launch.
 func SaveSettings(binDir string, s Settings) error {
 	path := filepath.Join(binDir, "settings.json")
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return fmt.Errorf("locale: marshal settings: %w", err)
 	}
-	return os.WriteFile(path, data, platform.DefaultFileMode)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, platform.DefaultFileMode); err != nil {
+		return fmt.Errorf("locale: write temp settings: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("locale: rename settings: %w", err)
+	}
+	return nil
 }
