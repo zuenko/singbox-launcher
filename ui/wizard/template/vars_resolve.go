@@ -33,9 +33,17 @@ type TemplateVar struct {
 	Type         string          `json:"type"`
 	DefaultValue VarDefaultValue `json:"default_value,omitempty"`
 	DefaultNode  string          `json:"default_node,omitempty"`
-	Options      []string        `json:"options,omitempty"`
-	WizardUI     string          `json:"wizard_ui,omitempty"`
-	Platforms    []string        `json:"platforms,omitempty"`
+	// Options — список допустимых значений (substitution uses these).
+	// JSON form: ["5m", "30s"]  OR  [{"title":"5m (default)", "value":"5m"}].
+	// Raw strings are read into Options as-is; object form populates Options
+	// with value and OptionTitles in parallel with title.
+	Options []string `json:"-"`
+	// OptionTitles — human-readable labels parallel to Options; nil (or
+	// shorter-than-Options) means "use value as title". Populated from the
+	// `{title,value}` object form. Not serialized back out.
+	OptionTitles []string `json:"-"`
+	WizardUI     string   `json:"wizard_ui,omitempty"`
+	Platforms    []string `json:"platforms,omitempty"`
 	// Title подпись строки на вкладке Settings; при пустом используется name.
 	Title string `json:"title,omitempty"`
 	// Tooltip всплывающая подсказка для строки (виджеты с поддержкой SetToolTip).
@@ -44,6 +52,102 @@ type TemplateVar struct {
 	If []string `json:"if,omitempty"`
 	// IfOr: активна если хотя бы одна bool var истинна (как params.if_or).
 	IfOr []string `json:"if_or,omitempty"`
+}
+
+// templateVarAlias avoids infinite recursion in UnmarshalJSON and carries the
+// raw options payload so it can be decoded into either string or object form.
+type templateVarAlias struct {
+	Separator    bool            `json:"separator,omitempty"`
+	Name         string          `json:"name"`
+	Type         string          `json:"type"`
+	DefaultValue VarDefaultValue `json:"default_value,omitempty"`
+	DefaultNode  string          `json:"default_node,omitempty"`
+	Options      json.RawMessage `json:"options,omitempty"`
+	WizardUI     string          `json:"wizard_ui,omitempty"`
+	Platforms    []string        `json:"platforms,omitempty"`
+	Title        string          `json:"title,omitempty"`
+	Tooltip      string          `json:"tooltip,omitempty"`
+	If           []string        `json:"if,omitempty"`
+	IfOr         []string        `json:"if_or,omitempty"`
+}
+
+// UnmarshalJSON decodes a TemplateVar, accepting `options` as either a list of
+// raw strings (legacy) or a list of `{title, value}` objects (mobile parity,
+// 2026-04-22). A mixed list is also supported — per-element fallback.
+func (v *TemplateVar) UnmarshalJSON(data []byte) error {
+	var a templateVarAlias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	v.Separator = a.Separator
+	v.Name = a.Name
+	v.Type = a.Type
+	v.DefaultValue = a.DefaultValue
+	v.DefaultNode = a.DefaultNode
+	v.WizardUI = a.WizardUI
+	v.Platforms = a.Platforms
+	v.Title = a.Title
+	v.Tooltip = a.Tooltip
+	v.If = a.If
+	v.IfOr = a.IfOr
+
+	if len(a.Options) == 0 || string(a.Options) == "null" {
+		return nil
+	}
+	// First try the simple `[]string` form — most templates use this.
+	var strs []string
+	if err := json.Unmarshal(a.Options, &strs); err == nil {
+		v.Options = strs
+		return nil
+	}
+	// Then the object / mixed form. Parse each element individually so a
+	// string among objects still works.
+	var raws []json.RawMessage
+	if err := json.Unmarshal(a.Options, &raws); err != nil {
+		return err
+	}
+	values := make([]string, 0, len(raws))
+	titles := make([]string, 0, len(raws))
+	var anyTitle bool
+	for _, r := range raws {
+		var s string
+		if err := json.Unmarshal(r, &s); err == nil {
+			values = append(values, s)
+			titles = append(titles, s)
+			continue
+		}
+		var obj struct {
+			Title string `json:"title"`
+			Value string `json:"value"`
+		}
+		if err := json.Unmarshal(r, &obj); err != nil {
+			return err
+		}
+		values = append(values, obj.Value)
+		if strings.TrimSpace(obj.Title) == "" {
+			titles = append(titles, obj.Value)
+		} else {
+			titles = append(titles, obj.Title)
+			anyTitle = true
+		}
+	}
+	v.Options = values
+	if anyTitle {
+		v.OptionTitles = titles
+	}
+	return nil
+}
+
+// OptionTitle returns the user-visible label for the i-th option, falling
+// back to the raw value when no explicit title was supplied.
+func (v TemplateVar) OptionTitle(i int) string {
+	if i < 0 || i >= len(v.Options) {
+		return ""
+	}
+	if i < len(v.OptionTitles) && strings.TrimSpace(v.OptionTitles[i]) != "" {
+		return v.OptionTitles[i]
+	}
+	return v.Options[i]
 }
 
 // VarDisplayTitle подпись строки Settings: title (если не пуст после TrimSpace), иначе name.

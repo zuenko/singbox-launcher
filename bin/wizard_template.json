@@ -179,10 +179,10 @@
       "type": "text",
       "default_value": "https://cp.cloudflare.com/generate_204",
       "options": [
-        "https://cp.cloudflare.com/generate_204",
-        "http://www.gstatic.com/generate_204",
-        "https://www.google.com/generate_204",
-        "http://connectivitycheck.gstatic.com/generate_204"
+        {"title": "Cloudflare (HTTPS, default)", "value": "https://cp.cloudflare.com/generate_204"},
+        {"title": "Google (HTTP)",               "value": "http://www.gstatic.com/generate_204"},
+        {"title": "Google (HTTPS)",              "value": "https://www.google.com/generate_204"},
+        {"title": "Google connectivitycheck",    "value": "http://connectivitycheck.gstatic.com/generate_204"}
       ],
       "wizard_ui": "edit",
       "title": "URLTest URL",
@@ -192,7 +192,13 @@
       "name": "urltest_interval",
       "type": "text",
       "default_value": "5m",
-      "options": ["1m", "5m", "10m", "30m", "1h"],
+      "options": [
+        {"title": "1m (aggressive)",      "value": "1m"},
+        {"title": "5m (default)",         "value": "5m"},
+        {"title": "10m",                  "value": "10m"},
+        {"title": "30m (battery-sparing)","value": "30m"},
+        {"title": "1h",                   "value": "1h"}
+      ],
       "wizard_ui": "edit",
       "title": "URLTest interval",
       "tooltip": "sing-box urltest.interval — how often to re-probe all nodes in auto-proxy-out (Go duration string: 30s, 1m, 5m, ...)."
@@ -201,7 +207,12 @@
       "name": "urltest_tolerance",
       "type": "text",
       "default_value": "100",
-      "options": ["50", "100", "200", "500"],
+      "options": [
+        {"title": "50 ms (twitchy)",     "value": "50"},
+        {"title": "100 ms (default)",    "value": "100"},
+        {"title": "200 ms",              "value": "200"},
+        {"title": "500 ms (stable)",     "value": "500"}
+      ],
       "wizard_ui": "edit",
       "title": "URLTest tolerance (ms)",
       "tooltip": "sing-box urltest.tolerance — don't switch node unless the new fastest one beats the current by this many milliseconds. Higher = less flap."
