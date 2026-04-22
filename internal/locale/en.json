@@ -39,6 +39,8 @@
   "diag.debug_api_copy_token": "Copy token",
   "diag.debug_api_off": "Status: Off",
   "diag.debug_api_on": "Status: Listening on %s",
+  "diag.debug_api_copied_title": "Token copied",
+  "diag.debug_api_copied_msg": "Debug API bearer token copied to clipboard. Pass as: Authorization: Bearer …",
   "core.button_wizard": "⚙️ Wizard",
   "core.button_download_template": "Download Config Template",
   "core.label_singbox": "Sing-box",

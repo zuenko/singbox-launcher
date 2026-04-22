@@ -39,6 +39,8 @@
   "diag.debug_api_copy_token": "Копировать токен",
   "diag.debug_api_off": "Статус: выключен",
   "diag.debug_api_on": "Статус: слушает %s",
+  "diag.debug_api_copied_title": "Токен скопирован",
+  "diag.debug_api_copied_msg": "Bearer-токен Debug API скопирован в буфер обмена. Передавайте как: Authorization: Bearer …",
   "core.button_wizard": "⚙️ Мастер",
   "core.button_download_template": "Скачать шаблон конфига",
   "core.label_singbox": "Sing-box",

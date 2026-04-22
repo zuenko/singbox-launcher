@@ -28,6 +28,7 @@ func (f *fakeFacade) GetActiveProxyName() string         { return f.active }
 func (f *fakeFacade) GetSelectedClashGroup() string      { return f.group }
 func (f *fakeFacade) GetSingboxVersion() string          { return f.version }
 func (f *fakeFacade) GetConfigPath() string              { return "/tmp/config.json" }
+func (f *fakeFacade) GetLauncherVersion() string         { return "v-test" }
 func (f *fakeFacade) GetLastUpdateSucceededAt() time.Time { return f.lastSuccess }
 func (f *fakeFacade) StartSingBox() error                { return nil }
 func (f *fakeFacade) StopSingBox() error                 { return nil }

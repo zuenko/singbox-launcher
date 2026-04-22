@@ -47,6 +47,7 @@ type ControllerFacade interface {
 	GetSingboxVersion() string
 	GetConfigPath() string
 	GetLastUpdateSucceededAt() time.Time
+	GetLauncherVersion() string
 
 	// Actions — may be no-ops if the facade doesn't want to expose them.
 	StartSingBox() error
@@ -138,6 +139,7 @@ func (s *Server) routes() http.Handler {
 	})
 
 	protected := http.NewServeMux()
+	protected.HandleFunc("/version", s.handleVersion)
 	protected.HandleFunc("/state", s.handleState)
 	protected.HandleFunc("/proxies", s.handleProxies)
 	protected.HandleFunc("/action/update-subs", s.handleUpdateSubs)
@@ -159,6 +161,14 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"launcher":  s.facade.GetLauncherVersion(),
+		"singbox":   s.facade.GetSingboxVersion(),
+		"api":       "debugapi/v1",
 	})
 }
 

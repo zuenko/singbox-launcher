@@ -6,6 +6,7 @@ import (
 
 	"singbox-launcher/api"
 	"singbox-launcher/core/debugapi"
+	"singbox-launcher/internal/constants"
 )
 
 // debugAPIFacade adapts *AppController to debugapi.ControllerFacade.
@@ -47,6 +48,10 @@ func (f *debugAPIFacade) GetConfigPath() string {
 		return ""
 	}
 	return f.ac.FileService.ConfigPath
+}
+
+func (f *debugAPIFacade) GetLauncherVersion() string {
+	return constants.AppVersion
 }
 
 func (f *debugAPIFacade) GetLastUpdateSucceededAt() time.Time {
