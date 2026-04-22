@@ -71,6 +71,13 @@ func main() {
 		controller.StateService.SetAutoPingAfterConnectEnabled(false)
 		debuglog.InfoLog("Auto-ping: disabled by user setting (auto_ping_after_connect_disabled=true)")
 	}
+	// Optional debug-API (localhost:9269 by default). Off unless user toggled
+	// it on in the Diagnostics tab; token is generated on first enable.
+	if settings.DebugAPIEnabled && settings.DebugAPIToken != "" {
+		if err := controller.StartDebugAPI(settings.DebugAPIPort, settings.DebugAPIToken); err != nil {
+			debuglog.WarnLog("debug-api: failed to start: %v", err)
+		}
+	}
 	debuglog.InfoLog("Locale: language set to %q, available: %v", locale.GetLang(), locale.Languages())
 
 	// Check launcher version on startup (always checks, popup shown on first window display)

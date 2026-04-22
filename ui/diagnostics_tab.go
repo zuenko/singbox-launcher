@@ -17,6 +17,7 @@ import (
 	"github.com/txthinking/socks5"
 
 	"singbox-launcher/core"
+	"singbox-launcher/core/debugapi"
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
@@ -234,6 +235,8 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 		}
 	})
 
+	debugAPIRow := buildDebugAPIRow(ac)
+
 	return container.NewVBox(
 		widget.NewLabel(" "),
 		container.NewHBox(openLogWindowButton, openLogsFolderButton),
@@ -245,5 +248,93 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 		openBrowserButton("Yandex Internet", "https://yandex.ru/internet/"),
 		openBrowserButton("SpeedTest", "https://www.speedtest.net/"),
 		openBrowserButton("WhatIsMyIPAddress", "https://whatismyipaddress.com"),
+		widget.NewSeparator(),
+		debugAPIRow,
 	)
+}
+
+// buildDebugAPIRow renders the local HTTP Debug API toggle + token copy.
+// Off by default. First enable generates a random Bearer token; persists to
+// bin/settings.json. UI shows bound address ("127.0.0.1:9269") while running.
+func buildDebugAPIRow(ac *core.AppController) fyne.CanvasObject {
+	binDir := platform.GetBinDir(ac.FileService.ExecDir)
+	st := locale.LoadSettings(binDir)
+
+	title := widget.NewLabelWithStyle(locale.T("diag.debug_api_title"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	status := widget.NewLabel("")
+	refreshStatus := func() {
+		addr := ac.DebugAPIAddr()
+		if addr == "" {
+			status.SetText(locale.T("diag.debug_api_off"))
+		} else {
+			status.SetText(locale.Tf("diag.debug_api_on", addr))
+		}
+	}
+	refreshStatus()
+
+	copyTokenBtn := widget.NewButtonWithIcon(locale.T("diag.debug_api_copy_token"), theme.ContentCopyIcon(), nil)
+	copyTokenBtn.OnTapped = func() {
+		// Re-load settings each tap so Copy always reflects the latest token
+		// (e.g. after a user regenerates via the checkbox dance).
+		cur := locale.LoadSettings(binDir)
+		if cur.DebugAPIToken == "" {
+			return
+		}
+		ac.UIService.MainWindow.Clipboard().SetContent(cur.DebugAPIToken)
+	}
+	if st.DebugAPIToken == "" {
+		copyTokenBtn.Disable()
+	}
+
+	check := widget.NewCheck(locale.T("diag.debug_api_enable"), nil)
+	check.SetChecked(st.DebugAPIEnabled)
+	check.OnChanged = func(enabled bool) {
+		cur := locale.LoadSettings(binDir)
+		cur.DebugAPIEnabled = enabled
+		if enabled {
+			// Lazy-generate token on first enable so tokens don't exist in
+			// settings.json until the user actually opts in.
+			if strings.TrimSpace(cur.DebugAPIToken) == "" {
+				tok, err := debugapi.GenerateToken()
+				if err != nil {
+					debuglog.ErrorLog("diag.debug_api: token gen failed: %v", err)
+					ShowError(ac.UIService.MainWindow, err)
+					check.SetChecked(false)
+					return
+				}
+				cur.DebugAPIToken = tok
+			}
+			if err := locale.SaveSettings(binDir, cur); err != nil {
+				debuglog.WarnLog("diag.debug_api: save settings: %v", err)
+			}
+			port := cur.DebugAPIPort
+			if err := ac.StartDebugAPI(port, cur.DebugAPIToken); err != nil {
+				debuglog.ErrorLog("diag.debug_api: start failed: %v", err)
+				ShowError(ac.UIService.MainWindow, err)
+				check.SetChecked(false)
+				cur.DebugAPIEnabled = false
+				_ = locale.SaveSettings(binDir, cur)
+				refreshStatus()
+				return
+			}
+			copyTokenBtn.Enable()
+		} else {
+			ac.StopDebugAPI()
+			// Keep the token in settings.json so re-enabling doesn't rotate
+			// it and break existing scripts. Users who want rotation can
+			// delete the key manually.
+			if err := locale.SaveSettings(binDir, cur); err != nil {
+				debuglog.WarnLog("diag.debug_api: save settings: %v", err)
+			}
+		}
+		refreshStatus()
+	}
+
+	row := container.NewVBox(
+		title,
+		widget.NewLabel(locale.T("diag.debug_api_hint")),
+		container.NewHBox(check, copyTokenBtn),
+		status,
+	)
+	return row
 }

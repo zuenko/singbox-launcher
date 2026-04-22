@@ -24,6 +24,14 @@ type Settings struct {
 	// AutoPingAfterConnectDisabled — выключить автопинг нод через 5с после старта VPN.
 	// По умолчанию (отсутствует / false) — автопинг включён. Ручная «test» всегда работает.
 	AutoPingAfterConnectDisabled bool `json:"auto_ping_after_connect_disabled,omitempty"`
+	// DebugAPIEnabled — пользователь явно включил локальный HTTP debug-API
+	// (127.0.0.1:9269 по умолчанию). Off by default.
+	DebugAPIEnabled bool `json:"debug_api_enabled,omitempty"`
+	// DebugAPIToken — Bearer-токен для debug-API. Генерируется при первом
+	// включении, больше не меняется (кроме явной регенерации через UI).
+	DebugAPIToken string `json:"debug_api_token,omitempty"`
+	// DebugAPIPort — порт для debug-API; 0 / отсутствует означает DefaultPort.
+	DebugAPIPort int `json:"debug_api_port,omitempty"`
 }
 
 // LoadSettings reads settings from binDir/settings.json.
