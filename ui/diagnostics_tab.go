@@ -261,7 +261,12 @@ func buildDebugAPIRow(ac *core.AppController) fyne.CanvasObject {
 	st := locale.LoadSettings(binDir)
 
 	title := widget.NewLabelWithStyle(locale.T("diag.debug_api_title"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	// Hint text wraps to window width instead of forcing the window wider —
+	// otherwise a 90-char description pins the whole tab's minimum size.
+	hint := widget.NewLabel(locale.T("diag.debug_api_hint"))
+	hint.Wrapping = fyne.TextWrapWord
 	status := widget.NewLabel("")
+	status.Wrapping = fyne.TextWrapWord
 	refreshStatus := func() {
 		addr := ac.DebugAPIAddr()
 		if addr == "" {
@@ -336,7 +341,7 @@ func buildDebugAPIRow(ac *core.AppController) fyne.CanvasObject {
 
 	row := container.NewVBox(
 		title,
-		widget.NewLabel(locale.T("diag.debug_api_hint")),
+		hint,
 		container.NewHBox(check, copyTokenBtn),
 		status,
 	)
