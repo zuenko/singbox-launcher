@@ -105,6 +105,15 @@ func (a *App) registerShortcuts() {
 	a.window.Canvas().AddShortcut(updateSubs, func(fyne.Shortcut) {
 		core.RunParserProcess()
 	})
+	// Cmd/Ctrl+P → ping-all. Bound to the same hook the power-resume path
+	// uses (AutoPingAfterConnectFunc), so it works even when the Servers tab
+	// isn't focused.
+	pingAll := &desktop.CustomShortcut{KeyName: fyne.KeyP, Modifier: fyne.KeyModifierShortcutDefault}
+	a.window.Canvas().AddShortcut(pingAll, func(fyne.Shortcut) {
+		if a.core != nil && a.core.UIService != nil && a.core.UIService.AutoPingAfterConnectFunc != nil {
+			a.core.UIService.AutoPingAfterConnectFunc()
+		}
+	})
 }
 
 // GetTabs returns the tabs container

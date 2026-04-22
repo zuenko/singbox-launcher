@@ -33,6 +33,7 @@ func (f *fakeFacade) GetLastUpdateSucceededAt() time.Time { return f.lastSuccess
 func (f *fakeFacade) StartSingBox() error                { return nil }
 func (f *fakeFacade) StopSingBox() error                 { return nil }
 func (f *fakeFacade) UpdateSubscriptions() error         { return f.updateErr }
+func (f *fakeFacade) PingAllProxies() error              { return nil }
 
 // freeLocalPort binds :0 then closes, returning the port. Good enough for
 // server-under-test tests on a dev box.

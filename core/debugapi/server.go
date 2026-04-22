@@ -53,6 +53,10 @@ type ControllerFacade interface {
 	StartSingBox() error
 	StopSingBox() error
 	UpdateSubscriptions() error
+	// PingAllProxies kicks the same ping-all flow as the Servers-tab
+	// "test" button. Returns after the sweep completes (may be slow with
+	// many nodes — callers should expect seconds).
+	PingAllProxies() error
 }
 
 // Server owns the listener, shutdown context, and auth config.
@@ -145,6 +149,7 @@ func (s *Server) routes() http.Handler {
 	protected.HandleFunc("/action/update-subs", s.handleUpdateSubs)
 	protected.HandleFunc("/action/start", s.handleStart)
 	protected.HandleFunc("/action/stop", s.handleStop)
+	protected.HandleFunc("/action/ping-all", s.handlePingAll)
 
 	mux.Handle("/", s.authMiddleware(protected))
 	return mux
@@ -205,6 +210,18 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.facade.StartSingBox(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handlePingAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "POST required"})
+		return
+	}
+	if err := s.facade.PingAllProxies(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
