@@ -86,4 +86,5 @@ config — копия*.json
 coverage.txt
 coverage.html
 
-NIGHT_REPORT.md
+# Night-work reports — personal notes + per-night logs, not for the repo.
+docs/night-reports/
