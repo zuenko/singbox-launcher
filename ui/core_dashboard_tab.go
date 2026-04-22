@@ -362,43 +362,9 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 		),
 	)
 
-	// Global opt-out for scheduled subscription fetches. Manual Update (the
-	// button above) always works. Persisted in bin/settings.json.
-	binDir := platform.GetBinDir(tab.controller.FileService.ExecDir)
-	autoUpdateCheck := widget.NewCheck(locale.T("core.auto_update_subs_label"), nil)
-	autoUpdateCheck.SetChecked(tab.controller.StateService.IsAutoUpdateEnabled())
-	autoUpdateCheck.OnChanged = func(enabled bool) {
-		tab.controller.StateService.SetAutoUpdateEnabled(enabled)
-		// On re-enable from UI, reset the consecutive-failure counter so the
-		// loop doesn't immediately disable itself again. Mirrors ResumeAutoUpdate
-		// semantics but without the "refresh just happened" side effect.
-		if enabled {
-			tab.controller.StateService.ResetAutoUpdateFailedAttempts()
-		}
-		st := locale.LoadSettings(binDir)
-		st.SubscriptionAutoUpdateDisabled = !enabled
-		if err := locale.SaveSettings(binDir, st); err != nil {
-			debuglog.WarnLog("core_dashboard: failed to persist subscription_auto_update_disabled: %v", err)
-		}
-		if enabled {
-			debuglog.InfoLog("Auto-update: enabled by user (from Core Dashboard)")
-		} else {
-			debuglog.InfoLog("Auto-update: disabled by user (from Core Dashboard)")
-		}
-	}
-	autoPingCheck := widget.NewCheck(locale.T("core.auto_ping_label"), nil)
-	autoPingCheck.SetChecked(tab.controller.StateService.IsAutoPingAfterConnectEnabled())
-	autoPingCheck.OnChanged = func(enabled bool) {
-		tab.controller.StateService.SetAutoPingAfterConnectEnabled(enabled)
-		st := locale.LoadSettings(binDir)
-		st.AutoPingAfterConnectDisabled = !enabled
-		if err := locale.SaveSettings(binDir, st); err != nil {
-			debuglog.WarnLog("core_dashboard: failed to persist auto_ping_after_connect_disabled: %v", err)
-		}
-	}
-	// Stack checkboxes vertically — ru labels are long enough that HBox
-	// pinned the window's minimum width wider than the default 350 px.
-	autoUpdateRow := container.NewVBox(autoUpdateCheck, autoPingCheck)
+	// auto-update / auto-ping checkboxes were moved to the dedicated
+	// Settings tab (ui/settings_tab.go) so Core Dashboard stays focused
+	// on the sing-box lifecycle.
 
 	// Отдельная строка для прогрессбара и статуса парсера (под кнопками)
 	parserProgressRow := container.NewVBox(
@@ -416,7 +382,6 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 	return container.NewVBox(
 		statusRow,
 		buttonsRow,
-		autoUpdateRow,
 		tab.lastUpdateErrorLabel,
 		parserProgressRow, // Прогрессбар и статус парсера в отдельной строке
 	)

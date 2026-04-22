@@ -5,6 +5,9 @@
   "app.tab.servers": "🖥️ Servers",
   "app.tab.diagnostics": "🔍 Diagnostics",
   "app.tab.help": "❓ Help",
+  "app.tab.settings": "⚙️ Settings",
+  "settings.section_subscriptions": "Subscriptions",
+  "settings.section_language": "Language",
 
   "core.status_checking": "Core Status Checking...",
   "core.status_error_not_found": "Core Status ❌ Error: sing-box not found",

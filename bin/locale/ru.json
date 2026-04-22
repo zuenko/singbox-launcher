@@ -5,6 +5,9 @@
   "app.tab.servers": "🖥️ Серверы",
   "app.tab.diagnostics": "🔍 Диагностика",
   "app.tab.help": "❓ Помощь",
+  "app.tab.settings": "⚙️ Настройки",
+  "settings.section_subscriptions": "Подписки",
+  "settings.section_language": "Язык",
 
   "core.status_checking": "Статус ядра: Проверка...",
   "core.status_error_not_found": "Статус ядра ❌ Ошибка: sing-box не найден",

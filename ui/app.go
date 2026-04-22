@@ -38,6 +38,7 @@ func NewApp(window fyne.Window, controller *core.AppController) *App {
 	app.tabs = container.NewAppTabs(
 		coreTabItem,
 		app.clashAPITab,
+		container.NewTabItem(locale.T("app.tab.settings"), CreateSettingsTab(controller)),
 		container.NewTabItem(locale.T("app.tab.diagnostics"), CreateDiagnosticsTab(controller)),
 		container.NewTabItem(locale.T("app.tab.help"), CreateHelpTab(controller)),
 	)
