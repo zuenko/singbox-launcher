@@ -51,6 +51,9 @@ logs/*.log
 # Temporary files
 *.tmp
 *.temp
+# Atomic-swap staging files for config.json / settings.json atomic writes
+# (stage to .swap, then os.Rename). Only exists if a write was interrupted.
+*.swap
 temp_*.txt
 compile_debug.txt
 
