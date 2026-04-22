@@ -396,7 +396,9 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 			debuglog.WarnLog("core_dashboard: failed to persist auto_ping_after_connect_disabled: %v", err)
 		}
 	}
-	autoUpdateRow := container.NewCenter(container.NewHBox(autoUpdateCheck, autoPingCheck))
+	// Stack checkboxes vertically — ru labels are long enough that HBox
+	// pinned the window's minimum width wider than the default 350 px.
+	autoUpdateRow := container.NewVBox(autoUpdateCheck, autoPingCheck)
 
 	// Отдельная строка для прогрессбара и статуса парсера (под кнопками)
 	parserProgressRow := container.NewVBox(
