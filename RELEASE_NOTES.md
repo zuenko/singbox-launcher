@@ -8,6 +8,20 @@
 
 ---
 
+### Выжимка (RU) — v0.8.7
+
+Кратко: новая вкладка **⚙️ Settings** (язык, автообновление подписок, автопинг после подключения); data-loss баг языка починен (load-mutate-save). Локальный **Debug API** `127.0.0.1:9269` (off by default, Bearer-токен, read/action-эндпоинты) — backing-service для MCP-обёрток, чтобы AI-агенты могли читать и дёргать лаунчер. В визарде — **переключатель ON/OFF для каждой подписки** (не удаляя URL). **URLTest-параметры** (url/interval/tolerance) выведены из `auto-proxy-out` в шаблонные `vars` с preset-дропдаунами; `vars[].options` теперь поддерживает форму `{title, value}`. Горячие клавиши `Cmd/Ctrl+R / U / P`. **Wake-from-sleep re-sync** (Windows + Linux: `systemd-logind PrepareForSleep`, macOS пока stub) — после резюма сбрасываются соединения Clash API, список прокси обновляется, пинг освежается. **Атомарные записи** `config.json` и `settings.json` (stage+rename). **Лимит 100 МБ** на загрузку sing-box core. **Расшифровка HTTP-кодов** в ошибках подписок (401 → «token may have expired» и т.д.). **Подсказка «(подписки: X ч назад)»** и **dirty-marker `*`** на кнопке Update. **Редакция токена Clash API** в debug-логах. Расширены кириллические TLD в `ru-domains` (`.рус / .москва / .дети / .сайт / .орг / .ком` и др.). Спеки: [**037** — toggle подписки](SPECS/037-F-C-SUBSCRIPTION_SOURCE_TOGGLE/SPEC.md), [**038** — Debug API](SPECS/038-F-C-DEBUG_API/SPEC.md), [**039** — Settings-tab](SPECS/039-F-C-SETTINGS_TAB_PREFERENCES/SPEC.md), [**040** — option titles + URLTest](SPECS/040-F-C-WIZARD_TEMPLATE_OPTION_TITLES/SPEC.md), [**041** — атомарные записи](SPECS/041-F-C-ATOMIC_FILE_WRITES/SPEC.md), [**042** — keyboard shortcuts](SPECS/042-F-C-KEYBOARD_SHORTCUTS/SPEC.md), [**043** — dirty-marker](SPECS/043-F-C-DIRTY_CONFIG_MARKER/SPEC.md); расширена [**011** — wake-from-sleep](SPECS/011-B-C-launcher-freeze-after-sleep/SPEC.md).
+
+**Полный список изменений:** [docs/release_notes/0-8-7.md](docs/release_notes/0-8-7.md).
+
+### Highlights (EN) — v0.8.7
+
+New **⚙️ Settings** tab (language, subscription auto-update, auto-ping on connect); latent data-loss bug in language handler fixed (load-mutate-save). Local **Debug API** on `127.0.0.1:9269` (off by default, Bearer auth, read/action endpoints) — designed as a backing service for MCP wrappers so AI agents can introspect and drive the launcher. Wizard Sources get **per-row on/off toggle** (disabled sources stay in file). **URLTest parameters** (url/interval/tolerance) hoisted from `auto-proxy-out` into template `vars` with preset dropdowns; `vars[].options` now accepts `{title, value}` form. Keyboard shortcuts `Cmd/Ctrl+R / U / P`. **Wake-from-sleep re-sync** (Windows + Linux via `systemd-logind PrepareForSleep`; macOS still stub) — resume resets Clash API transport, refreshes proxies list, re-pings nodes. **Atomic writes** for `config.json` and `settings.json` (stage+rename). **100 MB cap** on sing-box core downloads. **HTTP status humanization** in subscription errors (401 → "token may have expired", etc.). **"(subs: Xh ago)"** freshness hint and **dirty-marker `*`** on the Update button. **Clash API token redaction** in debug logs. Expanded Cyrillic TLDs in `ru-domains` (`.рус / .москва / .дети / .сайт / .орг / .ком` et al.). Specs: [**037**](SPECS/037-F-C-SUBSCRIPTION_SOURCE_TOGGLE/SPEC.md), [**038**](SPECS/038-F-C-DEBUG_API/SPEC.md), [**039**](SPECS/039-F-C-SETTINGS_TAB_PREFERENCES/SPEC.md), [**040**](SPECS/040-F-C-WIZARD_TEMPLATE_OPTION_TITLES/SPEC.md), [**041**](SPECS/041-F-C-ATOMIC_FILE_WRITES/SPEC.md), [**042**](SPECS/042-F-C-KEYBOARD_SHORTCUTS/SPEC.md), [**043**](SPECS/043-F-C-DIRTY_CONFIG_MARKER/SPEC.md); extended [**011**](SPECS/011-B-C-launcher-freeze-after-sleep/SPEC.md).
+
+**Full changelog:** [docs/release_notes/0-8-7.md](docs/release_notes/0-8-7.md).
+
+---
+
 ### Выжимка (RU) — v0.8.6
 
 Кратко: визард — вкладка **«Настройки»** (`vars`, плейсхолдеры **`@name`**, опциональные разделители); скаляры DNS в **`state.vars`** (**`dns_*`**, плейсхолдеры **`@dns_*`**, в **`dns_options`** — только servers/rules, миграция со старых файлов); **`state.json`** версия **4** при сохранении (чтение 2–4). На **macOS** переключатель **TUN** перенесён с **«Правил»** на **«Настройки»**; запрет снять TUN при работающем ядре/процессе sing-box, честный **Stop**, по запросу удаление кеша в **`bin/`** и логов после остановки. **Win7 x86** — общий с Windows/Linux блок TUN в **`params`**, **`default_value`** по платформам (в т.ч. **`gvisor`** по умолчанию), исправлена загрузка **`wizard_template.json`** без вложенного **`inbounds.stack`**. **Linux** — приоритет **`sing-box`** из **`PATH`**, иначе локальный **`bin/`**. Исходящий HTTP — **`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`**, единый транспорт, скрытие **`user:password@`** в ошибках, при сбое загрузки **SRS** — предупреждение в лог на вкладке **Rules**. Подписки **Hysteria2** — разбор портов и нормализация **`server_ports`** под sing-box ([#58](https://github.com/Leadaxe/singbox-launcher/issues/58)). Спеки: [**032** — Settings](SPECS/032-F-C-WIZARD_SETTINGS_TAB/), [**034** — HTTP proxy](SPECS/034-F-C-HTTP_ENV_PROXY/), [**019** — Win7](SPECS/019-F-C-WIN7_ADAPTATION/); документация [**035** — VLESS `flow` / sing-box](SPECS/035-Q-C-VLESS_SINGBOX_FLOW_FIELD/SPEC.md).
@@ -42,6 +56,7 @@ Wizard (DNS tab, Rules v3, Sources, scroll gutters, row hover, per-source edit, 
 
 | Версия | Описание |
 |--------|----------|
+| **v0.8.7** | [docs/release_notes/0-8-7.md](docs/release_notes/0-8-7.md) |
 | **v0.8.6** | [docs/release_notes/0-8-6.md](docs/release_notes/0-8-6.md) |
 | **v0.8.5** | [docs/release_notes/0-8-5.md](docs/release_notes/0-8-5.md) |
 | **v0.8.4** | [docs/release_notes/0-8-4.md](docs/release_notes/0-8-4.md) |
