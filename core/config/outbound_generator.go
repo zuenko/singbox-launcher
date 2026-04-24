@@ -71,12 +71,6 @@ type OutboundGenerationResult struct {
 	EndpointsCount       int      // Number of WireGuard endpoint nodes
 	LocalSelectorsCount  int      // Number of local (per-source) selectors
 	GlobalSelectorsCount int      // Number of global selectors
-	// Per-source outcome counters — lets the UI surface "3 of 5 sources
-	// succeeded" instead of lying about total success when one subscription
-	// silently returned zero nodes. Populated in GenerateOutboundsFromParserConfig.
-	TotalSources     int // proxy sources in ParserConfig.Proxies
-	SucceededSources int // sources that returned ≥ 1 node
-	FailedSources    int // sources that errored or returned zero nodes
 }
 
 // outboundInfo stores information about a dynamically created outbound selector.
@@ -902,7 +896,6 @@ func GenerateOutboundsFromParserConfig(
 		progressCallback(10, fmt.Sprintf("Processing %d sources...", totalSources))
 	}
 
-	var succeededSources, failedSources int
 	processedIdx := 0
 	for i, proxySource := range parserConfig.ParserConfig.Proxies {
 		if proxySource.Disabled {
@@ -918,7 +911,6 @@ func GenerateOutboundsFromParserConfig(
 		nodesFromSource, err := loadNodesFunc(proxySource, tagCounts, progressCallback, i, totalSources)
 		if err != nil {
 			debuglog.ErrorLog("GenerateOutboundsFromParserConfig: Error processing source %d/%d: %v", i+1, totalSources, err)
-			failedSources++
 			continue
 		}
 
@@ -928,13 +920,6 @@ func GenerateOutboundsFromParserConfig(
 			}
 			allNodes = append(allNodes, nodesFromSource...)
 			nodesBySource[i] = nodesFromSource
-			succeededSources++
-		} else {
-			// No error but also no nodes — most often an empty subscription
-			// response or a successful fetch that decoded to zero proxies.
-			// Count it as a failure for surfacing purposes so the user sees
-			// that this source didn't contribute.
-			failedSources++
 		}
 	}
 
@@ -1039,8 +1024,5 @@ func GenerateOutboundsFromParserConfig(
 		EndpointsCount:       endpointsCount,
 		LocalSelectorsCount:  localSelectorsCount,
 		GlobalSelectorsCount: globalSelectorsCount,
-		TotalSources:         totalSources,
-		SucceededSources:     succeededSources,
-		FailedSources:        failedSources,
 	}, nil
 }

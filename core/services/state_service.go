@@ -35,12 +35,11 @@ type StateService struct {
 	TemplateDirty      bool
 	TemplateDirtyMutex sync.RWMutex
 
-	// Last subscription-update error, surfaced in the Core Dashboard so users
-	// know when a scheduled auto-refresh failed silently in the background.
-	LastUpdateError      string
-	LastUpdateErrorAt    time.Time
+	// LastUpdateSucceededAt — timestamp последнего успешного прогона
+	// RunParserProcess. Читается freshness-хинтом на Core Dashboard
+	// («подписки: 2 ч назад»). In-memory, не персистится.
 	LastUpdateSucceededAt time.Time
-	LastUpdateMutex      sync.RWMutex
+	LastUpdateMutex       sync.RWMutex
 }
 
 // NewStateService creates and initializes a new StateService instance.
@@ -83,30 +82,12 @@ func (s *StateService) SetTemplateDirty(dirty bool) {
 	s.TemplateDirty = dirty
 }
 
-// RecordUpdateFailure stores the human-readable error message and timestamp
-// from a failed subscription-update attempt. Surfaced by the Core Dashboard.
-func (s *StateService) RecordUpdateFailure(msg string) {
-	s.LastUpdateMutex.Lock()
-	defer s.LastUpdateMutex.Unlock()
-	s.LastUpdateError = msg
-	s.LastUpdateErrorAt = time.Now()
-}
-
-// RecordUpdateSuccess clears any prior failure marker and stamps the time.
+// RecordUpdateSuccess ставит timestamp последнего успешного прогона парсера.
+// Используется freshness-хинтом на Core Dashboard.
 func (s *StateService) RecordUpdateSuccess() {
 	s.LastUpdateMutex.Lock()
 	defer s.LastUpdateMutex.Unlock()
-	s.LastUpdateError = ""
-	s.LastUpdateErrorAt = time.Time{}
 	s.LastUpdateSucceededAt = time.Now()
-}
-
-// GetLastUpdateFailure returns the last error message and its timestamp;
-// empty message means no recent failure.
-func (s *StateService) GetLastUpdateFailure() (string, time.Time) {
-	s.LastUpdateMutex.RLock()
-	defer s.LastUpdateMutex.RUnlock()
-	return s.LastUpdateError, s.LastUpdateErrorAt
 }
 
 // GetCachedVersion safely gets the cached version with mutex protection.

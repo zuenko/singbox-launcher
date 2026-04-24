@@ -3,7 +3,6 @@ package services
 import (
 	"sync"
 	"testing"
-	"time"
 )
 
 func TestAutoPingAfterConnectDefaultEnabled(t *testing.T) {
@@ -32,40 +31,27 @@ func TestTemplateDirtyRoundTrip(t *testing.T) {
 	}
 }
 
-func TestRecordUpdateFailureAndSuccess(t *testing.T) {
+func TestRecordUpdateSuccess(t *testing.T) {
 	s := NewStateService()
 
-	msg, at := s.GetLastUpdateFailure()
-	if msg != "" || !at.IsZero() {
-		t.Errorf("fresh state should have no failure, got msg=%q at=%v", msg, at)
-	}
-
-	s.RecordUpdateFailure("network timeout")
-	msg, at = s.GetLastUpdateFailure()
-	if msg != "network timeout" {
-		t.Errorf("msg = %q, want %q", msg, "network timeout")
-	}
-	if at.IsZero() {
-		t.Error("at should be non-zero after RecordUpdateFailure")
-	}
-
-	// Success replaces the failure tombstone.
-	time.Sleep(1 * time.Millisecond)
-	s.RecordUpdateSuccess()
-	msg, at = s.GetLastUpdateFailure()
-	if msg != "" || !at.IsZero() {
-		t.Errorf("after success, failure should be cleared, got msg=%q at=%v", msg, at)
-	}
 	s.LastUpdateMutex.RLock()
 	succ := s.LastUpdateSucceededAt
 	s.LastUpdateMutex.RUnlock()
+	if !succ.IsZero() {
+		t.Errorf("fresh state should have zero LastUpdateSucceededAt, got %v", succ)
+	}
+
+	s.RecordUpdateSuccess()
+	s.LastUpdateMutex.RLock()
+	succ = s.LastUpdateSucceededAt
+	s.LastUpdateMutex.RUnlock()
 	if succ.IsZero() {
-		t.Error("LastUpdateSucceededAt should be non-zero after success")
+		t.Error("LastUpdateSucceededAt should be non-zero after RecordUpdateSuccess")
 	}
 }
 
-// Stress the failure/success race surface: if the mutex is wrong, -race will
-// bark. Trivial test — the real defence is go test -race on CI.
+// Stress the success / concurrent-flag-update surface: if any mutex is wrong,
+// -race will bark. The real defence is go test -race on CI.
 func TestStateServiceConcurrency(t *testing.T) {
 	s := NewStateService()
 	var wg sync.WaitGroup
@@ -73,12 +59,9 @@ func TestStateServiceConcurrency(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			if i%3 == 0 {
-				s.RecordUpdateFailure("err")
-			} else {
+			if i%2 == 0 {
 				s.RecordUpdateSuccess()
 			}
-			_, _ = s.GetLastUpdateFailure()
 			s.SetAutoPingAfterConnectEnabled(i%2 == 0)
 			_ = s.IsAutoPingAfterConnectEnabled()
 			s.SetTemplateDirty(i%2 == 0)

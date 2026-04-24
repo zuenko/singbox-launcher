@@ -24,7 +24,6 @@ import (
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
-	"singbox-launcher/internal/fynewidget"
 	"singbox-launcher/internal/locale"
 	"singbox-launcher/internal/platform"
 	"singbox-launcher/ui/wizard"
@@ -60,7 +59,6 @@ type CoreDashboardTab struct {
 	updateConfigButton        *widget.Button
 	parserProgressBar         *widget.ProgressBar // Progress bar for parser
 	parserStatusLabel         *widget.Label       // Status label for parser
-	lastUpdateErrorLabel      *widget.Label       // "Last auto-update failed: <msg>" pill; hidden when clean
 
 	// Data
 	stopAutoUpdate           chan bool
@@ -329,42 +327,17 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 		tab.configStatusLabel,
 	)
 
-	// Right-click on Update exposes the four power-user actions (Update subs
-	// / Restart / Start / Stop) without having to chase multiple buttons.
-	// Primary taps still go straight to the button; the wrap only fires on
-	// secondary (right-click / two-finger tap).
-	updateWithMenu := fynewidget.NewSecondaryTapWrap(tab.updateConfigButton)
-	updateWithMenu.OnSecondary = func(pe *fyne.PointEvent) {
-		if tab.controller.UIService == nil || tab.controller.UIService.MainWindow == nil {
-			return
-		}
-		items := []*fyne.MenuItem{
-			fyne.NewMenuItem(locale.T("core.menu_update_subs"), func() { tab.updateConfigButton.OnTapped() }),
-			fyne.NewMenuItem(locale.T("core.menu_restart_singbox"), func() {
-				if tab.restartButton != nil && tab.restartButton.OnTapped != nil {
-					tab.restartButton.OnTapped()
-				}
-			}),
-			fyne.NewMenuItem(locale.T("core.menu_start_singbox"), func() { core.StartSingBoxProcess() }),
-			fyne.NewMenuItem(locale.T("core.menu_stop_singbox"), func() { core.StopSingBoxProcess() }),
-		}
-		menu := fyne.NewMenu("", items...)
-		popup := widget.NewPopUpMenu(menu, tab.controller.UIService.MainWindow.Canvas())
-		popup.ShowAtPosition(pe.AbsolutePosition)
-	}
-
 	// Кнопки под статусом (по центру) - только кнопки, без прогрессбара
 	buttonsRow := container.NewCenter(
 		container.NewHBox(
-			updateWithMenu,
+			tab.updateConfigButton,
 			tab.wizardButton,
 			tab.templateDownloadButton,
 		),
 	)
 
-	// auto-update / auto-ping checkboxes were moved to the dedicated
-	// Settings tab (ui/settings_tab.go) so Core Dashboard stays focused
-	// on the sing-box lifecycle.
+	// auto-update / auto-ping checkboxes moved to the dedicated Settings tab
+	// (ui/settings_tab.go) so Core Dashboard stays focused on the sing-box lifecycle.
 
 	// Отдельная строка для прогрессбара и статуса парсера (под кнопками)
 	parserProgressRow := container.NewVBox(
@@ -372,17 +345,9 @@ func (tab *CoreDashboardTab) createConfigBlock() fyne.CanvasObject {
 		tab.parserStatusLabel,
 	)
 
-	// Last-auto-update-error pill: hidden by default, populated by
-	// updateConfigInfo when StateService has a recent failure to show.
-	tab.lastUpdateErrorLabel = widget.NewLabel("")
-	tab.lastUpdateErrorLabel.Alignment = fyne.TextAlignCenter
-	tab.lastUpdateErrorLabel.Wrapping = fyne.TextWrapWord
-	tab.lastUpdateErrorLabel.Hide()
-
 	return container.NewVBox(
 		statusRow,
 		buttonsRow,
-		tab.lastUpdateErrorLabel,
 		parserProgressRow, // Прогрессбар и статус парсера в отдельной строке
 	)
 }
@@ -749,20 +714,6 @@ func (tab *CoreDashboardTab) updateConfigInfo() {
 
 	// Обновляем статус кнопок Start/Stop, так как они зависят от наличия конфига
 	tab.updateRunningStatus()
-
-	// Last auto-update failure pill. Visible while the failure is recent
-	// (within 24h) and no successful update has happened since; hidden after
-	// a subsequent success or once the stamp ages out.
-	if tab.lastUpdateErrorLabel != nil && tab.controller.StateService != nil {
-		msg, at := tab.controller.StateService.GetLastUpdateFailure()
-		if msg != "" && !at.IsZero() && time.Since(at) < 24*time.Hour {
-			tab.lastUpdateErrorLabel.SetText(locale.Tf("core.last_update_failed", msg))
-			tab.lastUpdateErrorLabel.Show()
-		} else {
-			tab.lastUpdateErrorLabel.SetText("")
-			tab.lastUpdateErrorLabel.Hide()
-		}
-	}
 }
 
 // updateVersionInfo обновляет информацию о версии (по аналогии с updateWintunStatus).

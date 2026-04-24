@@ -62,12 +62,6 @@ func (svc *ConfigService) RunParserProcess() {
 	if err != nil {
 		debuglog.ErrorLog("RunParser: Failed to update config: %v", err)
 		// Progress already updated in UpdateConfigFromSubscriptions with error status
-		if ac.StateService != nil {
-			ac.StateService.RecordUpdateFailure(err.Error())
-		}
-		if ac.UIService != nil && ac.UIService.UpdateConfigStatusFunc != nil {
-			ac.UIService.UpdateConfigStatusFunc()
-		}
 		ac.ShowParserError(fmt.Errorf("failed to update config: %w", err))
 	} else {
 		debuglog.InfoLog("RunParser: Config updated successfully.")
