@@ -3,8 +3,8 @@
 
   "app.tab.core": "⚙️ Ядро",
   "app.tab.servers": "🖥️ Серверы",
-  "app.tab.diagnostics": "🔍 Диагностика",
-  "app.tab.help": "❓ Помощь",
+  "app.tab.diagnostics": "🔍",
+  "app.tab.help": "❓",
   "app.tab.settings": "⚙️ Настройки",
   "settings.section_subscriptions": "Подписки",
   "settings.section_language": "Язык",
