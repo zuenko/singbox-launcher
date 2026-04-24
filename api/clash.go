@@ -17,6 +17,7 @@ import (
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/platform"
 	"singbox-launcher/internal/textnorm"
+	"singbox-launcher/internal/urlredact"
 
 	"github.com/muhammadmuzzammil1998/jsonc"
 )
@@ -58,7 +59,7 @@ func LoadClashAPIConfig(configPath string) (baseURL, token string, err error) {
 	baseURL = "http://" + host
 	token = secret
 
-	debuglog.DebugLog("Clash API loaded from config: %s / %s", baseURL, token)
+	debuglog.DebugLog("Clash API loaded from config: %s / token=%s", baseURL, urlredact.RedactToken(token))
 	return baseURL, token, nil
 }
 

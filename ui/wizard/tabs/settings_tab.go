@@ -182,7 +182,33 @@ func CreateSettingsTab(presenter *wizardpresentation.WizardPresenter) fyne.Canva
 func buildSettingsVarRow(presenter *wizardpresentation.WizardPresenter, model *wizardmodels.WizardModel, td *wizardtemplate.TemplateData, vd wizardtemplate.TemplateVar, title, toolTip string, rowEnabled bool, gs *wizardpresentation.GUIState) fyne.CanvasObject {
 	name := vd.Name
 	typ := vd.Type
+	// Options carry actual values; titles (if any) are what the user sees in
+	// dropdowns. For templates using the legacy `["a","b"]` form, title==value.
+	// Object form `[{title:"5m (default)", value:"5m"}]` surfaces richer labels.
 	options := vd.Options
+	optionTitles := make([]string, len(options))
+	for i := range options {
+		optionTitles[i] = vd.OptionTitle(i)
+	}
+	// title → value map for mapping user's dropdown pick back to the value
+	// that ends up in SettingsVars / config substitution. When titles are
+	// identical to values (the legacy case) this is a no-op identity map.
+	valueForTitle := func(t string) string {
+		for i, ot := range optionTitles {
+			if ot == t {
+				return options[i]
+			}
+		}
+		return t
+	}
+	titleForValue := func(val string) string {
+		for i, v := range options {
+			if v == val {
+				return optionTitles[i]
+			}
+		}
+		return val
+	}
 	viewMode := strings.EqualFold(strings.TrimSpace(vd.WizardUI), "view")
 
 	st := model.SettingsVars
@@ -263,8 +289,8 @@ func buildSettingsVarRow(presenter *wizardpresentation.WizardPresenter, model *w
 
 	case "enum":
 		titleLab := newSettingsTitleLabel(title)
-		sel := widget.NewSelect(options, func(val string) {
-			model.SettingsVars[name] = val
+		sel := widget.NewSelect(optionTitles, func(pickedTitle string) {
+			model.SettingsVars[name] = valueForTitle(pickedTitle)
 			model.TemplatePreviewNeedsUpdate = true
 			presenter.MarkAsChanged()
 			maybeRefreshSettingsAfterVarChange(gs, td, name)
@@ -280,7 +306,7 @@ func buildSettingsVarRow(presenter *wizardpresentation.WizardPresenter, model *w
 				presenter.MarkAsChanged()
 			}
 		}
-		sel.SetSelected(disp)
+		sel.SetSelected(titleForValue(disp))
 		row := container.NewBorder(nil, nil, titleLab, resetBtn, sel)
 		setVarFieldToolTip(toolTip, titleLab, sel)
 		applySettingsRowDisabled(rowEnabled, resetBtn, sel)
@@ -307,17 +333,38 @@ func buildSettingsVarRow(presenter *wizardpresentation.WizardPresenter, model *w
 
 	default: // text
 		titleLab := newSettingsTitleLabel(title)
-		e := widget.NewEntry()
 		disp := wizardtemplate.DisplaySettingValue(vars, st, raw, name)
 		if v, ok := model.SettingsVars[name]; ok {
 			disp = v
 		}
-		e.SetText(disp)
-		e.OnChanged = func(s string) {
+		onChanged := func(s string) {
 			model.SettingsVars[name] = s
 			model.TemplatePreviewNeedsUpdate = true
 			presenter.MarkAsChanged()
 		}
+		// If the var declares `options` on a text type, render a combo-dropdown
+		// (free text + preset suffix menu) instead of a plain entry. Ported from
+		// LxBox — turns "Test URL" / "Test interval" / "Tolerance" from a typo
+		// minefield into tap-to-pick-or-edit.
+		//
+		// Titles vs values: `optionTitles` is what the user picks; a wrapper
+		// OnChanged maps back to the raw value (identity-mapped for legacy
+		// string-list options). The entry's displayed text is the title when
+		// the current value is a known preset; otherwise raw user text.
+		if len(options) > 0 {
+			se := widget.NewSelectEntry(optionTitles)
+			se.SetText(titleForValue(disp))
+			se.OnChanged = func(s string) {
+				onChanged(valueForTitle(s))
+			}
+			row := container.NewBorder(nil, nil, titleLab, resetBtn, se)
+			setVarFieldToolTip(toolTip, titleLab, se)
+			applySettingsRowDisabled(rowEnabled, resetBtn, se)
+			return row
+		}
+		e := widget.NewEntry()
+		e.SetText(disp)
+		e.OnChanged = onChanged
 		row := container.NewBorder(nil, nil, titleLab, resetBtn, e)
 		setVarFieldToolTip(toolTip, titleLab, e)
 		applySettingsRowDisabled(rowEnabled, resetBtn, e)

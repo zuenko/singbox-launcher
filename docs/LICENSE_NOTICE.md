@@ -36,5 +36,5 @@ This release includes prebuilt `sing-box.exe` (Windows) / `sing-box` (macOS/Linu
 
 ---
 
-**Примечание:** Этот проект (`singbox-launcher`) распространяется под лицензией MIT. См. файл [LICENSE](LICENSE) для подробностей.
+**Примечание:** Этот проект (`singbox-launcher`) распространяется под **GNU General Public License v3.0**. Полный текст — [LICENSE](../LICENSE); коммерческая лицензия и dual licensing — [LICENSING.md](../LICENSING.md).
 

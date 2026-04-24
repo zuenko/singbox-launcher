@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -9,8 +8,6 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
-
-	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 
 	"singbox-launcher/core"
 	"singbox-launcher/internal/constants"
@@ -114,62 +111,8 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 		}
 	}
 
-	// Language selector
-	langLabel := widget.NewLabel(locale.T("help.language_label"))
-	langSelect := widget.NewSelect(locale.LangDisplayNames(), func(selected string) {
-		code := locale.LangCodeByDisplayName(selected)
-		if code == "" || code == locale.GetLang() {
-			return
-		}
-		locale.SetLang(code)
-		binDir := platform.GetBinDir(ac.FileService.ExecDir)
-		if err := locale.SaveSettings(binDir, locale.Settings{Lang: code}); err != nil {
-			debuglog.ErrorLog("helpTab: Failed to save language setting: %v", err)
-		}
-		debuglog.InfoLog("helpTab: Language changed to %q", code)
-		ShowInfo(ac.UIService.MainWindow, locale.T("help.language_label"),
-			fmt.Sprintf("%s\n\n%s", locale.LangDisplayName(code), locale.T("help.language_changed")))
-	})
-	langSelect.Selected = locale.LangDisplayName(locale.GetLang())
-
-	// Download translations button (compact icon + tooltip to avoid widening the window)
-	downloadLocalesBtn := ttwidget.NewButton(locale.T("help.download_locales_btn"), nil)
-	downloadLocalesBtn.SetToolTip(locale.T("help.download_locales"))
-	downloadLocalesBtn.OnTapped = func() {
-		downloadLocalesBtn.Disable()
-		downloadLocalesBtn.SetText(locale.T("help.downloading_locales_btn"))
-		go func() {
-			binDir := platform.GetBinDir(ac.FileService.ExecDir)
-			localeDir := locale.GetLocaleDir(binDir)
-			count, err := locale.DownloadAllRemoteLocales(localeDir)
-			fyne.Do(func() {
-				downloadLocalesBtn.Enable()
-				downloadLocalesBtn.SetText(locale.T("help.download_locales_btn"))
-				if err != nil && count == 0 {
-					// Use unified manual-download dialog, same as for core template/SRS/etc.
-					downloadURL := ""
-					if len(locale.RemoteLanguages) > 0 {
-						downloadURL = locale.GetLocaleURL(locale.RemoteLanguages[0])
-					}
-					dialogs.ShowDownloadFailedManual(
-						ac.UIService.MainWindow,
-						locale.T("help.download_locales_failed"),
-						downloadURL,
-						localeDir,
-					)
-					return
-				}
-				// Refresh language selector with newly loaded languages
-				langSelect.Options = locale.LangDisplayNames()
-				langSelect.Selected = locale.LangDisplayName(locale.GetLang())
-				langSelect.Refresh()
-				ShowInfo(ac.UIService.MainWindow, locale.T("help.language_label"),
-					locale.Tf("help.download_locales_success", count))
-			})
-		}()
-	}
-
-	langRow := container.NewHBox(langLabel, langSelect, downloadLocalesBtn)
+	// Language selector + download-locales button moved to the Settings tab
+	// (ui/settings_tab.go) so all launcher-wide preferences live together.
 
 	return container.NewVBox(
 		configButton,
@@ -185,7 +128,5 @@ func CreateHelpTab(ac *core.AppController) fyne.CanvasObject {
 			githubLink,
 			layout.NewSpacer(),
 		),
-		widget.NewSeparator(),
-		container.NewHBox(layout.NewSpacer(), langRow, layout.NewSpacer()),
 	)
 }

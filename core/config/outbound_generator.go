@@ -15,7 +15,7 @@
 // Этапы:
 //
 //  1. Загрузка нод: для каждого proxy source вызывается loadNodesFunc → allNodes, nodesBySource.
-//  2. Генерация JSON нод: каждый ParsedNode → одна JSON-строка (GenerateNodeJSON).
+//  2. Генерация JSON нод: каждый ParsedNode → одна или две JSON-строки (GenerateNodeJSON; при Jump — SOCKS затем основной с detour).
 //  3. Pass 1 — buildOutboundsInfo: по конфигу строим map[tag]*outboundInfo для всех селекторов (локальных и глобальных),
 //     для каждого — отфильтрованные ноды и начальный outboundCount = len(filteredNodes). isValid пока false.
 //  4. Pass 2 — computeOutboundValidity: топологическая сортировка по графу зависимостей addOutbounds;
@@ -430,6 +430,16 @@ func GenerateNodeJSON(node *ParsedNode) (string, error) {
 
 				tlsJSON := "{" + strings.Join(tlsParts, ",") + "}"
 				parts = append(parts, fmt.Sprintf(`"tls":%s`, tlsJSON))
+			}
+		}
+	}
+
+	// 8. detour (sing-box dial field; Xray dialerProxy chains)
+	if node.Outbound != nil {
+		if d, ok := node.Outbound["detour"].(string); ok {
+			d = strings.TrimSpace(d)
+			if d != "" {
+				parts = append(parts, fmt.Sprintf(`"detour":%s`, marshalJSONString(d)))
 			}
 		}
 	}
@@ -872,16 +882,31 @@ func GenerateOutboundsFromParserConfig(
 	allNodes := make([]*ParsedNode, 0)
 	nodesBySource := make(map[int][]*ParsedNode) // Map source index to its nodes
 
-	totalSources := len(parserConfig.ParserConfig.Proxies)
+	// Count only enabled sources as "total" for progress + summary purposes.
+	// Disabled sources are skipped entirely (no fetch, no parse) and don't
+	// participate in the success/failure counts — they're not something the
+	// user is currently trying to get nodes from.
+	totalSources := 0
+	for _, p := range parserConfig.ParserConfig.Proxies {
+		if !p.Disabled {
+			totalSources++
+		}
+	}
 	if progressCallback != nil {
 		progressCallback(10, fmt.Sprintf("Processing %d sources...", totalSources))
 	}
 
+	processedIdx := 0
 	for i, proxySource := range parserConfig.ParserConfig.Proxies {
-		if progressCallback != nil {
-			progressCallback(10+float64(i)*30.0/float64(totalSources),
-				fmt.Sprintf("Processing source %d/%d...", i+1, totalSources))
+		if proxySource.Disabled {
+			debuglog.DebugLog("GenerateOutboundsFromParserConfig: skipping source %d (disabled)", i+1)
+			continue
 		}
+		if progressCallback != nil && totalSources > 0 {
+			progressCallback(10+float64(processedIdx)*30.0/float64(totalSources),
+				fmt.Sprintf("Processing source %d/%d...", processedIdx+1, totalSources))
+		}
+		processedIdx++
 
 		nodesFromSource, err := loadNodesFunc(proxySource, tagCounts, progressCallback, i, totalSources)
 		if err != nil {
@@ -899,6 +924,9 @@ func GenerateOutboundsFromParserConfig(
 	}
 
 	if len(allNodes) == 0 {
+		if totalSources == 0 {
+			return nil, fmt.Errorf("no enabled sources (all subscriptions disabled in wizard)")
+		}
 		return nil, fmt.Errorf("no nodes parsed from any source")
 	}
 
@@ -922,12 +950,62 @@ func GenerateOutboundsFromParserConfig(
 			endpointsJSON = append(endpointsJSON, epJSON)
 			endpointsCount++
 		} else {
-			nodeJSON, err := GenerateNodeJSON(node)
+			var nodeJSONs []string
+			if node.Jump != nil {
+				jScheme := node.Jump.Scheme
+				if jScheme == "" {
+					jScheme = "socks"
+				}
+				jumpNode := &ParsedNode{
+					Tag:      node.Jump.Tag,
+					Scheme:   jScheme,
+					Server:   node.Jump.Server,
+					Port:     node.Jump.Port,
+					UUID:     node.Jump.UUID,
+					Flow:     node.Jump.Flow,
+					Outbound: node.Jump.Outbound,
+					Label:    node.Label,
+					Comment:  node.Comment,
+				}
+				if jumpNode.Outbound == nil {
+					jumpNode.Outbound = map[string]interface{}{}
+				}
+				if jScheme == "socks" {
+					if _, ok := jumpNode.Outbound["version"]; !ok {
+						jumpNode.Outbound["version"] = "5"
+					}
+				}
+				jumpJSON, err := GenerateNodeJSON(jumpNode)
+				if err != nil {
+					debuglog.WarnLog("GenerateOutboundsFromParserConfig: Failed to generate JSON for jump %s: %v", node.Jump.Tag, err)
+					continue
+				}
+				nodeJSONs = append(nodeJSONs, jumpJSON)
+			}
+
+			origOutbound := node.Outbound
+			if node.Jump != nil {
+				if node.Outbound == nil {
+					node.Outbound = make(map[string]interface{})
+				} else {
+					cp := make(map[string]interface{}, len(node.Outbound)+1)
+					for k, v := range node.Outbound {
+						cp[k] = v
+					}
+					node.Outbound = cp
+				}
+				node.Outbound["detour"] = node.Jump.Tag
+			}
+			mainJSON, err := GenerateNodeJSON(node)
+			if node.Jump != nil {
+				node.Outbound = origOutbound
+			}
 			if err != nil {
 				debuglog.WarnLog("GenerateOutboundsFromParserConfig: Failed to generate JSON for node %s: %v", node.Tag, err)
 				continue
 			}
-			selectorsJSON = append(selectorsJSON, nodeJSON)
+			nodeJSONs = append(nodeJSONs, mainJSON)
+			selectorsJSON = append(selectorsJSON, nodeJSONs...)
 			nodesCount++
 		}
 	}

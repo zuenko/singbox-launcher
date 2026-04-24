@@ -55,6 +55,25 @@ func TestSubstituteVarsInJSON_bool(t *testing.T) {
 	}
 }
 
+func TestSubstituteVarsInJSON_proxyInListenPort(t *testing.T) {
+	vars := []TemplateVar{{Name: "proxy_in_listen_port", Type: "text"}}
+	resolved := map[string]ResolvedVar{
+		"proxy_in_listen_port": {Scalar: "7890"},
+	}
+	raw := json.RawMessage(`{"listen_port":"@proxy_in_listen_port"}`)
+	out, err := SubstituteVarsInJSON(raw, vars, resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(out, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["listen_port"] != float64(7890) {
+		t.Fatalf("listen_port: %T %v want number 7890", m["listen_port"], m["listen_port"])
+	}
+}
+
 func TestSubstituteVarsInJSON_textList(t *testing.T) {
 	vars := []TemplateVar{{Name: "addrs", Type: "text_list"}}
 	resolved := map[string]ResolvedVar{

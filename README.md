@@ -1,7 +1,7 @@
 # Sing-Box Launcher
 
 [![GitHub](https://img.shields.io/badge/GitHub-Leadaxe%2Fsingbox--launcher-blue)](https://github.com/Leadaxe/singbox-launcher)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.24%2B-blue)](https://golang.org/)
 [![Version](https://img.shields.io/badge/version-0.8.6-blue)](https://github.com/Leadaxe/singbox-launcher/releases)
 
@@ -880,7 +880,9 @@ For **substantial features** (spec-driven workflow, TASKS, docs before merge), s
 
 ## 📄 License
 
-This project is distributed under the MIT license. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the [GNU General Public License v3.0](LICENSE).
+
+Commercial licensing from Leadaxe is available for uses that are not compatible with GPLv3. **Commercial terms are negotiated privately and are not published** in this repository. Contact: [ledaxe@gmail.com](mailto:ledaxe@gmail.com). See [LICENSING.md](LICENSING.md).
 
 ## 🙏 Acknowledgments
 

@@ -238,6 +238,37 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 					rowCenter = container.NewBorder(nil, nil, prefixLabel, nil, sourceLabel)
 				}
 
+				// Enable/disable toggle — persists to ProxySource.Disabled,
+				// parser skips disabled sources. Dim the label importance so
+				// disabled rows are visibly inactive in the list.
+				enableCheck := widget.NewCheck("", nil)
+				enableCheck.SetChecked(!proxyPtr.Disabled)
+				if proxyPtr.Disabled {
+					sourceLabel.Importance = widget.LowImportance
+					if prefixLabel != nil {
+						prefixLabel.Importance = widget.LowImportance
+					}
+				}
+				enableCheck.OnChanged = func(enabled bool) {
+					m := presenter.Model()
+					if m.ParserConfig == nil || sourceIndex >= len(m.ParserConfig.ParserConfig.Proxies) {
+						return
+					}
+					m.ParserConfig.ParserConfig.Proxies[sourceIndex].Disabled = !enabled
+					serialized, err := wizardbusiness.SerializeParserConfig(m.ParserConfig)
+					if err != nil {
+						debuglog.ErrorLog("source_tab: SerializeParserConfig after toggle: %v", err)
+						return
+					}
+					m.ParserConfigJSON = serialized
+					m.PreviewNeedsParse = true
+					wizardbusiness.InvalidatePreviewCache(m)
+					presenter.UpdateParserConfig(serialized)
+					if guiState.RefreshSourcesList != nil {
+						guiState.RefreshSourcesList()
+					}
+				}
+
 				copyBtn := fynewidget.NewHoverForwardButtonWithIcon("", theme.ContentCopyIcon(), func() {
 					if copyText == "" {
 						return
@@ -302,7 +333,7 @@ func CreateSourcesTab(presenter *wizardpresentation.WizardPresenter) fyne.Canvas
 					delBtn,
 					rowGutter,
 				)
-				rowInner := container.NewBorder(nil, nil, nil, rightControls, rowCenter)
+				rowInner := container.NewBorder(nil, nil, enableCheck, rightControls, rowCenter)
 				row = fynewidget.NewHoverRow(rowInner, fynewidget.HoverRowConfig{})
 				row.WireTooltipLabelHover(sourceLabel)
 				if prefixLabel != nil {
@@ -495,6 +526,26 @@ func fetchAndParseSource(sourceURL string, skip []map[string]string) ([]*config.
 		contentStr := string(content)
 		contentStr = strings.ReplaceAll(contentStr, "\r\n", "\n")
 		contentStr = strings.ReplaceAll(contentStr, "\r", "\n")
+		contentStr = strings.TrimSpace(contentStr)
+		if subscription.IsXrayJSONArrayBody(contentStr) {
+			arrayNodes, err := subscription.ParseNodesFromXrayJSONArray(contentStr, skip)
+			if err != nil {
+				return nil, err
+			}
+			for _, node := range arrayNodes {
+				if len(nodes) >= configtypes.MaxNodesPerSubscription {
+					debuglog.WarnLog("source_tab: fetchAndParseSource truncated at %d nodes (same limit as subscription loader)",
+						configtypes.MaxNodesPerSubscription)
+					break
+				}
+				if node.Jump != nil {
+					node.Jump.Tag = subscription.MakeTagUnique(node.Jump.Tag, tagCounts, "ConfigWizard")
+				}
+				node.Tag = subscription.MakeTagUnique(node.Tag, tagCounts, "ConfigWizard")
+				nodes = append(nodes, node)
+			}
+			return nodes, nil
+		}
 		for _, line := range strings.Split(contentStr, "\n") {
 			line = subscription.NormalizeSubscriptionTextLine(line)
 			if line == "" {

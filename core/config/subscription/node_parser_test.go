@@ -729,14 +729,14 @@ func TestParseNode_VLESS_TransportAndTLS(t *testing.T) {
 		}
 	})
 
-	t.Run("REALITY TCP without flow — default xtls-rprx-vision", func(t *testing.T) {
+	t.Run("REALITY TCP without flow — no default flow", func(t *testing.T) {
 		uri := "vless://f4294d89-874b-4d9b-ab85-ddbc29bd87e2@94.131.13.131:443?security=reality&type=tcp&fp=firefox&sni=www.samsung.com&pbk=TuRCccpqgqNsyTuaICkwLtjidLp_eVRMDxWBC_y2xgI&sid=a887fe19&spx=/#t"
 		node, err := ParseNode(uri, nil)
 		if err != nil || node == nil {
 			t.Fatalf("ParseNode: err=%v node=%v", err, node)
 		}
-		if node.Outbound["flow"] != "xtls-rprx-vision" {
-			t.Fatalf("flow: want xtls-rprx-vision got %v", node.Outbound["flow"])
+		if _, has := node.Outbound["flow"]; has {
+			t.Fatalf("expected no outbound flow when omitted in URI, got %v", node.Outbound["flow"])
 		}
 	})
 

@@ -24,6 +24,22 @@ type StateService struct {
 	AutoUpdateEnabled        bool
 	AutoUpdateFailedAttempts int
 	AutoUpdateMutex          sync.Mutex
+
+	// Auto-ping proxies 5s after VPN connects (default on).
+	AutoPingAfterConnect      bool
+	AutoPingAfterConnectMutex sync.RWMutex
+
+	// TemplateDirty is set when the wizard saved config changes but the parser
+	// has not run since. The Update button decorates its label with "*" so
+	// users see that the running config may lag the saved template.
+	TemplateDirty      bool
+	TemplateDirtyMutex sync.RWMutex
+
+	// LastUpdateSucceededAt — timestamp последнего успешного прогона
+	// RunParserProcess. Читается freshness-хинтом на Core Dashboard
+	// («подписки: 2 ч назад»). In-memory, не персистится.
+	LastUpdateSucceededAt time.Time
+	LastUpdateMutex       sync.RWMutex
 }
 
 // NewStateService creates and initializes a new StateService instance.
@@ -31,7 +47,47 @@ func NewStateService() *StateService {
 	return &StateService{
 		AutoUpdateEnabled:        true,
 		AutoUpdateFailedAttempts: 0,
+		AutoPingAfterConnect:     true,
 	}
+}
+
+// IsAutoPingAfterConnectEnabled reports whether the controller should
+// trigger an automatic ping-all 5s after sing-box starts running.
+func (s *StateService) IsAutoPingAfterConnectEnabled() bool {
+	s.AutoPingAfterConnectMutex.RLock()
+	defer s.AutoPingAfterConnectMutex.RUnlock()
+	return s.AutoPingAfterConnect
+}
+
+// SetAutoPingAfterConnectEnabled toggles the auto-ping-after-connect flag.
+func (s *StateService) SetAutoPingAfterConnectEnabled(enabled bool) {
+	s.AutoPingAfterConnectMutex.Lock()
+	defer s.AutoPingAfterConnectMutex.Unlock()
+	s.AutoPingAfterConnect = enabled
+}
+
+// IsTemplateDirty reports whether the wizard has committed template / state
+// changes that the parser has not yet incorporated into the running config.
+func (s *StateService) IsTemplateDirty() bool {
+	s.TemplateDirtyMutex.RLock()
+	defer s.TemplateDirtyMutex.RUnlock()
+	return s.TemplateDirty
+}
+
+// SetTemplateDirty flags or clears the dirty-template marker.
+// Setters of record: wizard Save (sets true), successful parser run (sets false).
+func (s *StateService) SetTemplateDirty(dirty bool) {
+	s.TemplateDirtyMutex.Lock()
+	defer s.TemplateDirtyMutex.Unlock()
+	s.TemplateDirty = dirty
+}
+
+// RecordUpdateSuccess ставит timestamp последнего успешного прогона парсера.
+// Используется freshness-хинтом на Core Dashboard.
+func (s *StateService) RecordUpdateSuccess() {
+	s.LastUpdateMutex.Lock()
+	defer s.LastUpdateMutex.Unlock()
+	s.LastUpdateSucceededAt = time.Now()
 }
 
 // GetCachedVersion safely gets the cached version with mutex protection.

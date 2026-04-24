@@ -48,6 +48,15 @@ func ShareURIFromOutbound(out map[string]interface{}) (string, error) {
 	}
 }
 
+func shareAppendDetourLiteral(q url.Values, out map[string]interface{}) {
+	if q == nil || out == nil {
+		return
+	}
+	if d := strings.TrimSpace(mapGetString(out, "detour")); d != "" {
+		q.Set("detour", d)
+	}
+}
+
 func mapGetString(m map[string]interface{}, k string) string {
 	v, ok := m[k]
 	if !ok || v == nil {
@@ -286,6 +295,7 @@ func shareURIFromVLESS(out map[string]interface{}) (string, error) {
 	if pe := mapGetString(out, "packet_encoding"); pe != "" {
 		q.Set("packetEncoding", pe)
 	}
+	shareAppendDetourLiteral(q, out)
 	hp := hostPort(server, port)
 	u := &url.URL{
 		Scheme:   "vless",
@@ -437,6 +447,7 @@ func shareURIFromTrojan(out map[string]interface{}) (string, error) {
 	} else {
 		trojanTLSToQuery(q, nil, server)
 	}
+	shareAppendDetourLiteral(q, out)
 	u := &url.URL{
 		Scheme:   "trojan",
 		User:     url.User(url.PathEscape(pass)),
@@ -555,6 +566,7 @@ func shareURIFromHysteria2(out map[string]interface{}) (string, error) {
 	if down := mapGetInt(out, "down_mbps"); down > 0 {
 		q.Set("downmbps", strconv.Itoa(down))
 	}
+	shareAppendDetourLiteral(q, out)
 	u := &url.URL{
 		Scheme:   "hysteria2",
 		User:     url.User(url.PathEscape(pass)),
@@ -612,6 +624,7 @@ func shareURIFromSSH(out map[string]interface{}) (string, error) {
 	if pp := mapGetString(out, "private_key_passphrase"); pp != "" {
 		q.Set("private_key_passphrase", pp)
 	}
+	shareAppendDetourLiteral(q, out)
 	var ui *url.Userinfo
 	if pass != "" {
 		ui = url.UserPassword(user, pass)

@@ -14,6 +14,32 @@ import (
 // NetworkRequestTimeout defines the timeout for network requests
 const NetworkRequestTimeout = 30 * time.Second
 
+// explainHTTPStatus converts a subscription-fetch HTTP status code into a
+// short human-readable hint. Helps users triage the error without googling
+// (common flaky cases: expired tokens → 401/403, provider moved URLs → 404,
+// rate-limit → 429, provider outage → 5xx).
+func explainHTTPStatus(code int) string {
+	switch code {
+	case 401:
+		return "unauthorized — subscription token may have expired"
+	case 403:
+		return "forbidden — provider blocked this request (token, IP, or region)"
+	case 404:
+		return "not found — subscription URL may have moved"
+	case 410:
+		return "gone — this subscription URL is retired"
+	case 429:
+		return "rate limited — try again later"
+	}
+	if code >= 500 && code < 600 {
+		return "server error — subscription provider is having issues"
+	}
+	if code >= 400 && code < 500 {
+		return "client error"
+	}
+	return ""
+}
+
 // CreateHTTPClientFunc is a function variable that should be set to core.CreateHTTPClient
 var CreateHTTPClientFunc func(timeout time.Duration) *http.Client
 
@@ -64,7 +90,7 @@ func FetchSubscription(url string) ([]byte, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("subscription server returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("subscription server returned status %d (%s)", resp.StatusCode, explainHTTPStatus(resp.StatusCode))
 	}
 
 	// Limit response size to prevent memory exhaustion

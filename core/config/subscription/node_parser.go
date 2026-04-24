@@ -300,7 +300,6 @@ func ParseNode(uri string, skipFilters []map[string]string) (*configtypes.Parsed
 			debuglog.DebugLog("Parser: Fixed invalid UTF-8 in fragment: %q -> %q", parsedURL.Fragment, fixed)
 			node.Label = fixed
 		}
-
 	}
 
 	// For some formats, label might be in path or userinfo
@@ -576,9 +575,6 @@ func buildOutbound(node *configtypes.ParsedNode) map[string]interface{} {
 			} else {
 				outbound["flow"] = node.Flow
 			}
-		} else if strings.TrimSpace(queryGetFold(node.Query, "pbk")) != "" && !hasTransport {
-			// REALITY over plain TCP: URI often omits flow=; sing-box accepts xtls-rprx-vision (skip for ws/grpc/http/httpupgrade/…).
-			outbound["flow"] = "xtls-rprx-vision"
 		}
 		if pe := strings.TrimSpace(queryGetFold(node.Query, "packetEncoding")); pe != "" {
 			outbound["packet_encoding"] = pe

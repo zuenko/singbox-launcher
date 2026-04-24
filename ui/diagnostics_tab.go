@@ -17,6 +17,7 @@ import (
 	"github.com/txthinking/socks5"
 
 	"singbox-launcher/core"
+	"singbox-launcher/core/debugapi"
 	"singbox-launcher/internal/constants"
 	"singbox-launcher/internal/debuglog"
 	"singbox-launcher/internal/dialogs"
@@ -184,33 +185,30 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 			widget.NewLabel(locale.T("diag.stun_server_label")),
 			container.NewBorder(nil, nil, nil, stunHelpButton, serverEntry),
 		)
+		var socksCheck *widget.Check
 		if runtime.GOOS == "darwin" {
-			socksCheck := widget.NewCheck(locale.T("diag.use_system_socks5"), func(bool) {})
+			socksCheck = widget.NewCheck(locale.T("diag.use_system_socks5"), func(bool) {})
 			socksCheck.SetChecked(stunUseSOCKS5OnMac)
 			content.Add(socksCheck)
-			content.Add(widget.NewLabel(" "))
-			dialog.ShowCustomConfirm(locale.T("diag.stun_settings"), locale.T("diag.save"), locale.T("diag.cancel"), content, func(ok bool) {
-				if !ok {
-					return
-				}
-				stunServerAddr = strings.TrimSpace(serverEntry.Text)
-				if stunServerAddr == "" {
-					stunServerAddr = constants.DefaultSTUNServer
-				}
-				stunUseSOCKS5OnMac = socksCheck.Checked
-			}, ac.UIService.MainWindow)
-		} else {
-			content.Add(widget.NewLabel(" "))
-			dialog.ShowCustomConfirm(locale.T("diag.stun_settings"), locale.T("diag.save"), locale.T("diag.cancel"), content, func(ok bool) {
-				if !ok {
-					return
-				}
-				stunServerAddr = strings.TrimSpace(serverEntry.Text)
-				if stunServerAddr == "" {
-					stunServerAddr = constants.DefaultSTUNServer
-				}
-			}, ac.UIService.MainWindow)
 		}
+		content.Add(widget.NewLabel(" "))
+
+		d := dialog.NewCustomConfirm(locale.T("diag.stun_settings"), locale.T("diag.save"), locale.T("diag.cancel"), content, func(ok bool) {
+			if !ok {
+				return
+			}
+			stunServerAddr = strings.TrimSpace(serverEntry.Text)
+			if stunServerAddr == "" {
+				stunServerAddr = constants.DefaultSTUNServer
+			}
+			if socksCheck != nil {
+				stunUseSOCKS5OnMac = socksCheck.Checked
+			}
+		}, ac.UIService.MainWindow)
+		// Fyne auto-sizes to content, which clips the URL entry on Windows
+		// (issue #54). Force a readable width so a 40-char STUN URL fits.
+		d.Resize(fyne.NewSize(520, 0))
+		d.Show()
 	})
 
 	// STUN button fills width, gear on the right
@@ -237,6 +235,8 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 		}
 	})
 
+	debugAPIRow := buildDebugAPIRow(ac)
+
 	return container.NewVBox(
 		widget.NewLabel(" "),
 		container.NewHBox(openLogWindowButton, openLogsFolderButton),
@@ -248,5 +248,102 @@ func CreateDiagnosticsTab(ac *core.AppController) fyne.CanvasObject {
 		openBrowserButton("Yandex Internet", "https://yandex.ru/internet/"),
 		openBrowserButton("SpeedTest", "https://www.speedtest.net/"),
 		openBrowserButton("WhatIsMyIPAddress", "https://whatismyipaddress.com"),
+		widget.NewSeparator(),
+		debugAPIRow,
 	)
+}
+
+// buildDebugAPIRow renders the local HTTP Debug API toggle + token copy.
+// Off by default. First enable generates a random Bearer token; persists to
+// bin/settings.json. UI shows bound address ("127.0.0.1:9269") while running.
+func buildDebugAPIRow(ac *core.AppController) fyne.CanvasObject {
+	binDir := platform.GetBinDir(ac.FileService.ExecDir)
+	st := locale.LoadSettings(binDir)
+
+	title := widget.NewLabelWithStyle(locale.T("diag.debug_api_title"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	// Hint text wraps to window width instead of forcing the window wider —
+	// otherwise a 90-char description pins the whole tab's minimum size.
+	hint := widget.NewLabel(locale.T("diag.debug_api_hint"))
+	hint.Wrapping = fyne.TextWrapWord
+	status := widget.NewLabel("")
+	status.Wrapping = fyne.TextWrapWord
+	refreshStatus := func() {
+		addr := ac.DebugAPIAddr()
+		if addr == "" {
+			status.SetText(locale.T("diag.debug_api_off"))
+		} else {
+			status.SetText(locale.Tf("diag.debug_api_on", addr))
+		}
+	}
+	refreshStatus()
+
+	copyTokenBtn := widget.NewButtonWithIcon(locale.T("diag.debug_api_copy_token"), theme.ContentCopyIcon(), nil)
+	copyTokenBtn.OnTapped = func() {
+		// Re-load settings each tap so Copy always reflects the latest token
+		// (e.g. after a user regenerates via the checkbox dance).
+		cur := locale.LoadSettings(binDir)
+		if cur.DebugAPIToken == "" {
+			return
+		}
+		ac.UIService.MainWindow.Clipboard().SetContent(cur.DebugAPIToken)
+		// Silent clipboard copies feel like dead buttons. A toast confirms
+		// the token actually went to the clipboard.
+		dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow,
+			locale.T("diag.debug_api_copied_title"), locale.T("diag.debug_api_copied_msg"))
+	}
+	if st.DebugAPIToken == "" {
+		copyTokenBtn.Disable()
+	}
+
+	check := widget.NewCheck(locale.T("diag.debug_api_enable"), nil)
+	check.SetChecked(st.DebugAPIEnabled)
+	check.OnChanged = func(enabled bool) {
+		cur := locale.LoadSettings(binDir)
+		cur.DebugAPIEnabled = enabled
+		if enabled {
+			// Lazy-generate token on first enable so tokens don't exist in
+			// settings.json until the user actually opts in.
+			if strings.TrimSpace(cur.DebugAPIToken) == "" {
+				tok, err := debugapi.GenerateToken()
+				if err != nil {
+					debuglog.ErrorLog("diag.debug_api: token gen failed: %v", err)
+					ShowError(ac.UIService.MainWindow, err)
+					check.SetChecked(false)
+					return
+				}
+				cur.DebugAPIToken = tok
+			}
+			if err := locale.SaveSettings(binDir, cur); err != nil {
+				debuglog.WarnLog("diag.debug_api: save settings: %v", err)
+			}
+			port := cur.DebugAPIPort
+			if err := ac.StartDebugAPI(port, cur.DebugAPIToken); err != nil {
+				debuglog.ErrorLog("diag.debug_api: start failed: %v", err)
+				ShowError(ac.UIService.MainWindow, err)
+				check.SetChecked(false)
+				cur.DebugAPIEnabled = false
+				_ = locale.SaveSettings(binDir, cur)
+				refreshStatus()
+				return
+			}
+			copyTokenBtn.Enable()
+		} else {
+			ac.StopDebugAPI()
+			// Keep the token in settings.json so re-enabling doesn't rotate
+			// it and break existing scripts. Users who want rotation can
+			// delete the key manually.
+			if err := locale.SaveSettings(binDir, cur); err != nil {
+				debuglog.WarnLog("diag.debug_api: save settings: %v", err)
+			}
+		}
+		refreshStatus()
+	}
+
+	row := container.NewVBox(
+		title,
+		hint,
+		container.NewHBox(check, copyTokenBtn),
+		status,
+	)
+	return row
 }

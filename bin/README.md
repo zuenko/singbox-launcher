@@ -114,7 +114,7 @@ This release includes prebuilt `sing-box.exe` (Windows) / `sing-box` (macOS/Linu
 
 ### Лицензии
 
-- **Sing-Box Launcher**: MIT License
+- **Sing-Box Launcher**: GPL-3.0 (dual licensing — [LICENSING.md](../LICENSING.md))
 - **sing-box**: GPL-3.0
 - **wintun.dll**: MIT License
 

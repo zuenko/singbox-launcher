@@ -17,6 +17,21 @@ type Settings struct {
 	PingTestURL string `json:"ping_test_url,omitempty"`
 	// PingTestAllConcurrency — число параллельных delay-запросов для «test» на вкладке Servers; 0 = не переопредлять.
 	PingTestAllConcurrency int `json:"ping_test_all_concurrency,omitempty"`
+	// SubscriptionAutoUpdateDisabled — пользователь явно выключил автоматическое обновление
+	// подписок. По умолчанию (отсутствует / false) — автообновление включено, как раньше.
+	// Manual Update всегда работает независимо от флага.
+	SubscriptionAutoUpdateDisabled bool `json:"subscription_auto_update_disabled,omitempty"`
+	// AutoPingAfterConnectDisabled — выключить автопинг нод через 5с после старта VPN.
+	// По умолчанию (отсутствует / false) — автопинг включён. Ручная «test» всегда работает.
+	AutoPingAfterConnectDisabled bool `json:"auto_ping_after_connect_disabled,omitempty"`
+	// DebugAPIEnabled — пользователь явно включил локальный HTTP debug-API
+	// (127.0.0.1:9269 по умолчанию). Off by default.
+	DebugAPIEnabled bool `json:"debug_api_enabled,omitempty"`
+	// DebugAPIToken — Bearer-токен для debug-API. Генерируется при первом
+	// включении, больше не меняется (кроме явной регенерации через UI).
+	DebugAPIToken string `json:"debug_api_token,omitempty"`
+	// DebugAPIPort — порт для debug-API; 0 / отсутствует означает DefaultPort.
+	DebugAPIPort int `json:"debug_api_port,omitempty"`
 }
 
 // LoadSettings reads settings from binDir/settings.json.
@@ -39,11 +54,24 @@ func LoadSettings(binDir string) Settings {
 }
 
 // SaveSettings writes settings to binDir/settings.json.
+//
+// Writes are atomic: we stage to a sibling temp file then rename over the
+// real one. Protects against power loss or a crash mid-write leaving the
+// user with a zero-byte settings.json and losing language / ping / subs
+// preferences on next launch.
 func SaveSettings(binDir string, s Settings) error {
 	path := filepath.Join(binDir, "settings.json")
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return fmt.Errorf("locale: marshal settings: %w", err)
 	}
-	return os.WriteFile(path, data, platform.DefaultFileMode)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, platform.DefaultFileMode); err != nil {
+		return fmt.Errorf("locale: write temp settings: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("locale: rename settings: %w", err)
+	}
+	return nil
 }

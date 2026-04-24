@@ -89,6 +89,63 @@ func TestGetEndpointMapByTag(t *testing.T) {
 	}
 }
 
+func TestGetDetourTagForOutboundTag(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.json")
+	body := []byte(`{"outbounds":[{"type":"vless","tag":"main","detour":"jump"},{"type":"socks","tag":"jump","server":"127.0.0.1","server_port":1080}]}`)
+	if err := os.WriteFile(p, body, 0644); err != nil {
+		t.Fatal(err)
+	}
+	d, err := GetDetourTagForOutboundTag(p, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d != "jump" {
+		t.Fatalf("want detour jump, got %q", d)
+	}
+}
+
+func TestShareJumpURIForOutboundTag(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.json")
+	body := []byte(`{"outbounds":[
+		{"type":"vless","tag":"main","uuid":"550e8400-e29b-41d4-a716-446655440000","server":"example.com","server_port":443,"detour":"jump"},
+		{"type":"socks","tag":"jump","server":"127.0.0.1","server_port":1080,"version":"5"}
+	]}`)
+	if err := os.WriteFile(p, body, 0644); err != nil {
+		t.Fatal(err)
+	}
+	u, err := ShareJumpURIForOutboundTag(p, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(u, "socks5://") && !strings.HasPrefix(u, "socks://") {
+		t.Fatalf("expected socks URI, got %q", u)
+	}
+}
+
+func TestShareMainURIForOutboundTag_ContainsDetourLiteral(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.json")
+	body := []byte(`{"outbounds":[
+		{"type":"vless","tag":"main","uuid":"550e8400-e29b-41d4-a716-446655440000","server":"example.com","server_port":443,"detour":"jump"},
+		{"type":"socks","tag":"jump","server":"127.0.0.1","server_port":1080,"version":"5"}
+	]}`)
+	if err := os.WriteFile(p, body, 0644); err != nil {
+		t.Fatal(err)
+	}
+	u, err := ShareMainURIForOutboundTag(p, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(u, "vless://") {
+		t.Fatalf("expected vless URI, got %q", u)
+	}
+	if !strings.Contains(u, "detour=jump") {
+		t.Fatalf("expected detour literal in URI, got %q", u)
+	}
+}
+
 func mapGetStringTest(m map[string]interface{}, k string) string {
 	v, ok := m[k]
 	if !ok {

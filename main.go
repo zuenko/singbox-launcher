@@ -61,6 +61,23 @@ func main() {
 	if settings.PingTestAllConcurrency != 0 {
 		api.SetPingTestAllConcurrency(settings.PingTestAllConcurrency)
 	}
+	// Honor persisted opt-out of subscription auto-update. The loop is started
+	// unconditionally later; this just flips the in-memory gate so it skips work.
+	if settings.SubscriptionAutoUpdateDisabled {
+		controller.StateService.SetAutoUpdateEnabled(false)
+		debuglog.InfoLog("Auto-update: disabled by user setting (subscription_auto_update_disabled=true)")
+	}
+	if settings.AutoPingAfterConnectDisabled {
+		controller.StateService.SetAutoPingAfterConnectEnabled(false)
+		debuglog.InfoLog("Auto-ping: disabled by user setting (auto_ping_after_connect_disabled=true)")
+	}
+	// Optional debug-API (localhost:9269 by default). Off unless user toggled
+	// it on in the Diagnostics tab; token is generated on first enable.
+	if settings.DebugAPIEnabled && settings.DebugAPIToken != "" {
+		if err := controller.StartDebugAPI(settings.DebugAPIPort, settings.DebugAPIToken); err != nil {
+			debuglog.WarnLog("debug-api: failed to start: %v", err)
+		}
+	}
 	debuglog.InfoLog("Locale: language set to %q, available: %v", locale.GetLang(), locale.Languages())
 
 	// Check launcher version on startup (always checks, popup shown on first window display)
@@ -236,10 +253,47 @@ func main() {
 
 	controller.UpdateUI()
 
-	// Reset Clash API HTTP connections after sleep/hibernation (platform no-op where not supported).
+	// Reset Clash API HTTP connections after sleep/hibernation and re-sync UI.
+	// Platform no-op where not supported (darwin/linux stubs).
+	//
+	// Problem: after close-lid / open-lid the launcher would often show stale
+	// ping numbers and a silent Clash API silence because Windows closes TCP
+	// connections during sleep. ResetClashHTTPTransport handles the sockets;
+	// we add a small delay-then-refresh dance so the UI visibly reconciles
+	// once network is actually back (wake event typically fires before
+	// interfaces are fully up).
 	platform.RegisterPowerResumeCallback(func() {
 		api.ResetClashHTTPTransport()
-		debuglog.InfoLog("Power resume: Clash API HTTP transport reset")
+		debuglog.InfoLog("Power resume: Clash API HTTP transport reset, scheduling re-sync")
+		// Give network interfaces a couple seconds to come back, then:
+		//   - Re-test the Clash API connection (RefreshAPIFunc → onTestAPIConnection
+		//     in clash_api_tab.go — this also reloads the proxies list).
+		//   - Trigger the auto-ping-after-connect hook if sing-box is running,
+		//     so latency numbers get refreshed instead of staying stuck at
+		//     pre-sleep values.
+		time.AfterFunc(3*time.Second, func() {
+			if controller.UIService != nil && controller.UIService.RefreshAPIFunc != nil {
+				// RefreshAPIFunc (onTestAPIConnection) mutates labels directly
+				// before dispatching its goroutine, so call from UI thread.
+				fyne.Do(controller.UIService.RefreshAPIFunc)
+			}
+			if controller.RunningState != nil && controller.RunningState.IsRunning() &&
+				controller.StateService != nil && controller.StateService.IsAutoPingAfterConnectEnabled() &&
+				controller.UIService != nil && controller.UIService.AutoPingAfterConnectFunc != nil {
+				// Another 2s beyond the Refresh so /proxies has repopulated.
+				time.AfterFunc(2*time.Second, func() {
+					if controller.RunningState.IsRunning() {
+						debuglog.DebugLog("Power resume: triggering post-resume auto-ping")
+						// AutoPingAfterConnectFunc already wraps pingAllProxies
+						// in fyne.Do internally (clash_api_tab.go registers it
+						// that way), but double-wrapping is a harmless no-op if
+						// we're already on the UI thread and cheap insurance
+						// otherwise.
+						fyne.Do(controller.UIService.AutoPingAfterConnectFunc)
+					}
+				})
+			}
+		})
 	})
 
 	// Check if config.json exists and show a warning if it doesn't
