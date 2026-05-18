@@ -332,6 +332,89 @@ func TestCleanDanglingOutboundRefInRule_SentinelsPreserved(t *testing.T) {
 	}
 }
 
+// === SPEC 055 phase 2: ApplyPresetUpdatesToGeneratedOutbounds ===
+
+func TestApplyPresetUpdatesToGeneratedOutbounds_PatchesFilters(t *testing.T) {
+	// Generated cache has parser-emitted proxy-out without filters.
+	cache := []string{
+		"\t{\"tag\":\"proxy-out\",\"type\":\"selector\",\"outbounds\":[\"a\",\"b\"]},",
+		"\t{\"tag\":\"direct-out\",\"type\":\"direct\"}",
+	}
+	ctx := PresetMergeContext{
+		Presets: []template.Preset{
+			{ID: "russian", Outbounds: []template.PresetOutbound{
+				{Mode: "update", Tag: "proxy-out",
+					Filters: map[string]interface{}{"tag": "!/RU/i"}},
+			}},
+		},
+		RulesV6: []v6.Rule{
+			{Kind: v6.RuleKindPreset, Ref: "russian", Enabled: true,
+				Body: mustMarshal(t, v6.PresetBody{})},
+		},
+	}
+	out := ApplyPresetUpdatesToGeneratedOutbounds(cache, ctx)
+	if len(out) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(out))
+	}
+	// First entry должен теперь содержать filters !RU + сохранить outbounds list.
+	var m map[string]interface{}
+	clean := strings.TrimRight(strings.TrimSpace(out[0]), ",")
+	if err := json.Unmarshal([]byte(clean), &m); err != nil {
+		t.Fatalf("parse patched: %v", err)
+	}
+	f, _ := m["filters"].(map[string]interface{})
+	if f["tag"] != "!/RU/i" {
+		t.Errorf("filters not applied: %+v", m)
+	}
+	outs, _ := m["outbounds"].([]interface{})
+	if len(outs) != 2 || outs[0] != "a" || outs[1] != "b" {
+		t.Errorf("outbounds list lost: %+v", outs)
+	}
+	// Second entry (direct-out) — без изменений.
+	if !strings.Contains(out[1], "\"direct\"") {
+		t.Errorf("direct-out should be unchanged: %q", out[1])
+	}
+}
+
+func TestApplyPresetUpdatesToGeneratedOutbounds_NoUpdatesNoop(t *testing.T) {
+	cache := []string{"\t{\"tag\":\"proxy-out\",\"type\":\"selector\"},"}
+	ctx := PresetMergeContext{
+		Presets: []template.Preset{
+			{ID: "russian", Outbounds: []template.PresetOutbound{
+				{Tag: "ru VPN", Type: "selector"}, // mode=add, не update
+			}},
+		},
+		RulesV6: []v6.Rule{
+			{Kind: v6.RuleKindPreset, Ref: "russian", Enabled: true,
+				Body: mustMarshal(t, v6.PresetBody{})},
+		},
+	}
+	out := ApplyPresetUpdatesToGeneratedOutbounds(cache, ctx)
+	if out[0] != cache[0] {
+		t.Errorf("no-op expected (no update patches), got change: %q", out[0])
+	}
+}
+
+func TestApplyPresetUpdatesToGeneratedOutbounds_DisabledPresetIgnored(t *testing.T) {
+	cache := []string{"\t{\"tag\":\"proxy-out\",\"type\":\"selector\"},"}
+	ctx := PresetMergeContext{
+		Presets: []template.Preset{
+			{ID: "russian", Outbounds: []template.PresetOutbound{
+				{Mode: "update", Tag: "proxy-out",
+					Filters: map[string]interface{}{"tag": "!/RU/i"}},
+			}},
+		},
+		RulesV6: []v6.Rule{
+			{Kind: v6.RuleKindPreset, Ref: "russian", Enabled: false,
+				Body: mustMarshal(t, v6.PresetBody{})},
+		},
+	}
+	out := ApplyPresetUpdatesToGeneratedOutbounds(cache, ctx)
+	if out[0] != cache[0] {
+		t.Errorf("disabled preset must not patch: %q", out[0])
+	}
+}
+
 // === Helper ===
 
 func mustMarshal(t *testing.T, v interface{}) json.RawMessage {

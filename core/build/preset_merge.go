@@ -381,6 +381,104 @@ func CleanDanglingOutboundsInRouteRules(routeRaw json.RawMessage, emittedOutboun
 	return out, nil
 }
 
+// ApplyPresetUpdatesToGeneratedOutbounds — SPEC 055 phase 2. Применяет
+// preset.outbounds entries с mode=update к parser-generated outbound strings
+// (то что приходит из ctx.Cache.Outbounds через cacheOutboundsAsStrings).
+//
+// Mode=add игнорируется здесь (он уже обработан в MergePresetsIntoOutbounds
+// для config.outbounds layer'а; парсер не должен генерить preset-add'ы).
+// Mode=update ищет cache entry с тем же tag'ом и патчит body через
+// applyOutboundUpdate (filters=replace, addOutbounds=union etc).
+//
+// Input: cacheStrings — []string в формате "\t{json},\n" (с трейлинг-comma'ой,
+// как кладёт `cacheOutboundsAsStrings`). Output: те же strings, но изменённые
+// entries содержат patched JSON. Если изменений нет — возвращает оригинальные
+// slice (не аллоцирует).
+//
+// Tag matching exact — например preset 'russian' с update tag=proxy-out
+// ищет cache entry с "tag":"proxy-out".
+func ApplyPresetUpdatesToGeneratedOutbounds(cacheStrings []string, ctx PresetMergeContext) []string {
+	if len(cacheStrings) == 0 || !hasAnyV6Rule(ctx.RulesV6) {
+		return cacheStrings
+	}
+
+	// Собираем все updates от active preset-ref'ов: tag → []patches (порядок
+	// по RuleOrder; multiple updates на один tag применяются последовательно).
+	type updatePatch struct {
+		presetID string
+		body     map[string]interface{}
+	}
+	updates := make(map[string][]updatePatch)
+	presetByID := make(map[string]*template.Preset, len(ctx.Presets))
+	for i := range ctx.Presets {
+		presetByID[ctx.Presets[i].ID] = &ctx.Presets[i]
+	}
+	for _, rule := range ctx.RulesV6 {
+		if !rule.Enabled || rule.Kind != v6.RuleKindPreset {
+			continue
+		}
+		preset, ok := presetByID[rule.Ref]
+		if !ok || len(preset.Outbounds) == 0 {
+			continue
+		}
+		body, err := rule.DecodeBody()
+		if err != nil {
+			continue
+		}
+		pb := body.(*v6.PresetBody)
+		frags, _, ok := ExpandPreset(preset, pb.Vars)
+		if !ok {
+			continue
+		}
+		for _, ob := range frags.Outbounds {
+			if ob.Mode != "update" || ob.Tag == "" {
+				continue
+			}
+			updates[ob.Tag] = append(updates[ob.Tag], updatePatch{presetID: preset.ID, body: ob.Body})
+		}
+	}
+	if len(updates) == 0 {
+		return cacheStrings
+	}
+
+	// Walk cache entries; для каждой entry с matching tag — apply patches.
+	out := make([]string, len(cacheStrings))
+	for i, raw := range cacheStrings {
+		// Strip leading whitespace + trailing comma/whitespace, остаток — JSON.
+		s := strings.TrimSpace(raw)
+		hadTrailingComma := strings.HasSuffix(s, ",")
+		if hadTrailingComma {
+			s = strings.TrimSuffix(s, ",")
+			s = strings.TrimSpace(s)
+		}
+		var m map[string]interface{}
+		if err := json.Unmarshal([]byte(s), &m); err != nil {
+			out[i] = raw
+			continue
+		}
+		tag, _ := m["tag"].(string)
+		patches, hasPatches := updates[tag]
+		if !hasPatches {
+			out[i] = raw
+			continue
+		}
+		for _, p := range patches {
+			applyOutboundUpdate(m, p.body, p.presetID)
+		}
+		patched, err := json.Marshal(m)
+		if err != nil {
+			out[i] = raw
+			continue
+		}
+		formatted := "\t" + string(patched)
+		if hadTrailingComma {
+			formatted += ","
+		}
+		out[i] = formatted
+	}
+	return out
+}
+
 // CollectOutboundTagsFromRaw — извлекает tag'и из json.RawMessage outbounds-секции.
 // Используется для построения emittedOutboundTags set перед CleanDanglingOutboundsInRouteRules.
 func CollectOutboundTagsFromRaw(outboundsRaw json.RawMessage) map[string]bool {

@@ -268,7 +268,14 @@ func buildSection(ctx BuildContext, key string, raw json.RawMessage) (string, er
 		if mergedOut, err := MergePresetsIntoOutbounds(raw, ctx.Preset); err == nil {
 			merged = mergedOut
 		}
-		return BuildOutboundsSection(merged, cacheOutboundsAsStrings(ctx.Cache), ctx.ForPreview, ctx.Stats)
+		// SPEC 055 phase 2: preset.outbounds mode=update также должны патчить
+		// **parser-generated** outbounds (proxy-out, auto-proxy-out, vpn ①,
+		// vpn ② etc — они приходят через ctx.Cache, не через templateOutbounds).
+		// Без этого update !RU filter из russian/ru-inside preset'а не доходит
+		// до глобального proxy-out — он эмитится парсером без preset-патчей.
+		cacheStrings := cacheOutboundsAsStrings(ctx.Cache)
+		cacheStrings = ApplyPresetUpdatesToGeneratedOutbounds(cacheStrings, ctx.Preset)
+		return BuildOutboundsSection(merged, cacheStrings, ctx.ForPreview, ctx.Stats)
 	case "endpoints":
 		return BuildEndpointsSection(raw, cacheEndpointsAsStrings(ctx.Cache), ctx.ForPreview, ctx.Stats)
 	case "dns":
