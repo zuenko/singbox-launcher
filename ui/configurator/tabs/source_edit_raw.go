@@ -15,21 +15,22 @@ import (
 	wizardpresentation "singbox-launcher/ui/configurator/presentation"
 )
 
-// rawBodyMaxDisplay — лимит на отображение body в textarea (64 KB).
+// rawBodyMaxDisplay — лимит на отображение body в textarea (4 KB).
 //
 // Fyne widget.MultiLineEntry рендерит каждый символ через text-layout
 // без виртуализации (см. https://github.com/fyne-io/fyne/issues/2935):
-// на 200+ KB начинается заметный лаг, 500 KB+ — UI фриз на секунды,
-// 1 MB+ — заморозка на минуту. Liberty VPN-подобные Xray JSON подписки
-// типично весят ~1 MB → Overview-таб становился неюзабельным.
+// уже на 64 KB Xray JSON (вложенные объекты, длинные строки) на macOS
+// заметно лагает. 4 KB — это «инспектор первых нескольких нод» без
+// freeze'ов.
 //
-// 64 KB — компромисс: достаточно чтобы видеть структуру subscription'а
-// (типичная base64-decoded на 50 нод ~15 KB; Xray-JSON pretty-printed
-// первые 64 KB покрывают первые ~5-10 нод), Fyne рендерит без лагов.
+// Покрытие:
+//   - base64-decoded подписки на 10-15 URI строк (~4 KB) — целиком
+//   - Xray JSON pretty-printed: первые 1-2 ноды (выглядит как структура,
+//     но юзер быстро увидит truncated-label куда идти за полным)
 //
 // Для больших bodies полный raw доступен через filesystem path
 // `bin/subscriptions/<id>.raw` — показываем подсказку в truncated label.
-const rawBodyMaxDisplay = 64 * 1024
+const rawBodyMaxDisplay = 4 * 1024
 
 // buildRawTab — read-only HTTP response inspector для подписок:
 //   - meta summary (status, fetched, size);
