@@ -185,7 +185,7 @@ func legacyCustomRulesFromV6(rules []v6.Rule) []CustomRule {
 // extra_servers + extra_rules конвертируются как есть.
 func legacyDNSOptionsFromV6(dns v6.DNSConfig) *DNSOptions {
 	if dns.Strategy == "" && dns.Final == "" && dns.DefaultDomainResolver == "" &&
-		len(dns.TemplateServers) == 0 {
+		len(dns.TemplateServers) == 0 && len(dns.ExtraServers) == 0 && len(dns.ExtraRules) == 0 {
 		return nil
 	}
 	opt := &DNSOptions{
@@ -198,10 +198,8 @@ func legacyDNSOptionsFromV6(dns v6.DNSConfig) *DNSOptions {
 		opt.IndependentCache = &v
 	}
 
-	// SPEC 057: extras удалены. template_servers — единственный источник для
-	// legacy DNSOptions.Servers view. UI-компоненты, которые ещё читают
-	// DNSOptions.Servers, видят override-маркеры `{tag, enabled}` без type/server
-	// (это и есть thin diff — настоящее тело сервера в template.dns_options).
+	// template_servers как server entries `{tag, enabled}` (override-маркеры
+	// без type/server — настоящее тело берётся из template.dns_options).
 	for tag, ovr := range dns.TemplateServers {
 		entry := map[string]interface{}{
 			"tag":     tag,
@@ -209,6 +207,16 @@ func legacyDNSOptionsFromV6(dns v6.DNSConfig) *DNSOptions {
 		}
 		raw, _ := json.Marshal(entry)
 		opt.Servers = append(opt.Servers, raw)
+	}
+	// extra_servers — genuinely user-added (полное тело).
+	for _, extra := range dns.ExtraServers {
+		raw, _ := json.Marshal(extra)
+		opt.Servers = append(opt.Servers, raw)
+	}
+	// extra_rules — user-defined DNS rules.
+	for _, extra := range dns.ExtraRules {
+		raw, _ := json.Marshal(extra)
+		opt.Rules = append(opt.Rules, raw)
 	}
 	return opt
 }

@@ -360,12 +360,12 @@ func (ac *AppController) buildContextFromState(s *state.State, cache *build.Pars
 }
 
 // isV6DNSActive — true если state хранит DNS через v6 схему (RulesV6 непуст
-// ИЛИ DNSV6 содержит template_servers). При false — legacy v5 путь
+// ИЛИ DNSV6 содержит template_servers/extras). При false — legacy v5 путь
 // (через dns_options.servers/rules в legacy DNSOptions).
 //
-// SPEC 057: extras удалены, проверяем только RulesV6 + TemplateServers.
-// При v6 state — legacy DNSOptions.Servers/Rules игнорируются (только legacy
-// view для UI back-compat в state/load.go::legacyDNSOptionsFromV6).
+// Используется в dnsConfigForUpdate чтобы избежать double-emit'а: v6 extras
+// проходят через MergePresetsIntoDNS, legacy view в DNSOptions служит только
+// UI back-compat (state/load.go::legacyDNSOptionsFromV6).
 func isV6DNSActive(s *state.State) bool {
 	if s == nil {
 		return false
@@ -373,7 +373,9 @@ func isV6DNSActive(s *state.State) bool {
 	if len(s.RulesV6) > 0 {
 		return true
 	}
-	if len(s.DNSV6.TemplateServers) > 0 {
+	if len(s.DNSV6.TemplateServers) > 0 ||
+		len(s.DNSV6.ExtraServers) > 0 ||
+		len(s.DNSV6.ExtraRules) > 0 {
 		return true
 	}
 	return false

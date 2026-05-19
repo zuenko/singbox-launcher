@@ -171,42 +171,48 @@ func (r *Rule) DecodeBody() (interface{}, error) {
 	}
 }
 
-// DNSConfig — раздел DNS в state.json (SPEC 053 + SPEC 057 cleanup).
+// DNSConfig — раздел DNS в state.json (SPEC 053).
 //
-// Invariant (SPEC 057): **state хранит только REF'ы на template entities, не
-// копии тел**. DNS-серверы и DNS-правила, которые юзер видит в UI, целиком
-// определены template (config.dns.servers + dns_options.servers + presets.
-// dns_servers + presets.dns_rule). State хранит только:
-//   - scalars: strategy / independent_cache / final / default_domain_resolver
+// Три класса DNS-данных:
+//   - scalars (strategy/final/independent_cache/default_domain_resolver)
 //   - TemplateServers — override `{enabled}` для template-defined серверов
-//     (thin diff: не trustworthy копии тел, а только тогглы)
+//     (thin diff: только toggle, тело не копируется — берётся из template)
+//   - ExtraServers — **genuinely** user-defined DNS-серверы, которых нет
+//     в template (`my-pihole` 192.168.1.5, и т.п.). Полное тело: type, server,
+//     port, tls, etc. — потому что reference'нуть нечего.
+//   - ExtraRules — то же для DNS-правил: user-defined match → server
+//     mappings, которых нет в preset.dns_rule.
+//   - bundled (от active presets) — не хранится в state; материализуется при build.
 //
-// extra_servers / extra_rules были изначальной ошибкой SPEC 053 — они хранили
-// **копии template body** (server config'и, dns rule'ы) inline. Это давало:
-//   - dangling refs когда template менялся (ru-domains tag исчез — rule остался)
-//   - double-emit (build видел extras дважды: через legacy view + через v6)
-//   - синхронизация двух источников истины
-// → удалены полностью (SPEC 057). UI больше не позволяет добавлять кастомный
-// DNS-сервер или DNS-rule напрямую; всё через preset.dns_servers / preset.dns_rule.
+// Инвариант: **template tag НИКОГДА не должен попадать в ExtraServers/
+// ExtraRules** — для template-defined сущностей есть TemplateServers override
+// (для серверов) и preset.dns_rule (для rules). UI/migration обязаны
+// проверять и конвертить template-tag попытки в overrides. См.
+// state/v6/migration.go::migrateDNS и UI add/edit flows.
 //
 // При build:
 //
 //	dns.servers[] = template.dns_options.servers[].filter(effective_enabled)
 //	              + bundled из active preset-refs
-//	              (никаких extras)
+//	              + state.dns.extra_servers
 //
-//	dns.rules[] = preset.dns_rule от каждого active preset-ref
-//	            (никаких extras)
+//	dns.rules[]   = bundled.dns_rule от active preset-refs
+//	              + state.dns.extra_rules (с dangling-cleanup)
 //
 //	effective_enabled(tag) = state.dns.template_servers[tag].enabled
 //	                     ?? template.dns_options.servers[tag].default_enabled
 //	                     ?? true
+//
+// Все DNS-server emit-пути проходят через `stripDNSWizardOnlyFields` —
+// single source of truth для cleanup (description/enabled/title/if/if_or/_*).
 type DNSConfig struct {
 	Strategy              string                       `json:"strategy,omitempty"`
 	IndependentCache      bool                         `json:"independent_cache,omitempty"`
 	Final                 string                       `json:"final,omitempty"`
 	DefaultDomainResolver string                       `json:"default_domain_resolver,omitempty"`
 	TemplateServers       map[string]TemplateServerOvr `json:"template_servers,omitempty"`
+	ExtraServers          []map[string]interface{}     `json:"extra_servers,omitempty"`
+	ExtraRules            []map[string]interface{}     `json:"extra_rules,omitempty"`
 }
 
 // TemplateServerOvr — override для template-defined DNS-сервера.

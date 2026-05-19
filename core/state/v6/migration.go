@@ -163,17 +163,20 @@ func stripOutboundFromRule(rule map[string]interface{}) map[string]interface{} {
 
 // migrateDNS — конвертит v5.DNSOptions в v6.DNSConfig.
 //
-// SPEC 057: v6 теперь хранит ТОЛЬКО refs/overrides, никаких extras. Серверы:
-//   - Если tag ∈ templateDefaults → override записываем в TemplateServers
-//     с {Enabled: enabled}.
-//   - Если tag НЕ в templateDefaults (user-added через DNS tab в v5) →
-//     **DROP с warning'ом**: state не хранит копии тел; чтобы добавить
-//     custom DNS-сервер, нужно положить его в template или preset.
+// servers[] split (важный invariant):
+//   - tag ∈ templateDefaults → override в TemplateServers {Enabled}
+//     (даже если совпадает с template default — миграция не знает default'ов,
+//     пишет всё что было в state; пост-fix может убрать совпадения)
+//   - tag НЕ в templateDefaults → ExtraServers (полное тело, без поля
+//     `enabled` — это legacy v5 UI-поле, не sing-box-valid)
 //
-// rules → **DROP полностью** с warning'ом. v5 user-DNS-rules были inline
-// копиями preset bodies (см. SPEC 057 rationale), при upgrade нет рефа
-// чтобы их сохранить — лучше потерять одно правило, чем тащить dangling
-// в новую схему.
+// rules[] → ExtraRules целиком. dangling-cleanup происходит на build time
+// (`cleanDanglingDNSRule` в preset_merge.go) — если миграция оставила правило
+// со ссылкой на rule_set которого больше нет, build его аккуратно подрежет.
+//
+// Invariant защиты: template-defined tag НИКОГДА не должен попадать в
+// ExtraServers/ExtraRules — там только genuinely-user-defined сущности.
+// Эта функция держит invariant через `templateDefaults` check.
 func migrateDNS(old *v5.DNSOptions, templateDefaults map[string]bool) (DNSConfig, []MigrateWarning) {
 	d := DNSConfig{}
 	if old == nil {
@@ -187,10 +190,9 @@ func migrateDNS(old *v5.DNSOptions, templateDefaults map[string]bool) (DNSConfig
 		d.IndependentCache = *old.IndependentCache
 	}
 
-	var warns []MigrateWarning
-
-	// servers: template overrides only; user extras → drop + warn
+	// servers split
 	overrides := make(map[string]TemplateServerOvr)
+	var extras []map[string]interface{}
 	for _, rawServer := range old.Servers {
 		var srv map[string]interface{}
 		if err := json.Unmarshal(rawServer, &srv); err != nil {
@@ -202,28 +204,25 @@ func migrateDNS(old *v5.DNSOptions, templateDefaults map[string]bool) (DNSConfig
 		if tag != "" && templateDefaults[tag] {
 			overrides[tag] = TemplateServerOvr{Enabled: enabled}
 		} else {
-			warns = append(warns, MigrateWarning{
-				Message: fmt.Sprintf(
-					"v5→v6 migration: dropping user-added DNS server %q "+
-						"(SPEC 057: state holds only template refs, not bodies)", tag),
-			})
+			// User-added → strip wizard-only `enabled` field, keep full body.
+			delete(srv, "enabled")
+			extras = append(extras, srv)
 		}
 	}
 	if len(overrides) > 0 {
 		d.TemplateServers = overrides
 	}
+	d.ExtraServers = extras
 
-	// rules: drop all + warn (no way to convert inline body to a ref)
-	if len(old.Rules) > 0 {
-		warns = append(warns, MigrateWarning{
-			Message: fmt.Sprintf(
-				"v5→v6 migration: dropping %d DNS rule(s) "+
-					"(SPEC 057: user DNS rules now come from preset.dns_rule only)",
-				len(old.Rules)),
-		})
+	// rules → extra_rules (dangling refs cleaned at build time)
+	for _, rawRule := range old.Rules {
+		var r map[string]interface{}
+		if err := json.Unmarshal(rawRule, &r); err == nil {
+			d.ExtraRules = append(d.ExtraRules, r)
+		}
 	}
 
-	return d, warns
+	return d, nil
 }
 
 // generateULID — placeholder для миграции (использует v5.ulid пакет уже существующий).

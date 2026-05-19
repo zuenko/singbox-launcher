@@ -361,7 +361,9 @@ func MergePresetsIntoRoute(routeRaw json.RawMessage, ctx PresetMergeContext) (js
 // Если ctx пуст (нет v6-правил и нет overrides/extras) → noop.
 func MergePresetsIntoDNS(dnsRaw json.RawMessage, ctx PresetMergeContext) (json.RawMessage, error) {
 	hasV6 := hasAnyV6Rule(ctx.RulesV6) ||
-		len(ctx.DNS.TemplateServers) > 0
+		len(ctx.DNS.TemplateServers) > 0 ||
+		len(ctx.DNS.ExtraServers) > 0 ||
+		len(ctx.DNS.ExtraRules) > 0
 	if !hasV6 {
 		return dnsRaw, nil
 	}
@@ -470,12 +472,28 @@ func MergePresetsIntoDNS(dnsRaw json.RawMessage, ctx PresetMergeContext) (json.R
 		}
 	}
 
-	// SPEC 057: extras удалены полностью. Источники DNS servers/rules:
-	//   - template.config.dns.servers (минимум: local + direct)
-	//   - template.dns_options.servers via TemplateDNSDefaults (+ overrides)
-	//   - preset.dns_servers (bundled) — выше
-	//   - preset.dns_rule (bundled) — выше
-	// Никаких user-defined extras: invariant «state = refs only, не копии».
+	// Append extra_servers (user-defined). Через stripDNSWizardOnlyFields
+	// на копии — single source of truth для cleanup'а DNS server fields
+	// (description/enabled/title/if/if_or/_*).
+	for _, extra := range ctx.DNS.ExtraServers {
+		servers = append(servers, stripDNSWizardOnlyFields(extra))
+	}
+
+	// Build emittedRuleSetTags для dangling-cleanup в DNS rules. Источники
+	// валидных tag'ов: rule_set'ы от active preset-refs (после auto-prefix).
+	// Юзерский DNS-rule может ссылаться на preset rule_set (`russian:ru-domains`)
+	// или на dangling tag (если preset выключен) — cleanDanglingDNSRule
+	// аккуратно подрежет `rule_set` ссылку оставляя rule валидным.
+	emittedRuleSetTags := collectRuleSetTagsFromPresets(presetByID, ctx.RulesV6)
+
+	// Append extra_rules (user-defined DNS rules через UI).
+	for _, extra := range ctx.DNS.ExtraRules {
+		cleaned := cleanDanglingDNSRule(extra, emittedRuleSetTags)
+		if cleaned == nil {
+			continue
+		}
+		dnsRules = append(dnsRules, cleaned)
+	}
 
 	if len(servers) > 0 {
 		dns["servers"] = servers
@@ -489,6 +507,100 @@ func MergePresetsIntoDNS(dnsRaw json.RawMessage, ctx PresetMergeContext) (json.R
 		return nil, fmt.Errorf("preset merge dns: marshal: %w", err)
 	}
 	return out, nil
+}
+
+// collectRuleSetTagsFromPresets — set rule_set tag'ов от ВСЕХ enabled
+// preset-ref'ов (после auto-prefix `<preset_id>:<local_tag>`).
+//
+// Используется в DNS rules dangling-cleanup: extra_rule с `rule_set` ссылкой
+// должен матчиться с реально-эмитнутым rule_set tag'ом. Иначе sing-box упадёт
+// на `start service: initialize DNS rule[N]: rule-set not found: <X>`.
+func collectRuleSetTagsFromPresets(presetByID map[string]*template.Preset, rules []v6.Rule) map[string]bool {
+	tags := make(map[string]bool)
+	for _, rule := range rules {
+		if !rule.Enabled || rule.Kind != v6.RuleKindPreset {
+			continue
+		}
+		preset, ok := presetByID[rule.Ref]
+		if !ok {
+			continue
+		}
+		body, err := rule.DecodeBody()
+		if err != nil {
+			continue
+		}
+		pb := body.(*v6.PresetBody)
+		frags, _, ok := ExpandPreset(preset, pb.Vars)
+		if !ok {
+			continue
+		}
+		for _, rs := range frags.RuleSets {
+			if t, _ := rs["tag"].(string); t != "" {
+				tags[t] = true
+			}
+		}
+	}
+	return tags
+}
+
+// cleanDanglingDNSRule — для DNS rule entry: проверяет `rule_set` ссылки
+// против validTags. Возвращает clean copy или nil (если rule станет пустым
+// после очистки и его надо drop'нуть).
+//
+// Семантика (зеркало cleanDanglingRuleSetInRule для route):
+//   - rule БЕЗ `rule_set` ссылки → keep (server-only rule валидно)
+//   - `rule_set` string ∈ validTags → keep
+//   - `rule_set` string ∉ validTags → удалить ключ; keep rule если остался
+//     хотя бы один match-источник (server, domain*, ip_cidr, port, и т.п.)
+//   - `rule_set` массив → filter dangling; пустой → удалить ключ
+//   - rule без match-источников → drop entry целиком
+//
+// Pure: новый map, оригинал не мутируется.
+func cleanDanglingDNSRule(rule map[string]interface{}, validTags map[string]bool) map[string]interface{} {
+	if rule == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(rule))
+	for k, v := range rule {
+		out[k] = v
+	}
+
+	if ref, has := out["rule_set"]; has {
+		switch v := ref.(type) {
+		case string:
+			if v != "" && !validTags[v] {
+				delete(out, "rule_set")
+			}
+		case []interface{}:
+			kept := make([]interface{}, 0, len(v))
+			for _, x := range v {
+				if s, ok := x.(string); ok && validTags[s] {
+					kept = append(kept, s)
+				}
+			}
+			if len(kept) == 0 {
+				delete(out, "rule_set")
+			} else {
+				out["rule_set"] = kept
+			}
+		}
+	}
+
+	hasMatch := false
+	for k := range out {
+		switch k {
+		case "server", "rule_set", "domain", "domain_suffix", "domain_keyword",
+			"domain_regex", "ip_cidr", "source_ip_cidr", "port", "source_port",
+			"network", "protocol", "inbound", "outbound", "process_name",
+			"process_path", "process_path_regex", "rule_set_ip_cidr_match_source",
+			"query_type", "client_subnet":
+			hasMatch = true
+		}
+	}
+	if !hasMatch {
+		return nil
+	}
+	return out
 }
 
 // CollectSrsCachedPaths — собирает map[user-rule-id]→абсолютный путь к скачанному
