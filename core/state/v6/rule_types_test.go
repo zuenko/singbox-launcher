@@ -222,50 +222,75 @@ func TestRule_OmitEmpty(t *testing.T) {
 	}
 }
 
-// TestDNSConfig_RoundTrip — DNS section с template_servers overrides + extras.
-func TestDNSConfig_RoundTrip(t *testing.T) {
+// TestDNSOptions_RoundTrip — SPEC 056-R-N: flat servers[] через kind discriminator.
+func TestDNSOptions_RoundTrip(t *testing.T) {
+	// SPEC: independent_cache в payload — legacy/forward-compat поле,
+	// JSON unmarshal должен silently игнорировать (поле снято из DNSOptions).
 	raw := []byte(`{
 		"strategy": "prefer_ipv4",
 		"independent_cache": true,
 		"final": "google_doh",
 		"default_domain_resolver": "google_doh",
-		"template_servers": {
-			"cloudflare_udp": {"enabled": true},
-			"yandex_doh":     {"enabled": false}
-		},
-		"extra_servers": [
-			{"tag": "my-pihole", "type": "udp", "server": "192.168.1.5", "server_port": 53}
+		"servers": [
+			{"kind":"template", "tag":"cloudflare_udp", "enabled":true},
+			{"kind":"template", "tag":"yandex_doh", "enabled":false},
+			{"kind":"preset",   "ref":"russian:yandex_udp", "enabled":true},
+			{"kind":"user",     "tag":"my-pihole", "type":"udp", "server":"192.168.1.5", "server_port":53, "enabled":true}
 		],
-		"extra_rules": []
+		"rules": [
+			{"kind":"preset", "ref":"russian", "enabled":true},
+			{"kind":"user",   "rule_set":"ru-domains", "server":"yandex_doh", "enabled":true}
+		]
 	}`)
-	var d DNSConfig
+	var d DNSOptions
 	if err := json.Unmarshal(raw, &d); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if d.Strategy != "prefer_ipv4" || d.Final != "google_doh" {
 		t.Errorf("scalar fields mismatch: %+v", d)
 	}
-	if len(d.TemplateServers) != 2 {
-		t.Errorf("template_servers count: got %d", len(d.TemplateServers))
+	if len(d.Servers) != 4 {
+		t.Fatalf("servers count: %d", len(d.Servers))
 	}
-	if !d.TemplateServers["cloudflare_udp"].Enabled {
-		t.Error("cloudflare_udp override should be enabled=true")
+
+	// Round-trip: marshal → unmarshal → identical structure.
+	roundtrip, _ := json.Marshal(d)
+	var d2 DNSOptions
+	if err := json.Unmarshal(roundtrip, &d2); err != nil {
+		t.Fatalf("re-unmarshal: %v", err)
 	}
-	if d.TemplateServers["yandex_doh"].Enabled {
-		t.Error("yandex_doh override should be enabled=false")
+	if len(d2.Servers) != 4 || len(d2.Rules) != 2 {
+		t.Errorf("round-trip lost entries: %+v", d2)
 	}
-	if len(d.ExtraServers) != 1 {
-		t.Errorf("extra_servers count: got %d", len(d.ExtraServers))
+
+	// Spot-check каждого kind'а.
+	if d.Servers[0].Kind != DNSServerKindTemplate || d.Servers[0].Tag != "cloudflare_udp" || !d.Servers[0].Enabled {
+		t.Errorf("template entry 0: %+v", d.Servers[0])
+	}
+	if d.Servers[2].Kind != DNSServerKindPreset || d.Servers[2].Ref != "russian:yandex_udp" {
+		t.Errorf("preset entry: %+v", d.Servers[2])
+	}
+	if d.Servers[3].Kind != DNSServerKindUser || d.Servers[3].Tag != "my-pihole" {
+		t.Errorf("user entry: %+v", d.Servers[3])
+	}
+	if d.Servers[3].Body["server"] != "192.168.1.5" {
+		t.Errorf("user body lost: %+v", d.Servers[3].Body)
+	}
+	if d.Rules[0].Kind != DNSRuleKindPreset || d.Rules[0].Ref != "russian" {
+		t.Errorf("preset rule: %+v", d.Rules[0])
+	}
+	if d.Rules[1].Body["rule_set"] != "ru-domains" {
+		t.Errorf("user rule body lost: %+v", d.Rules[1].Body)
 	}
 }
 
-// TestDNSConfig_OmitEmpty — пустые TemplateServers/ExtraServers/ExtraRules не пишутся.
-func TestDNSConfig_OmitEmpty(t *testing.T) {
-	d := DNSConfig{Strategy: "prefer_ipv4", Final: "google_doh"}
+// TestDNSOptions_OmitEmpty — пустые Servers/Rules не пишутся.
+func TestDNSOptions_OmitEmpty(t *testing.T) {
+	d := DNSOptions{Strategy: "prefer_ipv4", Final: "google_doh"}
 	out, _ := json.Marshal(d)
 	outStr := string(out)
 	for _, mustNotContain := range []string{
-		`"template_servers"`, `"extra_servers"`, `"extra_rules"`,
+		`"servers"`, `"rules"`,
 	} {
 		if strings.Contains(outStr, mustNotContain) {
 			t.Errorf("expected omit: %q present in %s", mustNotContain, outStr)

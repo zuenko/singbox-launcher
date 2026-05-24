@@ -117,11 +117,11 @@ func BuildPreviewConfig(model *wizardmodels.WizardModel) (string, error) {
 		},
 		ForPreview: true,
 		DNS: build.DNSConfig{
-			Servers:          model.DNSServers,
-			RulesText:        model.DNSRulesText,
-			Final:            model.DNSFinal,
-			Strategy:         model.DNSStrategy,
-			IndependentCache: model.DNSIndependentCache,
+			Servers:   model.DNSServers,
+			RulesText: model.DNSRulesText,
+			Final:     model.DNSFinal,
+			Strategy:  model.DNSStrategy,
+			// SPEC: IndependentCache removed (sing-box 1.14 deprecation).
 		},
 		Route: routeConfigFromModel(model),
 	}

@@ -1,27 +1,32 @@
-// Package v6 — on-disk-схема state.json (SPEC 053).
+// Package v6 — on-disk-схема state.json (SPEC 053 + SPEC 056-R-N).
 //
-// Расширяет v5: добавляет preset bundles (SPEC 053). Из v5 переиспользуются
-// MetaSection, ConnectionsSection, Source и SubscriptionMeta — они без
-// изменений. Изменения:
+// Расширяет v5. Из v5 переиспользуются MetaSection, ConnectionsSection, Source
+// и SubscriptionMeta — они без изменений.
+//
+// Изменения:
 //
 //   - state.custom_rules[] → state.rules[] с kind discriminator
-//     (preset / inline / srs)
-//   - state.config_params[] удалено — vars живут в preset.body.vars
-//   - state.dns_options → state.dns с явным разделением:
-//     template_servers (overrides) + extra_servers (user-defined)
-//   - state.vars[] остаётся (глобальные template vars: cert_store, tun, ...)
+//     (preset / inline / srs) — SPEC 053
+//   - state.config_params[] удалено — vars живут в preset.body.vars — SPEC 053
+//   - state.dns → state.dns_options с flat kind discriminator (template / preset / user)
+//     для servers/rules — SPEC 056-R-N. Старое разделение template_servers /
+//     extra_servers / extra_rules удалено.
+//   - state.vars[] остаётся (глобальные template vars: cert_store, tun, dns_*, ...)
 //
 // Top-level layout:
 //
 //	{
 //	  "meta":        { version: 6, schema: "presets_v1", ... },
-//	  "connections": { ... },  // как в v5
-//	  "rules":       [...],     // header/body kind discriminator
-//	  "vars":        [...],     // глобальные wizard vars (не preset.vars)
-//	  "dns":         {...}      // template_servers / extra_servers / extra_rules
+//	  "connections": { ... },         // как в v5
+//	  "rules":       [...],           // header/body kind discriminator
+//	  "vars":        [...],           // глобальные wizard vars (включая dns_*)
+//	  "dns_options": {                // SPEC 056-R-N
+//	    "servers": [{kind, tag|ref, enabled, ...body}],
+//	    "rules":   [{kind, ref|..., enabled, ...body}]
+//	  }
 //	}
 //
-// См. SPECS/053-F-N-PRESET_BUNDLES/SPEC.md.
+// См. SPECS/053-F-N-PRESET_BUNDLES/SPEC.md, SPECS/056-R-N-DNS_SCHEMA_REDESIGN/SPEC.md.
 package v6
 
 import (
@@ -171,52 +176,8 @@ func (r *Rule) DecodeBody() (interface{}, error) {
 	}
 }
 
-// DNSConfig — раздел DNS в state.json (SPEC 053).
+// DNSConfig — УДАЛЁН в SPEC 056-R-N.
 //
-// Три класса DNS-данных:
-//   - scalars (strategy/final/independent_cache/default_domain_resolver)
-//   - TemplateServers — override `{enabled}` для template-defined серверов
-//     (thin diff: только toggle, тело не копируется — берётся из template)
-//   - ExtraServers — **genuinely** user-defined DNS-серверы, которых нет
-//     в template (`my-pihole` 192.168.1.5, и т.п.). Полное тело: type, server,
-//     port, tls, etc. — потому что reference'нуть нечего.
-//   - ExtraRules — то же для DNS-правил: user-defined match → server
-//     mappings, которых нет в preset.dns_rule.
-//   - bundled (от active presets) — не хранится в state; материализуется при build.
-//
-// Инвариант: **template tag НИКОГДА не должен попадать в ExtraServers/
-// ExtraRules** — для template-defined сущностей есть TemplateServers override
-// (для серверов) и preset.dns_rule (для rules). UI/migration обязаны
-// проверять и конвертить template-tag попытки в overrides. См.
-// state/v6/migration.go::migrateDNS и UI add/edit flows.
-//
-// При build:
-//
-//	dns.servers[] = template.dns_options.servers[].filter(effective_enabled)
-//	              + bundled из active preset-refs
-//	              + state.dns.extra_servers
-//
-//	dns.rules[]   = bundled.dns_rule от active preset-refs
-//	              + state.dns.extra_rules (с dangling-cleanup)
-//
-//	effective_enabled(tag) = state.dns.template_servers[tag].enabled
-//	                     ?? template.dns_options.servers[tag].default_enabled
-//	                     ?? true
-//
-// Все DNS-server emit-пути проходят через `stripDNSWizardOnlyFields` —
-// single source of truth для cleanup (description/enabled/title/if/if_or/_*).
-type DNSConfig struct {
-	Strategy              string                       `json:"strategy,omitempty"`
-	IndependentCache      bool                         `json:"independent_cache,omitempty"`
-	Final                 string                       `json:"final,omitempty"`
-	DefaultDomainResolver string                       `json:"default_domain_resolver,omitempty"`
-	TemplateServers       map[string]TemplateServerOvr `json:"template_servers,omitempty"`
-	ExtraServers          []map[string]interface{}     `json:"extra_servers,omitempty"`
-	ExtraRules            []map[string]interface{}     `json:"extra_rules,omitempty"`
-}
-
-// TemplateServerOvr — override для template-defined DNS-сервера.
-// Хранится только если значение Enabled отличается от template default_enabled.
-type TemplateServerOvr struct {
-	Enabled bool `json:"enabled"`
-}
+// Старая 3-collection схема (template_servers map + extra_servers + extra_rules)
+// заменена на flat `DNSOptions` с `kind` discriminator (template/preset/user).
+// См. dns_options.go и SPECS/056-R-N-DNS_SCHEMA_REDESIGN/SPEC.md.

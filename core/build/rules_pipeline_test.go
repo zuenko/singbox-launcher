@@ -32,7 +32,7 @@ func makeTestRule(t *testing.T, kind v6.RuleKind, ref, id string, enabled bool, 
 // TestPipeline_EmptyState — пустой state → только template defaults для DNS.
 func TestPipeline_EmptyState(t *testing.T) {
 	tpl := []TemplateDNSServer{
-		{Tag: "google_doh", DefaultEnabled: true, Raw: map[string]interface{}{"tag": "google_doh", "type": "https", "default_enabled": true}},
+		{Tag: "google_doh", Enabled: true, Raw: map[string]interface{}{"tag": "google_doh", "type": "https"}},
 	}
 	result := BuildRulesAndDNS(nil, tpl, nil, nil)
 	if len(result.RouteRuleSet) != 0 || len(result.RouteRules) != 0 {
@@ -41,23 +41,20 @@ func TestPipeline_EmptyState(t *testing.T) {
 	if len(result.DNSServers) != 1 || result.DNSServers[0]["tag"] != "google_doh" {
 		t.Errorf("dns.servers should have template default: %+v", result.DNSServers)
 	}
-	// default_enabled должно быть strip'нуто
-	if _, has := result.DNSServers[0]["default_enabled"]; has {
-		t.Errorf("default_enabled should be stripped: %v", result.DNSServers[0])
-	}
 }
 
-// TestPipeline_TemplateDNS_OverrideDisable — override выключает template-сервер.
+// TestPipeline_TemplateDNS_OverrideDisable — SPEC 056-R-N: kind=template entries
+// в state.DNSOptions.Servers[] управляют включением/выключением template-серверов.
 func TestPipeline_TemplateDNS_OverrideDisable(t *testing.T) {
 	tpl := []TemplateDNSServer{
-		{Tag: "google_doh", DefaultEnabled: true, Raw: map[string]interface{}{"tag": "google_doh", "type": "https"}},
-		{Tag: "cloudflare_udp", DefaultEnabled: false, Raw: map[string]interface{}{"tag": "cloudflare_udp", "type": "udp"}},
+		{Tag: "google_doh", Enabled: true, Raw: map[string]interface{}{"tag": "google_doh", "type": "https"}},
+		{Tag: "cloudflare_udp", Enabled: false, Raw: map[string]interface{}{"tag": "cloudflare_udp", "type": "udp"}},
 	}
 	state := &v6.State{
-		DNS: v6.DNSConfig{
-			TemplateServers: map[string]v6.TemplateServerOvr{
-				"google_doh":     {Enabled: false}, // override → disabled
-				"cloudflare_udp": {Enabled: true},  // override → enabled
+		DNSOptions: v6.DNSOptions{
+			Servers: []v6.DNSServer{
+				{Kind: v6.DNSServerKindTemplate, Tag: "google_doh", Enabled: false},
+				{Kind: v6.DNSServerKindTemplate, Tag: "cloudflare_udp", Enabled: true},
 			},
 		},
 	}
@@ -230,30 +227,33 @@ func TestPipeline_UserSrs_WithCache(t *testing.T) {
 	}
 }
 
-// TestPipeline_ExtraServersAndRules — user-defined extra DNS из state.DNS
-// проходят через BuildRulesAndDNS Pass 3/4. Test-only path; production
-// использует MergePresetsIntoDNS (cleanDanglingDNSRule там также чистит
-// dangling rule_set refs в extras).
-func TestPipeline_ExtraServersAndRules(t *testing.T) {
+// TestPipeline_UserServersAndRules — SPEC 056-R-N: kind=user entries в
+// state.DNSOptions.Servers/Rules проходят через BuildRulesAndDNS Pass 2/3.
+// Test-only path; production использует MergePresetsIntoDNS.
+func TestPipeline_UserServersAndRules(t *testing.T) {
 	state := &v6.State{
-		DNS: v6.DNSConfig{
-			ExtraServers: []map[string]interface{}{
-				{"tag": "my-pihole", "type": "udp", "server": "192.168.1.5"},
+		DNSOptions: v6.DNSOptions{
+			Servers: []v6.DNSServer{
+				{Kind: v6.DNSServerKindUser, Tag: "my-pihole", Enabled: true, Body: map[string]interface{}{
+					"tag": "my-pihole", "type": "udp", "server": "192.168.1.5",
+				}},
 			},
-			ExtraRules: []map[string]interface{}{
-				{"server": "my-pihole", "domain_suffix": []interface{}{"internal.local"}},
+			Rules: []v6.DNSRule{
+				{Kind: v6.DNSRuleKindUser, Enabled: true, Body: map[string]interface{}{
+					"server": "my-pihole", "domain_suffix": []interface{}{"internal.local"},
+				}},
 			},
 		},
 	}
 	result := BuildRulesAndDNS(nil, nil, state, nil)
 	if len(result.DNSServers) != 1 {
-		t.Fatalf("expected 1 extra server, got %d", len(result.DNSServers))
+		t.Fatalf("expected 1 user server, got %d", len(result.DNSServers))
 	}
 	if result.DNSServers[0]["tag"] != "my-pihole" {
-		t.Errorf("extra server tag: %v", result.DNSServers[0])
+		t.Errorf("user server tag: %v", result.DNSServers[0])
 	}
 	if len(result.DNSRules) != 1 {
-		t.Fatalf("expected 1 extra rule")
+		t.Fatalf("expected 1 user rule")
 	}
 }
 
@@ -310,25 +310,47 @@ func TestPipeline_DuplicateTagFirstWins(t *testing.T) {
 	}
 }
 
-// TestParseTemplateDNSDefaults — парсинг template.dns_defaults.servers.
+// TestParseTemplateDNSDefaults — парсинг template.dns_options.servers с required/enabled.
 func TestParseTemplateDNSDefaults(t *testing.T) {
 	raw := []json.RawMessage{
-		json.RawMessage(`{"tag": "google_doh", "type": "https", "default_enabled": true}`),
-		json.RawMessage(`{"tag": "old_legacy", "type": "udp", "enabled": false}`),
+		json.RawMessage(`{"tag": "google_doh", "type": "https", "enabled": true}`),
+		json.RawMessage(`{"tag": "cloudflare_doh", "type": "https", "enabled": false}`),
 		json.RawMessage(`{"tag": "implicit", "type": "udp"}`),
+		json.RawMessage(`{"tag": "local_dns_resolver", "type": "local", "required": true, "enabled": true}`),
+		json.RawMessage(`{"tag": "broken", "type": "local", "required": true, "enabled": false}`),
 	}
 	defaults := ParseTemplateDNSDefaults(raw)
-	if len(defaults) != 3 {
+	if len(defaults) != 5 {
 		t.Fatalf("count: %d", len(defaults))
 	}
-	if !defaults[0].DefaultEnabled {
-		t.Error("explicit default_enabled=true lost")
+	if !defaults[0].Enabled || defaults[0].Required {
+		t.Errorf("google_doh: Enabled=true,Required=false expected, got %+v", defaults[0])
 	}
-	if defaults[1].DefaultEnabled {
-		t.Error("legacy 'enabled' should be read as default_enabled")
+	if defaults[1].Enabled {
+		t.Error("cloudflare_doh: Enabled=false expected")
 	}
-	if !defaults[2].DefaultEnabled {
-		t.Error("implicit default should be true")
+	if !defaults[2].Enabled {
+		t.Error("implicit: default Enabled=true expected")
+	}
+	if !defaults[3].Required || !defaults[3].Enabled {
+		t.Errorf("local_dns_resolver: Required=true,Enabled=true expected, got %+v", defaults[3])
+	}
+	// required + enabled=false → force Enabled=true (coherence fix).
+	if !defaults[4].Required || !defaults[4].Enabled {
+		t.Errorf("broken required+enabled=false: Enabled should be forced to true, got %+v", defaults[4])
+	}
+}
+
+// TestValidateTemplateDNSServers — tag-uniqueness + required-enabled coherence warnings.
+func TestValidateTemplateDNSServers(t *testing.T) {
+	servers := []TemplateDNSServer{
+		{Tag: "google_doh", Enabled: true, Raw: map[string]interface{}{"enabled": true}},
+		{Tag: "google_doh", Enabled: true, Raw: map[string]interface{}{"enabled": true}}, // duplicate
+		{Tag: "local_dns_resolver", Required: true, Enabled: true, Raw: map[string]interface{}{"required": true, "enabled": false}}, // coherence warn
+	}
+	warns := ValidateTemplateDNSServers(servers)
+	if len(warns) != 2 {
+		t.Errorf("expected 2 warnings (duplicate + coherence), got %d: %v", len(warns), warns)
 	}
 }
 

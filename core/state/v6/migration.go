@@ -73,7 +73,7 @@ func MigrateV5ToV6(
 	}
 
 	// DNS migration
-	newState.DNS, _ = migrateDNS(old.DNSOptions, templateDNSDefaults)
+	newState.DNSOptions, _ = migrateDNS(old.DNSOptions, templateDNSDefaults)
 
 	return newState, warnings
 }
@@ -161,24 +161,23 @@ func stripOutboundFromRule(rule map[string]interface{}) map[string]interface{} {
 	return out
 }
 
-// migrateDNS — конвертит v5.DNSOptions в v6.DNSConfig.
+// migrateDNS — конвертит v5.DNSOptions в v6.DNSOptions (SPEC 056-R-N).
 //
-// servers[] split (важный invariant):
-//   - tag ∈ templateDefaults → override в TemplateServers {Enabled}
-//     (даже если совпадает с template default — миграция не знает default'ов,
-//     пишет всё что было в state; пост-fix может убрать совпадения)
-//   - tag НЕ в templateDefaults → ExtraServers (полное тело, без поля
-//     `enabled` — это legacy v5 UI-поле, не sing-box-valid)
+// servers[] split:
+//   - tag ∈ templateDefaults → DNSServer{Kind:template, Tag, Enabled}
+//   - tag ∉ templateDefaults → DNSServer{Kind:user, Tag, Enabled, Body:full body}
 //
-// rules[] → ExtraRules целиком. dangling-cleanup происходит на build time
-// (`cleanDanglingDNSRule` в preset_merge.go) — если миграция оставила правило
-// со ссылкой на rule_set которого больше нет, build его аккуратно подрежет.
+// rules[] → DNSRule{Kind:user, Body} каждое.
 //
-// Invariant защиты: template-defined tag НИКОГДА не должен попадать в
-// ExtraServers/ExtraRules — там только genuinely-user-defined сущности.
-// Эта функция держит invariant через `templateDefaults` check.
-func migrateDNS(old *v5.DNSOptions, templateDefaults map[string]bool) (DNSConfig, []MigrateWarning) {
-	d := DNSConfig{}
+// kind=preset entries в этой функции **не создаются** — они материализуются
+// после миграции через SyncDNSOptionsWithActivePresets (вызывается caller'ом
+// после того как заполнятся active preset-ref'ы).
+//
+// Invariant: template tag НИКОГДА не попадает в kind=user — для template-defined
+// tag'ов используется kind=template override. Эта функция держит invariant
+// через `templateDefaults` check.
+func migrateDNS(old *v5.DNSOptions, templateDefaults map[string]bool) (DNSOptions, []MigrateWarning) {
+	d := DNSOptions{}
 	if old == nil {
 		return d, nil
 	}
@@ -186,40 +185,62 @@ func migrateDNS(old *v5.DNSOptions, templateDefaults map[string]bool) (DNSConfig
 	d.Strategy = old.Strategy
 	d.Final = old.Final
 	d.DefaultDomainResolver = old.DefaultDomainResolver
-	if old.IndependentCache != nil {
-		d.IndependentCache = *old.IndependentCache
-	}
+	// SPEC: IndependentCache УДАЛЕНО — sing-box 1.14 deprecation.
+	// Legacy v5 поле игнорируется на миграции.
 
-	// servers split
-	overrides := make(map[string]TemplateServerOvr)
-	var extras []map[string]interface{}
 	for _, rawServer := range old.Servers {
 		var srv map[string]interface{}
 		if err := json.Unmarshal(rawServer, &srv); err != nil {
 			continue
 		}
 		tag, _ := srv["tag"].(string)
-		enabled, _ := srv["enabled"].(bool)
+		enabled := true
+		if v, ok := srv["enabled"].(bool); ok {
+			enabled = v
+		}
 
 		if tag != "" && templateDefaults[tag] {
-			overrides[tag] = TemplateServerOvr{Enabled: enabled}
+			d.Servers = append(d.Servers, DNSServer{
+				Kind:    DNSServerKindTemplate,
+				Tag:     tag,
+				Enabled: enabled,
+			})
 		} else {
-			// User-added → strip wizard-only `enabled` field, keep full body.
-			delete(srv, "enabled")
-			extras = append(extras, srv)
+			// User-added → kind=user с полным телом (без поля enabled — оно на top-level).
+			body := make(map[string]interface{}, len(srv))
+			for k, v := range srv {
+				if k == "enabled" {
+					continue
+				}
+				body[k] = v
+			}
+			d.Servers = append(d.Servers, DNSServer{
+				Kind:    DNSServerKindUser,
+				Tag:     tag,
+				Enabled: enabled,
+				Body:    body,
+			})
 		}
 	}
-	if len(overrides) > 0 {
-		d.TemplateServers = overrides
-	}
-	d.ExtraServers = extras
 
-	// rules → extra_rules (dangling refs cleaned at build time)
 	for _, rawRule := range old.Rules {
 		var r map[string]interface{}
-		if err := json.Unmarshal(rawRule, &r); err == nil {
-			d.ExtraRules = append(d.ExtraRules, r)
+		if err := json.Unmarshal(rawRule, &r); err != nil {
+			continue
 		}
+		// Strip enabled из body (это launcher-only flag, не sing-box).
+		body := make(map[string]interface{}, len(r))
+		for k, v := range r {
+			if k == "enabled" {
+				continue
+			}
+			body[k] = v
+		}
+		d.Rules = append(d.Rules, DNSRule{
+			Kind:    DNSRuleKindUser,
+			Enabled: true,
+			Body:    body,
+		})
 	}
 
 	return d, nil

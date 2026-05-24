@@ -183,15 +183,18 @@ func TestMigrate_CustomRule_NoMatchFields(t *testing.T) {
 	}
 }
 
-// TestMigrate_DNS_Split — template-defined серверы → overrides, user-added → extras.
+// TestMigrate_DNS_Split — SPEC 056-R-N: template-defined серверы → kind=template,
+// user-added → kind=user в flat DNSOptions.Servers[].
 func TestMigrate_DNS_Split(t *testing.T) {
+	// SPEC: IndependentCache УДАЛЕНО — sing-box 1.14 deprecation; legacy v5
+	// поле игнорируется на миграции (его не должно быть в v6 state).
 	indep := true
 	old := v5.State{
 		DNSOptions: &v5.DNSOptions{
 			Strategy:              "prefer_ipv4",
 			Final:                 "google_doh",
 			DefaultDomainResolver: "google_doh",
-			IndependentCache:      &indep,
+			IndependentCache:      &indep, // legacy — игнорируется
 			Servers: []json.RawMessage{
 				json.RawMessage(`{"tag": "google_doh", "type": "https", "server": "dns.google", "enabled": true}`),
 				json.RawMessage(`{"tag": "cloudflare_udp", "type": "udp", "server": "1.1.1.1", "enabled": false}`),
@@ -208,49 +211,56 @@ func TestMigrate_DNS_Split(t *testing.T) {
 	}
 	new, _ := MigrateV5ToV6(old, templateDefaults, nil)
 
-	if new.DNS.Strategy != "prefer_ipv4" || new.DNS.Final != "google_doh" {
-		t.Errorf("DNS scalars: %+v", new.DNS)
-	}
-	if !new.DNS.IndependentCache {
-		t.Error("IndependentCache lost")
+	if new.DNSOptions.Strategy != "prefer_ipv4" || new.DNSOptions.Final != "google_doh" {
+		t.Errorf("DNS scalars: %+v", new.DNSOptions)
 	}
 
-	// Overrides: 2 template-defined серверов записаны (даже если совпадают с default —
-	// migration не знает template-default'ов, пишет всё что было в state).
-	if len(new.DNS.TemplateServers) != 2 {
-		t.Errorf("template_servers: %+v", new.DNS.TemplateServers)
+	// Servers: 2 template + 1 user.
+	var (
+		templateGoogle, templateCF, userPiHole *DNSServer
+	)
+	for i := range new.DNSOptions.Servers {
+		s := &new.DNSOptions.Servers[i]
+		switch {
+		case s.Kind == DNSServerKindTemplate && s.Tag == "google_doh":
+			templateGoogle = s
+		case s.Kind == DNSServerKindTemplate && s.Tag == "cloudflare_udp":
+			templateCF = s
+		case s.Kind == DNSServerKindUser && s.Tag == "my-pihole":
+			userPiHole = s
+		}
 	}
-	if !new.DNS.TemplateServers["google_doh"].Enabled {
-		t.Error("google_doh override should be enabled=true")
+	if templateGoogle == nil || !templateGoogle.Enabled {
+		t.Errorf("google_doh template entry should be enabled=true: %+v", templateGoogle)
 	}
-	if new.DNS.TemplateServers["cloudflare_udp"].Enabled {
-		t.Error("cloudflare_udp override should be enabled=false")
+	if templateCF == nil || templateCF.Enabled {
+		t.Errorf("cloudflare_udp template entry should be enabled=false: %+v", templateCF)
+	}
+	if userPiHole == nil {
+		t.Fatalf("my-pihole user entry missing: %+v", new.DNSOptions.Servers)
+	}
+	if _, has := userPiHole.Body["enabled"]; has {
+		t.Errorf("user body should not contain enabled: %+v", userPiHole.Body)
+	}
+	if userPiHole.Body["server"] != "192.168.1.5" {
+		t.Errorf("user body lost server: %+v", userPiHole.Body)
 	}
 
-	// Extras: только my-pihole (non-template tag)
-	if len(new.DNS.ExtraServers) != 1 {
-		t.Errorf("extras: %+v", new.DNS.ExtraServers)
+	// Rules → kind=user
+	if len(new.DNSOptions.Rules) != 1 {
+		t.Errorf("rules count: %+v", new.DNSOptions.Rules)
 	}
-	if new.DNS.ExtraServers[0]["tag"] != "my-pihole" {
-		t.Errorf("extras tag: %v", new.DNS.ExtraServers[0])
-	}
-	// enabled (legacy v5 UI поле) должно быть удалено из extras
-	if _, has := new.DNS.ExtraServers[0]["enabled"]; has {
-		t.Errorf("extras should not have 'enabled': %+v", new.DNS.ExtraServers[0])
-	}
-
-	// Extra rules
-	if len(new.DNS.ExtraRules) != 1 {
-		t.Errorf("extra_rules: %+v", new.DNS.ExtraRules)
+	if new.DNSOptions.Rules[0].Kind != DNSRuleKindUser {
+		t.Errorf("rule kind: %v", new.DNSOptions.Rules[0].Kind)
 	}
 }
 
-// TestMigrate_NoDNSOptions — отсутствие DNSOptions → пустой DNSConfig без паники.
+// TestMigrate_NoDNSOptions — отсутствие DNSOptions → пустой DNSOptions без паники.
 func TestMigrate_NoDNSOptions(t *testing.T) {
 	old := v5.State{}
 	new, _ := MigrateV5ToV6(old, nil, nil)
-	if len(new.DNS.TemplateServers) != 0 || len(new.DNS.ExtraServers) != 0 {
-		t.Errorf("DNS should be empty: %+v", new.DNS)
+	if len(new.DNSOptions.Servers) != 0 || len(new.DNSOptions.Rules) != 0 {
+		t.Errorf("DNS should be empty: %+v", new.DNSOptions)
 	}
 }
 

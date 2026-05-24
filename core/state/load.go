@@ -25,7 +25,13 @@ var ErrNotFound = errors.New("state: file not found")
 //   - неизвестная версия → ошибка «regenerate via wizard»;
 //   - битый JSON → ошибка с понятным контекстом.
 //
-// Save после Load всегда пишет SchemaVersion (v5).
+// SPEC 056-R-N: при загрузке v6 файла со старым дев-shape (`dns.template_servers`/
+// `extra_servers`/`extra_rules`) `parseV6` читает его через legacyDevDNSToOptions
+// fallback и конвертит in-memory в новый flat shape. На ближайшем Save файл
+// перезаписывается в новом layout'е. Никакого backup'а не делаем — конверсия
+// lossless (TestRoundTrip покрывает), v6 не релизился (только dev-state).
+//
+// Save после Load пишет либо v5, либо v6 в новом shape.
 func Load(path string) (*State, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -69,29 +75,45 @@ func Parse(data []byte) (*State, error) {
 	}
 }
 
-// parseV6 — прямой read v6-формата (SPEC 053).
+// parseV6 — прямой read v6-формата (SPEC 053 + SPEC 056-R-N).
 //
 // v6.State содержит:
 //   - meta {version: 6, schema: "presets_v1", ...}
 //   - connections (без изменений vs v5)
 //   - rules[] с kind discriminator (preset/inline/srs)
-//   - vars[] (глобальные template vars)
-//   - dns {template_servers, extra_servers, extra_rules, ...}
+//   - vars[] (глобальные template vars, включая dns_* scalars)
+//   - dns_options { servers[{kind, ref|tag, enabled, ...body}], rules[...] }
 //
-// Для backward-compat callsite'ов (UI rules_tab / dns_tab пока на v5-моделях)
-// genereтся legacy view (CustomRules + DNSOptions) — preset-ref правила
-// **пропускаются** в legacy view (их нельзя представить как CustomRule без
-// expansion'а через template; UI Phase 6 покажет их через новый dialog).
+// **Backward compat для старого дев-shape (SPEC 053):** если в JSON встречаем
+// старую секцию `dns` (с template_servers/extra_servers/extra_rules), конвертим
+// её через `legacyDevDNSToOptions` в новый flat shape in-memory. На ближайшем
+// Save файл перезаписывается в новом layout'е. v6 не релизился, конверсия
+// lossless — backup не нужен.
+//
+// **TODO (SPEC 056-R-N): удалить `legacyDevDNSToOptions` после release-cycle**
+// когда все dev-state'ы перешли на новый shape.
+//
+// Для backward-compat UI callsite'ов (DNS tab пока на v5-моделях) генерируется
+// legacy CustomRules view (preset-ref пропускается — UI Phase 6 покажет
+// через новый dialog).
 func parseV6(data []byte) (*State, error) {
 	var raw struct {
 		Meta        v6.MetaSection        `json:"meta"`
 		Connections v5.ConnectionsSection `json:"connections"`
 		Rules       []v6.Rule             `json:"rules"`
 		Vars        []SettingVar          `json:"vars"`
-		DNS         v6.DNSConfig          `json:"dns"`
+		DNSOptions  v6.DNSOptions         `json:"dns_options"`
+		// Legacy dev-shape (SPEC 053). Читаем для одноразовой in-place миграции.
+		LegacyDNS json.RawMessage `json:"dns"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("state: parse v6 json: %w", err)
+	}
+
+	dnsOpts := raw.DNSOptions
+	if dnsOpts.IsEmpty() && len(raw.LegacyDNS) > 0 {
+		// Старый dev-shape → конвертим в новый flat layout.
+		dnsOpts = legacyDevDNSToOptions(raw.LegacyDNS)
 	}
 
 	s := &State{
@@ -100,7 +122,7 @@ func parseV6(data []byte) (*State, error) {
 		Connections:        raw.Connections,
 		Vars:               raw.Vars,
 		RulesV6:            raw.Rules,
-		DNSV6:              raw.DNS,
+		DNS:                dnsOpts,
 		RulesLibraryMerged: true,
 	}
 	if t, err := time.Parse(time.RFC3339, raw.Meta.CreatedAt); err == nil {
@@ -113,12 +135,89 @@ func parseV6(data []byte) (*State, error) {
 	// Generate legacy CustomRules view for backward-compat UI (Phase 6 will use RulesV6 directly).
 	s.CustomRules = legacyCustomRulesFromV6(raw.Rules)
 
-	// Generate legacy DNSOptions view (template overrides materialized as v5 entries).
-	s.DNSOptions = legacyDNSOptionsFromV6(raw.DNS)
-
 	syncLegacyFromConnections(s)
 	normalizeNilSlices(s)
 	return s, nil
+}
+
+// legacyDevDNSToOptions — конверсия старого дев-shape `dns` (SPEC 053:
+// template_servers / extra_servers / extra_rules) в новый flat `dns_options`
+// (SPEC 056-R-N: servers[]/rules[] через kind discriminator).
+//
+// Используется только при чтении файлов которые шиппились в HEAD-of-develop
+// между SPEC 053 и SPEC 056 — не для шиппнутых юзеров (v6 не релизился).
+//
+// Преобразование:
+//   - dns.template_servers map → servers[] kind=template (tag, enabled)
+//   - dns.extra_servers array  → servers[] kind=user (tag, enabled, ...body)
+//   - dns.extra_rules array    → rules[] kind=user (enabled=true, ...body)
+//   - kind=preset entries создаются позже через SyncDNSOptionsWithActivePresets
+//     (см. caller в Load).
+func legacyDevDNSToOptions(legacy json.RawMessage) v6.DNSOptions {
+	var raw struct {
+		Strategy              string `json:"strategy"`
+		Final                 string `json:"final"`
+		// SPEC: independent_cache в JSON всё ещё парсим (legacy state read),
+		// но в v6 DNSOptions не переносим — sing-box 1.14 deprecation.
+		IndependentCache      bool                         `json:"independent_cache"`
+		DefaultDomainResolver string                       `json:"default_domain_resolver"`
+		TemplateServers       map[string]struct{
+			Enabled bool `json:"enabled"`
+		} `json:"template_servers"`
+		ExtraServers []map[string]interface{} `json:"extra_servers"`
+		ExtraRules   []map[string]interface{} `json:"extra_rules"`
+	}
+	if err := json.Unmarshal(legacy, &raw); err != nil {
+		return v6.DNSOptions{}
+	}
+	_ = raw.IndependentCache // intentionally dropped on migration
+	out := v6.DNSOptions{
+		Strategy:              raw.Strategy,
+		Final:                 raw.Final,
+		DefaultDomainResolver: raw.DefaultDomainResolver,
+	}
+	for tag, ovr := range raw.TemplateServers {
+		out.Servers = append(out.Servers, v6.DNSServer{
+			Kind:    v6.DNSServerKindTemplate,
+			Tag:     tag,
+			Enabled: ovr.Enabled,
+		})
+	}
+	for _, body := range raw.ExtraServers {
+		tag, _ := body["tag"].(string)
+		enabled := true
+		if v, ok := body["enabled"].(bool); ok {
+			enabled = v
+		}
+		clean := make(map[string]interface{}, len(body))
+		for k, v := range body {
+			if k == "enabled" {
+				continue
+			}
+			clean[k] = v
+		}
+		out.Servers = append(out.Servers, v6.DNSServer{
+			Kind:    v6.DNSServerKindUser,
+			Tag:     tag,
+			Enabled: enabled,
+			Body:    clean,
+		})
+	}
+	for _, body := range raw.ExtraRules {
+		clean := make(map[string]interface{}, len(body))
+		for k, v := range body {
+			if k == "enabled" {
+				continue
+			}
+			clean[k] = v
+		}
+		out.Rules = append(out.Rules, v6.DNSRule{
+			Kind:    v6.DNSRuleKindUser,
+			Enabled: true,
+			Body:    clean,
+		})
+	}
+	return out
 }
 
 // legacyCustomRulesFromV6 — конвертирует v6.Rules[] в legacy CustomRule view.
@@ -176,50 +275,15 @@ func legacyCustomRulesFromV6(rules []v6.Rule) []CustomRule {
 	return out
 }
 
-// legacyDNSOptionsFromV6 — конвертирует v6.DNSConfig в legacy DNSOptions view.
+// legacyDNSOptionsFromV6 — УДАЛЁНА в SPEC 056-R-N.
 //
-// template_servers overrides материализуются как v5-style server entries
-// (тег + enabled). Сами template-default'ы не появляются здесь — их UI
-// получает из template'а отдельно.
+// Старая функция материализовала v6.DNSConfig template_servers + extras в v5
+// DNSOptions view для UI back-compat. Заменена прямым чтением `state.DNS`
+// (v6.DNSOptions) — UI рендерит DNS tab из flat servers[]/rules[] напрямую,
+// build pipeline читает через ctx.Preset.DNS. Никакого двойного view больше нет.
 //
-// extra_servers + extra_rules конвертируются как есть.
-func legacyDNSOptionsFromV6(dns v6.DNSConfig) *DNSOptions {
-	if dns.Strategy == "" && dns.Final == "" && dns.DefaultDomainResolver == "" &&
-		len(dns.TemplateServers) == 0 && len(dns.ExtraServers) == 0 && len(dns.ExtraRules) == 0 {
-		return nil
-	}
-	opt := &DNSOptions{
-		Strategy:              dns.Strategy,
-		Final:                 dns.Final,
-		DefaultDomainResolver: dns.DefaultDomainResolver,
-	}
-	if dns.IndependentCache {
-		v := true
-		opt.IndependentCache = &v
-	}
-
-	// template_servers как server entries `{tag, enabled}` (override-маркеры
-	// без type/server — настоящее тело берётся из template.dns_options).
-	for tag, ovr := range dns.TemplateServers {
-		entry := map[string]interface{}{
-			"tag":     tag,
-			"enabled": ovr.Enabled,
-		}
-		raw, _ := json.Marshal(entry)
-		opt.Servers = append(opt.Servers, raw)
-	}
-	// extra_servers — genuinely user-added (полное тело).
-	for _, extra := range dns.ExtraServers {
-		raw, _ := json.Marshal(extra)
-		opt.Servers = append(opt.Servers, raw)
-	}
-	// extra_rules — user-defined DNS rules.
-	for _, extra := range dns.ExtraRules {
-		raw, _ := json.Marshal(extra)
-		opt.Rules = append(opt.Rules, raw)
-	}
-	return opt
-}
+// Если UI код всё ещё ожидает state.DNSOptions — он использует legacy v5 path
+// (для backward-compat с v5 файлами). В v6 path `state.DNSOptions` остаётся nil.
 
 // cloneMap — shallow copy of map[string]interface{} for safe legacy view generation.
 func cloneMap(in map[string]interface{}) map[string]interface{} {

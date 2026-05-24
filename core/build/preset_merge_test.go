@@ -124,6 +124,12 @@ func TestMergePresets_DNSBundledServer(t *testing.T) {
 		RulesV6: []v6.Rule{
 			{Kind: v6.RuleKindPreset, Ref: "ru-direct", Enabled: true, Body: json.RawMessage(`{"vars":{}}`)},
 		},
+		// SPEC 056-R-N: kind=preset entry в DNSOptions.Servers (sync должен был создать).
+		DNS: v6.DNSOptions{
+			Servers: []v6.DNSServer{
+				{Kind: v6.DNSServerKindPreset, Ref: "ru-direct:yandex_udp", Enabled: true},
+			},
+		},
 	}
 	out, err := MergePresetsIntoDNS(dnsRaw, ctx)
 	if err != nil {
@@ -145,16 +151,24 @@ func TestMergePresets_DNSBundledServer(t *testing.T) {
 	}
 }
 
-// TestMergePresets_DNSTemplateServerOverrideDisabled — override.enabled=false → server отфильтрован.
-func TestMergePresets_DNSTemplateServerOverrideDisabled(t *testing.T) {
-	dnsRaw := json.RawMessage(`{"servers":[
-		{"tag":"google_doh","type":"https","server":"dns.google"},
-		{"tag":"cloudflare_udp","type":"udp","server":"1.1.1.1"}
-	]}`)
+// TestMergePresets_DNSTemplateServerDisabled — SPEC 056-R-N: kind=template
+// entry с Enabled=false → server отфильтрован, остальные template-серверы
+// материализуются через TemplateDNSDefaults.
+func TestMergePresets_DNSTemplateServerDisabled(t *testing.T) {
+	dnsRaw := json.RawMessage(`{"servers":[]}`)
 	ctx := PresetMergeContext{
-		DNS: v6.DNSConfig{
-			TemplateServers: map[string]v6.TemplateServerOvr{
-				"cloudflare_udp": {Enabled: false},
+		TemplateDNSDefaults: []TemplateDNSServer{
+			{Tag: "google_doh", Enabled: true, Raw: map[string]interface{}{
+				"tag": "google_doh", "type": "https", "server": "dns.google",
+			}},
+			{Tag: "cloudflare_udp", Enabled: true, Raw: map[string]interface{}{
+				"tag": "cloudflare_udp", "type": "udp", "server": "1.1.1.1",
+			}},
+		},
+		DNS: v6.DNSOptions{
+			Servers: []v6.DNSServer{
+				{Kind: v6.DNSServerKindTemplate, Tag: "google_doh", Enabled: true},
+				{Kind: v6.DNSServerKindTemplate, Tag: "cloudflare_udp", Enabled: false},
 			},
 		},
 	}
@@ -166,22 +180,26 @@ func TestMergePresets_DNSTemplateServerOverrideDisabled(t *testing.T) {
 		t.Error("google_doh should remain")
 	}
 	if strings.Contains(string(out), "cloudflare_udp") {
-		t.Error("cloudflare_udp should be filtered out")
+		t.Error("cloudflare_udp should be filtered out (Enabled=false)")
 	}
 }
 
-// TestMergePresets_DNSExtraServers — extra_servers + extra_rules from state
-// emit through MergePresetsIntoDNS. Both go through stripDNSWizardOnlyFields
-// (servers) / cleanDanglingDNSRule (rules) - SPEC 056 follow-up sanitize pipeline.
-func TestMergePresets_DNSExtraServers(t *testing.T) {
+// TestMergePresets_DNSUserServers — kind=user entries в state.DNSOptions.Servers
+// эмитятся в config через stripDNSWizardOnlyFields. kind=user rules — то же
+// через cleanDanglingDNSRule.
+func TestMergePresets_DNSUserServers(t *testing.T) {
 	dnsRaw := json.RawMessage(`{"servers":[]}`)
 	ctx := PresetMergeContext{
-		DNS: v6.DNSConfig{
-			ExtraServers: []map[string]interface{}{
-				{"tag": "my-pihole", "type": "udp", "server": "192.168.1.5"},
+		DNS: v6.DNSOptions{
+			Servers: []v6.DNSServer{
+				{Kind: v6.DNSServerKindUser, Tag: "my-pihole", Enabled: true, Body: map[string]interface{}{
+					"tag": "my-pihole", "type": "udp", "server": "192.168.1.5",
+				}},
 			},
-			ExtraRules: []map[string]interface{}{
-				{"server": "my-pihole", "domain_suffix": []interface{}{"internal.local"}},
+			Rules: []v6.DNSRule{
+				{Kind: v6.DNSRuleKindUser, Enabled: true, Body: map[string]interface{}{
+					"server": "my-pihole", "domain_suffix": []interface{}{"internal.local"},
+				}},
 			},
 		},
 	}
@@ -190,10 +208,10 @@ func TestMergePresets_DNSExtraServers(t *testing.T) {
 		t.Fatalf("dns merge: %v", err)
 	}
 	if !strings.Contains(string(out), "my-pihole") {
-		t.Errorf("extra server should appear: %s", out)
+		t.Errorf("user server should appear: %s", out)
 	}
 	if !strings.Contains(string(out), "internal.local") {
-		t.Errorf("extra rule should appear: %s", out)
+		t.Errorf("user rule should appear: %s", out)
 	}
 }
 

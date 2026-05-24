@@ -13,15 +13,16 @@
           "tolerance": "@urltest_tolerance",
           "interrupt_exist_connections": true
         },
-        "comment": "Proxy automated group for everything that should go through VPN. !RU filter is applied via preset.outbounds when ru-inside / russian / ru-blocked is enabled."
+        "comment": "Proxy automated group for everything that should go through VPN."
       },
       {
+        "required": true,
         "tag": "proxy-out",
         "wizard": { "required": 1 },
         "type": "selector",
         "options": { "interrupt_exist_connections": true, "default": "auto-proxy-out" },
         "addOutbounds": ["direct-out", "auto-proxy-out"],
-        "comment": "Proxy group for everything that should go through VPN. !RU filter is applied via preset.outbounds when ru-inside / russian / ru-blocked is enabled."
+        "comment": "Proxy group for everything that should go through VPN."
       },
       {
         "tag": "vpn ①",
@@ -255,15 +256,6 @@
       "tooltip":"sing-box config.dns.strategy."
     },
     {
-      "name": "dns_independent_cache",
-      "type": "bool",
-      "default_value": "false",
-      "wizard_ui": "fix",
-      "title": "Independent cache",
-      "tooltip": "sing-box config.dns.independent_cache.",
-      "comment": "DNS tab only: config.dns.independent_cache; same bool+fix pattern for dedicated DNS-tab editing (not shown on Settings)."
-    },
-    {
       "name": "dns_default_domain_resolver",
       "type": "text",
       "default_value": "direct_dns_resolver",
@@ -300,23 +292,11 @@
       "store": "@cert_store"
     },
     "dns": {
-      "servers": [
-        {
-          "type": "local",
-          "tag": "local_dns_resolver"
-        },
-        {
-          "type": "udp",
-          "tag": "direct_dns_resolver",
-          "server": "8.8.8.8",
-          "server_port": 53
-        }
-      ],
+      "servers": [],
       "rules": [
       ],
       "final": "@dns_final",
-      "strategy": "@dns_strategy",
-      "independent_cache": "@dns_independent_cache"
+      "strategy": "@dns_strategy"
     },
     "inbounds": [],
     "endpoints": [],
@@ -346,11 +326,19 @@
   "dns_options": {
     "servers": [
       {
+        "type": "local",
+        "tag": "local_dns_resolver",
+        "description": "OS system resolver",
+        "required": true,
+        "enabled": true
+      },
+      {
         "type": "udp",
         "tag": "direct_dns_resolver",
         "server": "8.8.8.8",
         "server_port": 53,
         "description": "Direct DNS resolver",
+        "required": true,
         "enabled": true
       },
       {
@@ -392,35 +380,6 @@
         "domain_resolver": "direct_dns_resolver",
         "detour": "proxy-out",
         "description": "Google DNS over HTTPS resolver",
-        "enabled": false
-      },
-      {
-        "type": "https",
-        "tag": "yandex_doh",
-        "server": "77.88.8.88",
-        "server_port": 443,
-        "path": "/dns-query",
-        "domain_strategy": "prefer_ipv4",
-        "description": "Yandex DNS over HTTPS resolver",
-        "enabled": true
-      },
-      {
-        "type": "udp",
-        "tag": "yandex_dns_vpn",
-        "server": "77.88.8.2",
-        "server_port": 53,
-        "detour": "proxy-out",
-        "domain_strategy": "prefer_ipv4",
-        "description": "Yandex DNS over UDP resolver",
-        "enabled": false
-      },
-      {
-        "type": "udp",
-        "tag": "yandex_dns_direct",
-        "server": "77.88.8.2",
-        "server_port": 53,
-        "domain_strategy": "prefer_ipv4",
-        "description": "Yandex 2 DNS over UDP resolver",
         "enabled": false
       }
     ]
