@@ -107,6 +107,56 @@ Top-level keys, отсутствующие в v6 (vs предыдущих рев
 | `url_at_fetch`, `last_fetched_at`, `last_status`, `error_count`, `last_error_msg`, `http_status_code`, `raw_body_bytes` | Fetch history. |
 | `nodes_count_fetched`, `truncated`, `preview_nodes` | Результат парсинга. `truncated` = обрезали по `max_nodes`. |
 
+**JSON example — subscription source:**
+```jsonc
+{
+  "id": "01KQCTRQBSSF0CCYFD2WWTVY9R",
+  "type": "subscription",
+  "enabled": true,
+  "exclude_from_global": false,
+  "url": "https://example.com/sub.txt",
+  "tag": { "prefix": "BL:" },
+  "outbounds": [
+    {
+      "tag": "BL:auto",
+      "type": "urltest",
+      "options": { "interval": "5m", "tolerance": 100, "url": "https://cp.cloudflare.com/generate_204" }
+    },
+    {
+      "tag": "BL:select",
+      "type": "selector",
+      "options": { "default": "BL:auto" },
+      "addOutbounds": ["BL:auto"]
+    }
+  ],
+  "expose_group_tags_to_global": true,
+  "update": { "interval_hours": 4, "auto_refresh": true },
+  "max_nodes": 3000,
+  "meta": {
+    "profile_title": "My VPN Pack",
+    "url_at_fetch": "https://example.com/sub.txt",
+    "last_fetched_at": "2026-05-24T13:56:25Z",
+    "last_status": "ok",
+    "http_status_code": 200,
+    "raw_body_bytes": 46318,
+    "nodes_count_fetched": 148,
+    "userinfo": { "upload_bytes": 0, "download_bytes": 1024000, "total_bytes": 107374182400, "expire_unix": 1735689600 },
+    "preview_nodes": [ "vless://...", "ss://...", "..." ]
+  }
+}
+```
+
+**JSON example — server source:**
+```jsonc
+{
+  "id": "01KQCXYZ...",
+  "type": "server",
+  "enabled": true,
+  "label": "My direct server",
+  "uri": "vless://uuid@host:443?type=tcp&security=reality&pbk=...#MyServer"
+}
+```
+
 ### 3.2 `connections.outbounds[i]` — `OutboundConfig`
 
 Top-level entry в global outbounds. Может быть трёх типов:
@@ -143,12 +193,51 @@ Merge semantics (см. `core/build/resolve_outbounds.go::applyOutboundUpdate`):
 **Псевдо-поле `required`:**
 Не существует в struct `OutboundConfig`. Читается live из `template.parser_config.outbounds[].required` каждый UI render (`templateRequiredTags` в `outbounds_configurator`). State.json НЕ сохраняет — иначе нельзя было бы снять флаг в template и увидеть эффект.
 
+**JSON examples — три типа entry:**
+```jsonc
+// 1. Обычный user/template global — без preset binding
+{
+  "tag": "direct-out",
+  "type": "direct"
+}
+
+// 2. Template global С update-патчами от 2 preset'ов
+// Финальное body на emit = base + apply patches в order.
+{
+  "tag": "proxy-out",
+  "type": "selector",
+  "options": { "default": "auto-proxy-out", "interrupt_exist_connections": true },
+  "addOutbounds": ["direct-out", "auto-proxy-out"],
+  "comment": "Proxy group for everything that should go through VPN.",
+  "updates": [
+    { "ref": "russian",   "patch": { "filters": { "tag": "!/(🇷🇺)/i" } } },
+    { "ref": "ru-inside", "patch": { "filters": { "tag": "!/(🇷🇺)/i" }, "addOutbounds": ["ru-inside-out"] } }
+  ]
+}
+
+// 3. Preset add entry — body от preset'а, ref привязка
+// На disable preset "russian" → эта запись Sync удалит.
+{
+  "tag": "ru VPN 🇷🇺",
+  "type": "selector",
+  "options": { "default": "direct-out" },
+  "filters": { "tag": "/(🇷🇺)/i" },
+  "addOutbounds": ["direct-out"],
+  "ref": "russian"
+}
+```
+
 ### 3.3 `connections.defaults`
 
 | Поле | Тип | Default | Описание |
 |------|-----|---------|----------|
 | `reload` | string | `"4h"` | Default reload interval подписок (per-source override через `Source.Update.IntervalHours`). |
 | `max_nodes` | int | `3000` | Default cap нод на subscription (per-source override через `Source.MaxNodes`). |
+
+**JSON example:**
+```jsonc
+{ "reload": "4h", "max_nodes": 3000 }
+```
 
 ### 3.4 `rules[i]` — `v6.Rule` (SPEC 053)
 
@@ -170,6 +259,41 @@ Merge semantics (см. `core/build/resolve_outbounds.go::applyOutboundUpdate`):
 | `inline` | `{ name: string, match: { <sing-box match keys> }, outbound: string }` — outbound = tag или зарезервированный литерал (`reject` / `drop`). |
 | `srs` | `{ name: string, srs_url: string, outbound: string }` — URL .srs файла + outbound tag/литерал. |
 
+**JSON examples — три kind'а:**
+```jsonc
+// 1. Preset-ref правило (вся семантика в template.presets["russian"])
+{
+  "kind": "preset",
+  "ref": "russian",
+  "enabled": true,
+  "body": { "vars": { "out": "proxy-out" } }  // только переопределённые vars
+}
+
+// 2. Inline user rule
+{
+  "kind": "inline",
+  "id": "01KQD5XYZ...",
+  "enabled": true,
+  "body": {
+    "name": "BitTorrent direct",
+    "match": { "protocol": "bittorrent" },
+    "outbound": "direct-out"
+  }
+}
+
+// 3. SRS rule-set user rule
+{
+  "kind": "srs",
+  "id": "01KQD7ABC...",
+  "enabled": true,
+  "body": {
+    "name": "Block ads (oisd)",
+    "srs_url": "https://example.com/oisd.srs",
+    "outbound": "reject"
+  }
+}
+```
+
 ### 3.5 `vars[i]`
 
 Простой KV-список — overrides для всех template-объявленных vars.
@@ -187,6 +311,18 @@ Merge semantics (см. `core/build/resolve_outbounds.go::applyOutboundUpdate`):
 - Любые user-определённые в template
 
 Записи без `name` (template `{separator: true}`) НЕ попадают в state. Сироты (имена не из текущего template) НЕ грузятся в model и НЕ пишутся обратно.
+
+**JSON example:**
+```jsonc
+[
+  { "name": "tun", "value": "true" },
+  { "name": "route_final", "value": "proxy-out" },
+  { "name": "dns_strategy", "value": "prefer_ipv4" },
+  { "name": "dns_final", "value": "cloudflare_udp" },
+  { "name": "dns_default_domain_resolver", "value": "cloudflare_udp" },
+  { "name": "clash_secret", "value": "<auto-generated bearer>" }
+]
+```
 
 ### 3.6 `dns_options`
 
@@ -220,6 +356,48 @@ Merge semantics (см. `core/build/resolve_outbounds.go::applyOutboundUpdate`):
 **Удалено:**
 - `independent_cache` — deprecated в sing-box 1.14.0 (cache всегда per-transport). Legacy state с этим ключом парсится без ошибок (unknown field ignored), новые saves не пишут.
 - `extra_servers[]`, `extra_rules[]`, `template_servers` map — старая dev-схема SPEC 053, заменена flat-list'ом с kind discriminator (SPEC 056-R-N).
+
+**JSON example — полный `dns_options` блок:**
+```jsonc
+{
+  // strategy/final/default_domain_resolver — fallback дубль; source of truth в vars[]
+  // (на диск пишутся только если не zero)
+
+  "servers": [
+    // template: ссылка на template.dns_options.servers[tag="cloudflare_udp"]
+    { "kind": "template", "tag": "cloudflare_udp", "enabled": true },
+
+    // template: required entry от template'а; локально disabled юзером
+    { "kind": "template", "tag": "google_doh", "enabled": false },
+
+    // preset: bundled от russian preset, local_tag="yandex_doh"
+    { "kind": "preset", "ref": "russian:yandex_doh", "enabled": true },
+
+    // user: полностью user-defined DNS-сервер с inline body
+    {
+      "kind": "user",
+      "tag": "my-pihole",
+      "enabled": true,
+      "body": { "type": "udp", "server": "192.168.1.10", "server_port": 53 }
+    }
+  ],
+
+  "rules": [
+    // preset: один dns_rule на preset, тело резолвится из template
+    { "kind": "preset", "ref": "russian", "enabled": true },
+
+    // user: полное sing-box dns rule body
+    {
+      "kind": "user",
+      "enabled": true,
+      "body": {
+        "rule_set": "ru-domains",
+        "server": "yandex_doh"
+      }
+    }
+  ]
+}
+```
 
 ---
 
