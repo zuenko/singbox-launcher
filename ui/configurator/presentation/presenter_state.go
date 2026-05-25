@@ -273,12 +273,20 @@ func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) err
 	// Восстановление DNS вкладки (шаг 4b)
 	p.restoreDNS(stateFile)
 
-	hadRulesLibraryMerged := stateFile.RulesLibraryMerged
-	wizardbusiness.ApplyRulesLibraryMigration(stateFile, p.model.TemplateData, p.model.ExecDir)
-	p.model.RulesLibraryMerged = stateFile.RulesLibraryMerged
+	// SPEC 053 removed the legacy template.selectable_rules library — rules now
+	// live exclusively in state.rules[] (kind=preset/inline/srs). RulesLibraryMerged
+	// + SelectableRuleStates are kept on the v4 disk struct for read-compat but
+	// have no runtime effect; just zero the in-memory copies so nothing reads stale.
+	p.model.RulesLibraryMerged = true
 	p.model.SelectableRuleStates = nil
 	p.restoreCustomRules(stateFile.CustomRules)
-	wizardbusiness.EnsureCustomRulesDefaultOutbounds(p.model)
+	// Fill SelectedOutbound for any custom rules missing it (single-pass after restore).
+	{
+		opts := wizardbusiness.EnsureDefaultAvailableOutbounds(wizardbusiness.GetAvailableOutbounds(p.model))
+		for _, rs := range p.model.CustomRules {
+			wizardmodels.EnsureDefaultOutbound(rs, opts)
+		}
+	}
 	// SPEC 053: restore preset-ref правила (kind=preset из state.Rules).
 	p.restorePresetRefs(stateFile)
 
@@ -312,20 +320,10 @@ func (p *WizardPresenter) LoadState(stateFile *wizardmodels.WizardStateFile) err
 	p.RefreshOutboundOptions()
 
 	// SPEC 045 invariant: единственный writer state.json — Save визарда.
-	// Миграция rules-library живёт в RAM; ApplyRulesLibraryMigration
-	// идемпотентна — при следующем открытии без Save снова отработает
-	// in-memory, на диск ничего не утечёт.
-	//
-	// Раньше тут стоял SaveWizardState под флагом !hadRulesLibraryMerged —
-	// это и был баг утечки записи через "Get Free" (фрешный WizardStateFile
-	// идёт с RulesLibraryMerged=false, миграция выставляет true, persist
-	// затирал существующий state.json до того, как юзер успел нажать Save
-	// или Cancel). После SPEC 045 миграция остаётся pure-data операцией.
-	if !hadRulesLibraryMerged {
-		p.MarkAsChanged()
-	} else {
-		p.MarkAsSaved()
-	}
+	// На clean load дирти-флаг не нужен (раньше он зависел от
+	// !hadRulesLibraryMerged — сигнал, что миграция SelectableRules сменила
+	// shape; SPEC 053 убрал эту библиотеку, миграция мертва).
+	p.MarkAsSaved()
 
 	return nil
 }

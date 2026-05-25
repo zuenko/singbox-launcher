@@ -65,12 +65,10 @@ type TemplateData struct {
 	Vars        []TemplateVar
 	RawTemplate json.RawMessage `json:"-"`
 
-	// SelectableRules — правила маршрутизации для визарда (уже отфильтрованные по платформе).
-	SelectableRules []TemplateSelectableRule
-
-	// Presets — параметризованные preset bundles (SPEC 053). Параллельно SelectableRules.
-	// Каждый Preset имеет id, vars, rule_set/dns_servers, rule/dns_rule. UI Library dialog
-	// показывает обе секции; preset-ref правила хранятся в state.Rules (kind=preset).
+	// Presets — параметризованные preset bundles (SPEC 053). Единственный источник
+	// rule-библиотеки. Старая параллельная секция SelectableRules[] удалена
+	// (SPEC 053): preset-ref правила хранятся в state.Rules (kind=preset),
+	// custom (inline/srs) правила создаются юзером через +Add Rule.
 	Presets []Preset
 
 	// PresetWarnings — non-fatal warnings от LoadPresets (validation issues).
@@ -201,17 +199,6 @@ type TemplateParam struct {
 	IfOr []string `json:"if_or,omitempty"`
 }
 
-// jsonSelectableRule — промежуточная структура для десериализации selectable_rules из JSON.
-type jsonSelectableRule struct {
-	Label       string                   `json:"label"`
-	Description string                   `json:"description"`
-	Default     bool                     `json:"default"`
-	Platforms   []string                 `json:"platforms,omitempty"`
-	RuleSet     []json.RawMessage        `json:"rule_set,omitempty"`
-	Rule        map[string]interface{}   `json:"rule,omitempty"`
-	Rules       []map[string]interface{} `json:"rules,omitempty"`
-}
-
 // GetTemplateFileName возвращает имя файла шаблона. Один файл для всех платформ.
 func GetTemplateFileName() string {
 	return TemplateFileName
@@ -249,15 +236,14 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 
 	// Десериализация корневой структуры шаблона.
 	// selectable_rules[] удалено (SPEC 053): rules теперь только через presets[].
-	// Парсер старых шаблонов с selectable_rules — игнорирует поле + warning.
+	// Старые шаблоны с этим полем — JSON unmarshaller просто игнорирует (no warning).
 	var root struct {
-		ParserConfig    json.RawMessage      `json:"parser_config"`
-		Config          json.RawMessage      `json:"config"`
-		DNSOptions      json.RawMessage      `json:"dns_options,omitempty"`
-		LegacySelRules  json.RawMessage      `json:"selectable_rules,omitempty"` // deprecated
-		Presets         json.RawMessage      `json:"presets,omitempty"`
-		Params          []TemplateParam      `json:"params"`
-		Vars            []TemplateVar        `json:"vars"`
+		ParserConfig json.RawMessage `json:"parser_config"`
+		Config       json.RawMessage `json:"config"`
+		DNSOptions   json.RawMessage `json:"dns_options,omitempty"`
+		Presets      json.RawMessage `json:"presets,omitempty"`
+		Params       []TemplateParam `json:"params"`
+		Vars         []TemplateVar   `json:"vars"`
 	}
 	if err := json.Unmarshal(raw, &root); err != nil {
 		return nil, fmt.Errorf("invalid JSON in %s: %w", TemplateFileName, err)
@@ -309,13 +295,8 @@ func LoadTemplateData(execDir string) (*TemplateData, error) {
 	debuglog.DebugLog("TemplateLoader: defaultFinal: %s", defaultFinal)
 	debuglog.DebugLog("TemplateLoader: defaultDomainResolver: %s", defaultDomainResolver)
 
-	// 5. Legacy selectable_rules — deprecated since SPEC 053, ignored with warning.
+	// 5. Parse presets[] section + filter by current platform.
 	platform := runtime.GOOS
-	if len(root.LegacySelRules) > 0 && string(root.LegacySelRules) != "null" {
-		debuglog.WarnLog("TemplateLoader: template contains deprecated selectable_rules[] — ignored. Use presets[] instead.")
-	}
-
-	// 6. Parse presets[] section + filter by current platform.
 	globalVarNames := make(map[string]bool, len(root.Vars))
 	for _, v := range root.Vars {
 		globalVarNames[v.Name] = true
@@ -514,70 +495,6 @@ func filterPresetsByPlatform(presets []Preset, goos string) []Preset {
 		}
 	}
 	return out
-}
-
-// filterAndConvertRules фильтрует правила по платформе и конвертирует в TemplateSelectableRule.
-func filterAndConvertRules(jsonRules []jsonSelectableRule, platform string) []TemplateSelectableRule {
-	var result []TemplateSelectableRule
-	for _, jr := range jsonRules {
-		if !matchesPlatform(jr.Platforms, platform) {
-			continue
-		}
-		rule := TemplateSelectableRule{
-			Label:       jr.Label,
-			Description: jr.Description,
-			IsDefault:   jr.Default,
-			Platforms:   jr.Platforms,
-			RuleSets:    jr.RuleSet,
-			Rule:        jr.Rule,
-			Rules:       jr.Rules,
-		}
-		// Вычисление DefaultOutbound и HasOutbound
-		computeOutboundInfo(&rule)
-
-		if rule.Label == "" {
-			rule.Label = fmt.Sprintf("Rule %d", len(result)+1)
-		}
-		result = append(result, rule)
-	}
-	return result
-}
-
-// computeOutboundInfo вычисляет DefaultOutbound и HasOutbound на основе содержимого правила.
-func computeOutboundInfo(rule *TemplateSelectableRule) {
-	// Определяем primary rule для анализа
-	ruleData := rule.Rule
-	if ruleData == nil && len(rule.Rules) > 0 {
-		ruleData = rule.Rules[0]
-	}
-	if ruleData == nil {
-		return
-	}
-
-	// Проверка action: reject
-	if actionVal, ok := ruleData["action"]; ok {
-		if actionStr, ok := actionVal.(string); ok && actionStr == "reject" {
-			rule.HasOutbound = true
-			if methodVal, ok := ruleData["method"]; ok {
-				if methodStr, ok := methodVal.(string); ok && methodStr == "drop" {
-					rule.DefaultOutbound = "drop"
-				} else {
-					rule.DefaultOutbound = "reject"
-				}
-			} else {
-				rule.DefaultOutbound = "reject"
-			}
-			return
-		}
-	}
-
-	// Проверка outbound
-	if outboundVal, ok := ruleData["outbound"]; ok {
-		rule.HasOutbound = true
-		if outboundStr, ok := outboundVal.(string); ok {
-			rule.DefaultOutbound = outboundStr
-		}
-	}
 }
 
 // parseJSONWithOrder парсит JSON-объект с сохранением порядка ключей.

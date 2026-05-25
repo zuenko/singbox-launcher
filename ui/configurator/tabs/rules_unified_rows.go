@@ -377,11 +377,14 @@ func presetHasAddOutbounds(tpl *wizardtemplate.Preset) bool {
 	return false
 }
 
-// presetTileLabel — текст для tile preset-ref'а: label + non-default vars summary.
+// presetTileLabel — текст для tile preset-ref'а: 🔗 + label + non-default vars summary.
+// Префикс 🔗 — visual marker «правило из библиотеки пресетов» (kind=preset),
+// отличает от user-добавленных inline/srs (`+Add Rule`). Origin тривиально
+// читается из state: kind=preset → 🔗, остальное — пользовательское.
 // Возвращает (text, brokenRef): brokenRef=true когда preset не найден в template.
 func presetTileLabel(pr *wizardmodels.PresetRefState, tpl *wizardtemplate.Preset) (string, bool) {
 	if tpl == nil {
-		return fmt.Sprintf("⚠ Broken preset: %s", pr.Ref), true
+		return fmt.Sprintf("🔗 ⚠ Broken preset: %s", pr.Ref), true
 	}
 	labelText := tpl.Label
 	if labelText == "" {
@@ -390,7 +393,7 @@ func presetTileLabel(pr *wizardmodels.PresetRefState, tpl *wizardtemplate.Preset
 	if summary := summarizePresetVarsCompact(pr, tpl); summary != "" {
 		labelText += "  ·  " + summary
 	}
-	return labelText, false
+	return "🔗 " + labelText, false
 }
 
 func summarizePresetVarsCompact(pr *wizardmodels.PresetRefState, tpl *wizardtemplate.Preset) string {
