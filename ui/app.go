@@ -10,7 +10,13 @@ import (
 	"singbox-launcher/ui/components"
 )
 
-// App manages the UI structure and tabs
+// App manages the UI structure and tabs.
+//
+// `overlay` and `content` exist for the optional main-window click-redirect
+// overlay (see `ui/wizard_overlay.go::wizardOverlayEnabled`). When the
+// feature flag is off, `content == tabs` (bare passthrough) and `overlay`
+// stays nil — clicks on the main window flow normally even while the
+// configurator is open.
 type App struct {
 	window      fyne.Window
 	core        *core.AppController
@@ -19,8 +25,7 @@ type App struct {
 	currentTab  *container.TabItem
 	content     fyne.CanvasObject
 	// overlay is a concrete ClickRedirect component from `ui/components`.
-	// Using the concrete type gives us precise typing and enables future
-	// interactions with overlay-specific methods if needed.
+	// nil when `wizardOverlayEnabled` is false (current default).
 	overlay *components.ClickRedirect
 }
 
@@ -78,8 +83,9 @@ func NewApp(window fyne.Window, controller *core.AppController) *App {
 	// Инициализируем состояние вкладки
 	app.updateClashAPITabState()
 
-	// Инициализируем overlay для перенаправления кликов на визард
-	// (реализация в ui/wizard_overlay.go)
+	// Инициализируем overlay для перенаправления кликов на визард.
+	// Поведение зависит от `wizardOverlayEnabled` (см. ui/wizard_overlay.go) —
+	// по дефолту выключено, главное окно работает параллельно с визардом.
 	InitWizardOverlay(app, controller)
 
 	// Main-window keyboard shortcuts for power users — matches the
@@ -122,7 +128,9 @@ func (a *App) GetTabs() *container.AppTabs {
 	return a.tabs
 }
 
-// GetContent returns the root content for the main window (tabs + overlay if any)
+// GetContent returns the root content for the main window (tabs alone when
+// the overlay is disabled, tabs+overlay when enabled — see
+// `wizardOverlayEnabled`).
 func (a *App) GetContent() fyne.CanvasObject {
 	if a.content != nil {
 		return a.content

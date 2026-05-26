@@ -41,3 +41,23 @@ The wizard can have **child windows** open on top of the main window (Config Wiz
 - Rule dialogs use `SetCloseIntercept` to unregister and call `UpdateChildOverlay` on close. View and Edit use `SetOnClosed`.
 
 See: `ui/wizard/presentation/presenter.go` (SetViewWindow, ClearViewWindow, SetOutboundEditWindow, ClearOutboundEditWindow, UpdateChildOverlay), `ui/wizard/wizard.go` (overlay creation and FocusOpenChildWindows).
+
+---
+
+## Main-window overlay (separate, opt-in)
+
+Historically the **main launcher window** had its own `components.ClickRedirect` overlay (created by `ui.InitWizardOverlay` in `ui/wizard_overlay.go`) that intercepted every click on the main window while the wizard was open and refocused the wizard. Effect: main window became read-only — Update / Restart / Servers tab / Start / Stop all silently swallowed clicks.
+
+Since v0.9.8 this is **gated by a build-time constant**:
+
+```go
+// ui/wizard_overlay.go
+const wizardOverlayEnabled = false  // default: main window stays usable
+```
+
+- `false` (current default) — `InitWizardOverlay` early-returns; `app.content` is just `app.tabs` (no overlay layer); the user can drive Update, Restart, start/stop sing-box, switch tabs etc. while the configurator is open as a parallel sibling window.
+- `true` — restores the legacy behavior: main-window overlay layered on top of tabs, every click forwards focus to the wizard.
+
+Flip the constant + rebuild to switch. Nothing else needs to change — the wizard's *internal* `ChildWindowsOverlay` (above) is independent and works the same in both modes.
+
+**Why opt-in instead of removed:** the focus-the-wizard semantic is useful for some users (the launcher feels like it has a modal dialog open). Keeping the implementation around makes it a one-line flip if we ever decide to bring it back as a Settings opt-in.
