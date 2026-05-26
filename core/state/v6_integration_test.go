@@ -202,7 +202,8 @@ func TestRoundTrip_V6_LoadSaveLoad(t *testing.T) {
 	original.Rules = []Rule{
 		{Kind: RuleKindPreset, Ref: "ru-direct", Enabled: true,
 			Body: json.RawMessage(`{"vars":{"dns_ip":"77.88.8.7"}}`)},
-		{Kind: RuleKindInline, ID: "u1", Enabled: true,
+		// SPEC 063: identity для inline = sanitize(body.name). Поле Rule.ID удалено.
+		{Kind: RuleKindInline, Enabled: true,
 			Body: json.RawMessage(`{"name":"X","match":{"port":[443]},"outbound":"proxy-out"}`)},
 	}
 	original.DNS = DNSOptions{
