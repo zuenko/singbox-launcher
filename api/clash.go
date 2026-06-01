@@ -607,3 +607,45 @@ func GetDelay(baseURL, token, proxyName string) (int64, error) {
 
 	return int64(delay), nil
 }
+
+// ResolveLeafProxy follows Selector/URLTest chains via the Clash API and
+// returns the actual leaf proxy name. If the proxy is not a group, it is
+// returned as-is. A maximum depth prevents infinite loops.
+func ResolveLeafProxy(baseURL, token, proxyName string) (string, error) {
+	const maxDepth = 10
+	for i := 0; i < maxDepth; i++ {
+		ctx, err := requestContext()
+		if err != nil {
+			return "", err
+		}
+		reqCtx, cancel := context.WithTimeout(ctx, time.Duration(httpRequestTimeoutSeconds)*time.Second)
+		req, err := http.NewRequestWithContext(reqCtx, "GET", fmt.Sprintf("%s/proxies/%s", baseURL, url.PathEscape(proxyName)), nil)
+		if err != nil {
+			cancel()
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := getHTTPClient().Do(req)
+		if err != nil {
+			cancel()
+			return "", fmt.Errorf("failed to query proxy %s: %w", proxyName, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		cancel()
+		if resp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("unexpected status %d for proxy %s", resp.StatusCode, proxyName)
+		}
+		var data map[string]interface{}
+		if err := json.Unmarshal(body, &data); err != nil {
+			return "", fmt.Errorf("failed to unmarshal proxy %s: %w", proxyName, err)
+		}
+		now, ok := data["now"].(string)
+		if !ok || now == "" {
+			// Not a group (no "now" field) — this is the leaf.
+			return proxyName, nil
+		}
+		proxyName = now
+	}
+	return "", fmt.Errorf("max depth exceeded resolving leaf proxy")
+}

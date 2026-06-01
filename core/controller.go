@@ -269,7 +269,7 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 			}
 			// SPEC 064: start/stop Xray sidecar on proxy switch
 			if ac.XraySidecarService != nil {
-				active := ac.GetActiveProxyName()
+				active := ac.ResolveActiveProxyLeaf()
 				if active != "" {
 					if err := ac.XraySidecarService.StartForOutbound(active); err != nil {
 						debuglog.WarnLog("OnProxySwitched: sidecar start failed for %s: %v", active, err)
@@ -558,6 +558,28 @@ func (ac *AppController) GetActiveProxyName() string {
 		return ac.APIService.GetActiveProxyName()
 	}
 	return ""
+}
+
+// ResolveActiveProxyLeaf follows Selector/URLTest chains via the Clash API
+// and returns the actual leaf proxy currently in use.
+func (ac *AppController) ResolveActiveProxyLeaf() string {
+	active := ac.GetActiveProxyName()
+	if active == "" || ac.APIService == nil {
+		return active
+	}
+	baseURL, token, enabled := ac.APIService.GetClashAPIConfig()
+	if !enabled {
+		return active
+	}
+	leaf, err := api.ResolveLeafProxy(baseURL, token, active)
+	if err != nil {
+		debuglog.DebugLog("ResolveActiveProxyLeaf: failed to resolve %s: %v", active, err)
+		return active
+	}
+	if leaf != active {
+		debuglog.DebugLog("ResolveActiveProxyLeaf: resolved %s -> %s", active, leaf)
+	}
+	return leaf
 }
 
 // GetLastSelectedProxyForGroup gets the last selected proxy name for a specific selector group.

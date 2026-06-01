@@ -177,7 +177,7 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 		// SPEC 064: after proxies loaded, start sidecar if active proxy is XHTTP
 		<-time.After(1 * time.Second)
 		if ac.XraySidecarService != nil {
-			active := ac.GetActiveProxyName()
+			active := ac.ResolveActiveProxyLeaf()
 			// Fallback to last known active tag (e.g. after user-initiated restart)
 			if active == "" {
 				active = ac.XraySidecarService.LastActiveTag()
