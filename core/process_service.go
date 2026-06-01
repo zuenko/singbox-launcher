@@ -110,6 +110,22 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 		ac.UIService.ResetAPIStateFunc()
 	}
 
+	// Windows: TUN requires administrator privileges.
+	if runtime.GOOS == "windows" {
+		hasTun, err := config.ConfigHasTun(ac.FileService.ConfigPath)
+		if err != nil {
+			debuglog.WarnLog("startSingBox: Could not check TUN in config: %v; assuming no TUN.", err)
+			hasTun = false
+		}
+		if hasTun && !platform.IsAdmin() {
+			debuglog.ErrorLog("startSingBox: Administrator privileges required for TUN mode.")
+			if ac.UIService != nil && ac.UIService.MainWindow != nil {
+				dialogs.ShowError(ac.UIService.MainWindow, fmt.Errorf("Administrator privileges required.\n\nPlease restart the application as Administrator to use TUN mode."))
+			}
+			return
+		}
+	}
+
 	// On macOS, use privileged start only when config has TUN (so password is asked only when needed)
 	if runtime.GOOS == "darwin" {
 		hasTun, err := config.ConfigHasTun(ac.FileService.ConfigPath)
@@ -162,6 +178,10 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 		<-time.After(1 * time.Second)
 		if ac.XraySidecarService != nil {
 			active := ac.GetActiveProxyName()
+			// Fallback to last known active tag (e.g. after user-initiated restart)
+			if active == "" {
+				active = ac.XraySidecarService.LastActiveTag()
+			}
 			if active != "" {
 				if err := ac.XraySidecarService.StartForOutbound(active); err != nil {
 					debuglog.WarnLog("startSingBox: sidecar start failed for %s: %v", active, err)

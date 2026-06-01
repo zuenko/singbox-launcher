@@ -15,9 +15,10 @@ import (
 type XraySidecarService struct {
 	ac *AppController
 
-	mu       sync.Mutex
-	process  *xray.SidecarProcess
-	registry *xray.SidecarRegistry
+	mu            sync.Mutex
+	process       *xray.SidecarProcess
+	registry      *xray.SidecarRegistry
+	lastActiveTag string
 }
 
 // NewXraySidecarService creates a new sidecar service bound to the controller.
@@ -78,6 +79,7 @@ func (svc *XraySidecarService) StartForOutbound(tag string) error {
 	if err := svc.process.Start(xrayPath, tempConfig); err != nil {
 		return fmt.Errorf("start xray sidecar: %w", err)
 	}
+	svc.lastActiveTag = tag
 	debuglog.InfoLog("XraySidecarService: started sidecar for outbound %s on port %d", tag, entry.Port)
 	return nil
 }
@@ -147,6 +149,13 @@ func (svc *XraySidecarService) resolveXrayPath() string {
 // XrayPath returns the resolved xray path for external use (UI, etc.).
 func (svc *XraySidecarService) XrayPath() string {
 	return svc.resolveXrayPath()
+}
+
+// LastActiveTag returns the last outbound tag for which the sidecar was started.
+func (svc *XraySidecarService) LastActiveTag() string {
+	svc.mu.Lock()
+	defer svc.mu.Unlock()
+	return svc.lastActiveTag
 }
 
 // Enabled returns whether the sidecar feature is enabled.
