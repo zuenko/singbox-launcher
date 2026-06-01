@@ -72,6 +72,24 @@ func DecodeSubscriptionContent(content []byte) ([]byte, error) {
 		return decoded, nil
 	}
 
+	// JSON object with outbounds array (sing-box full config subscription).
+	// Some providers return sing-box JSON config instead of base64/plain URI list.
+	if strings.HasPrefix(strings.TrimSpace(contentStr), "{") {
+		trimmed := strings.TrimSpace(contentStr)
+		if json.Valid([]byte(trimmed)) {
+			var cfg struct {
+				Outbounds json.RawMessage `json:"outbounds"`
+			}
+			if err := json.Unmarshal([]byte(trimmed), &cfg); err == nil && len(cfg.Outbounds) > 0 {
+				var outbounds []json.RawMessage
+				if err := json.Unmarshal(cfg.Outbounds, &outbounds); err == nil && len(outbounds) > 0 {
+					debuglog.DebugLog("DecodeSubscriptionContent: sing-box JSON config with %d outbound(s)", len(outbounds))
+					return cfg.Outbounds, nil
+				}
+			}
+		}
+	}
+
 	// JSON array of full configs (Xray-style subscription): pass through as subscription body.
 	if strings.HasPrefix(strings.TrimSpace(contentStr), "[") {
 		trimmed := strings.TrimSpace(contentStr)
@@ -84,7 +102,7 @@ func DecodeSubscriptionContent(content []byte) ([]byte, error) {
 		}
 	}
 
-	// Single JSON object or invalid JSON array: not a supported subscription list
+	// Single JSON object without outbounds or invalid JSON: not a supported subscription list
 	if strings.HasPrefix(strings.TrimSpace(contentStr), "{") || strings.HasPrefix(strings.TrimSpace(contentStr), "[") {
 		debuglog.DebugLog("DecodeSubscriptionContent: Content is JSON configuration, not a subscription list")
 		return nil, fmt.Errorf("subscription URL returned JSON configuration instead of subscription list (base64 or plain text links)")

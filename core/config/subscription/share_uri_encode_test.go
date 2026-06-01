@@ -167,3 +167,31 @@ func TestShareURIFromWireGuardEndpoint_MultiPeer(t *testing.T) {
 		t.Fatalf("want ErrShareURINotSupported, got %v", err)
 	}
 }
+
+func TestShareURIFromOutbound_RoundTripVLESS_XHTTP(t *testing.T) {
+	uri := "vless://550e8400-e29b-41d4-a716-446655440000@example.com:443?type=xhttp&path=%2Fxhttp&host=cdn.example&mode=auto&extra=eyJhbGciOiJIUzI1NiJ9&security=tls&sni=example.com#xh"
+	n, err := ParseNode(uri, nil)
+	if err != nil || n == nil {
+		t.Fatalf("ParseNode: %v", err)
+	}
+	got, err := ShareURIFromOutbound(n.Outbound)
+	if err != nil {
+		t.Fatalf("ShareURIFromOutbound: %v", err)
+	}
+	n2, err := ParseNode(got, nil)
+	if err != nil || n2 == nil {
+		t.Fatalf("ParseNode second: %v uri=%q", err, got)
+	}
+	tr1 := n.Outbound["transport"].(map[string]interface{})
+	tr2 := n2.Outbound["transport"].(map[string]interface{})
+	if tr2["type"] != "xhttp" || tr2["path"] != "/xhttp" || tr2["host"] != "cdn.example" {
+		t.Fatalf("transport mismatch: %+v", tr2)
+	}
+	if tr2["mode"] != "auto" {
+		t.Fatalf("mode mismatch: got %v", tr2["mode"])
+	}
+	if tr2["extra"] != "eyJhbGciOiJIUzI1NiJ9" {
+		t.Fatalf("extra mismatch: got %v", tr2["extra"])
+	}
+	_ = tr1
+}

@@ -188,8 +188,22 @@ func transportToQuery(q url.Values, tr map[string]interface{}) {
 				}
 			}
 		}
-	case "httpupgrade":
+	case "xhttp":
 		q.Set("type", "xhttp")
+		if p := mapGetString(tr, "path"); p != "" {
+			q.Set("path", p)
+		}
+		if h := mapGetString(tr, "host"); h != "" {
+			q.Set("host", h)
+		}
+		if mode := mapGetString(tr, "mode"); mode != "" {
+			q.Set("mode", mode)
+		}
+		if extra := mapGetString(tr, "extra"); extra != "" {
+			q.Set("extra", extra)
+		}
+	case "httpupgrade":
+		q.Set("type", "httpupgrade")
 		if p := mapGetString(tr, "path"); p != "" {
 			q.Set("path", p)
 		}
@@ -368,8 +382,18 @@ func shareURIFromVMess(out map[string]interface{}) (string, error) {
 					}
 				}
 			}
+		case "xhttp":
+			vm["net"] = "xhttp"
+			vm["path"] = mapGetString(tr, "path")
+			vm["host"] = mapGetString(tr, "host")
+			if mode := mapGetString(tr, "mode"); mode != "" {
+				vm["mode"] = mode
+			}
+			if extra := mapGetString(tr, "extra"); extra != "" {
+				vm["extra"] = extra
+			}
 		case "httpupgrade":
-			vm["net"] = "ws"
+			vm["net"] = "httpupgrade"
 			vm["path"] = mapGetString(tr, "path")
 			vm["host"] = mapGetString(tr, "host")
 		}

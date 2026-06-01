@@ -246,6 +246,43 @@ func TestIsXrayJSONArrayBody(t *testing.T) {
 	}
 }
 
+func TestParseNodesFromXrayJSONArray_XHTTPTransport(t *testing.T) {
+	raw := `[{
+		"remarks":"xhttp-test",
+		"outbounds":[{
+			"protocol":"vless",
+			"settings":{"vnext":[{"address":"srv.example","port":443,"users":[{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","flow":""}]}]},
+			"streamSettings":{"network":"xhttp","security":"tls","tlsSettings":{"serverName":"srv.example"},"xhttpSettings":{"path":"/xhttp","host":"cdn.example","mode":"auto","extra":"eyJhbGciOiJIUzI1NiJ9"}}
+		}]
+	}]`
+	nodes, err := ParseNodesFromXrayJSONArray(raw, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("want 1 node, got %d", len(nodes))
+	}
+	tr, ok := nodes[0].Outbound["transport"].(map[string]interface{})
+	if !ok {
+		t.Fatal("missing transport")
+	}
+	if tr["type"] != "xhttp" {
+		t.Fatalf("expected xhttp, got %v", tr["type"])
+	}
+	if tr["path"] != "/xhttp" {
+		t.Fatalf("expected path=/xhttp, got %v", tr["path"])
+	}
+	if tr["host"] != "cdn.example" {
+		t.Fatalf("expected host=cdn.example, got %v", tr["host"])
+	}
+	if tr["mode"] != "auto" {
+		t.Fatalf("expected mode=auto, got %v", tr["mode"])
+	}
+	if tr["extra"] != "eyJhbGciOiJIUzI1NiJ9" {
+		t.Fatalf("expected extra preserved, got %v", tr["extra"])
+	}
+}
+
 func TestXrayRemarksToTagBase(t *testing.T) {
 	if got := xrayRemarksToTagBase("🇱🇻 Sample-A | fixture", 0); got != "🇱🇻-Sample-A-fixture" {
 		t.Fatalf("got %q", got)

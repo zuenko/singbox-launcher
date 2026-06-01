@@ -233,7 +233,9 @@ func parseVMessJSON(vmessConfig map[string]interface{}, skipFilters []map[string
 	if netVal, ok := vmessConfig["net"].(string); ok && strings.TrimSpace(netVal) != "" {
 		n := strings.ToLower(strings.TrimSpace(netVal))
 		switch n {
-		case "xhttp", "httpupgrade":
+		case "xhttp":
+			net = "xhttp"
+		case "httpupgrade":
 			net = "httpupgrade"
 		case "h2":
 			net = "h2"

@@ -262,7 +262,7 @@ func TestParseNode_VMess(t *testing.T) {
 		}
 	})
 
-	t.Run("VMess JSON net=xhttp uses httpupgrade transport", func(t *testing.T) {
+	t.Run("VMess JSON net=xhttp uses native xhttp transport", func(t *testing.T) {
 		vmessConfig := map[string]interface{}{
 			"v": "2", "ps": "xh", "add": "vm.example.com", "port": float64(443),
 			"id":  "bf000d23-0752-40b4-affe-68f7707a9661",
@@ -275,7 +275,7 @@ func TestParseNode_VMess(t *testing.T) {
 			t.Fatalf("ParseNode: %v", err)
 		}
 		tr := node.Outbound["transport"].(map[string]interface{})
-		if tr["type"] != "httpupgrade" || tr["path"] != "/hx" || tr["host"] != "h.vm" {
+		if tr["type"] != "xhttp" || tr["path"] != "/hx" || tr["host"] != "h.vm" {
 			t.Fatalf("transport: %+v", tr)
 		}
 	})
@@ -778,18 +778,21 @@ func TestParseNode_VLESS_TransportAndTLS(t *testing.T) {
 		}
 	})
 
-	t.Run("xhttp maps to httpupgrade (sing-box schema: host/path only)", func(t *testing.T) {
-		uri := "vless://a0ee37a5-1844-4087-bc5c-1db6f416d38c@example.com:443?type=xhttp&path=%2F&host=h.test&mode=auto&security=tls&sni=h.test#xh"
+	t.Run("xhttp maps to native xhttp transport and preserves mode/extra", func(t *testing.T) {
+		uri := "vless://a0ee37a5-1844-4087-bc5c-1db6f416d38c@example.com:443?type=xhttp&path=%2F&host=h.test&mode=auto&extra=eyJhbGciOiJIUzI1NiJ9&security=tls&sni=h.test#xh"
 		node, err := ParseNode(uri, nil)
 		if err != nil || node == nil {
 			t.Fatalf("ParseNode: err=%v", err)
 		}
 		tr := node.Outbound["transport"].(map[string]interface{})
-		if tr["type"] != "httpupgrade" || tr["host"] != "h.test" || tr["path"] != "/" {
+		if tr["type"] != "xhttp" || tr["host"] != "h.test" || tr["path"] != "/" {
 			t.Fatalf("transport: %+v", tr)
 		}
-		if _, has := tr["mode"]; has {
-			t.Fatal("xhttp mode is not part of sing-box httpupgrade transport")
+		if tr["mode"] != "auto" {
+			t.Fatalf("expected mode=auto, got %+v", tr["mode"])
+		}
+		if tr["extra"] != "eyJhbGciOiJIUzI1NiJ9" {
+			t.Fatalf("expected extra preserved, got %+v", tr["extra"])
 		}
 	})
 
@@ -980,7 +983,7 @@ func TestParseNode_VLESS_TransportAndTLS(t *testing.T) {
 			t.Fatalf("ParseNode: err=%v", err)
 		}
 		tr := node.Outbound["transport"].(map[string]interface{})
-		if tr["type"] != "httpupgrade" || tr["path"] != "/illusion-finland" {
+		if tr["type"] != "xhttp" || tr["path"] != "/illusion-finland" {
 			t.Fatalf("transport: %+v", tr)
 		}
 		if node.Outbound["tls"] == nil {

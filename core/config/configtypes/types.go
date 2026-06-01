@@ -5,13 +5,8 @@
 package configtypes
 
 import (
-	"fmt"
 	"net/url"
-	"runtime"
-	"strings"
 	"time"
-
-	"singbox-launcher/internal/constants"
 )
 
 // ParserConfigVersion is the current version of ParserConfig format
@@ -40,24 +35,19 @@ func canonicalGOOSName(goos string) string {
 
 // BuildSubscriptionUserAgent returns the User-Agent string sent on every
 // subscription fetch. Format follows the de-facto product/version (platform)
-// convention used by Mozilla / v2rayNG / hiddify and required by HWID-binding
-// panels (Remnawave / Marzneshin) which reject unknown clients like our
-// previous `SubscriptionParserClient` and return 0-byte bodies.
+// convention used by v2rayNG / NekoBox / hiddify and required by HWID-binding
+// panels (Remnawave / Marzneshin) which reject unknown clients.
 //
-// Examples:
+// Previously we used "singbox-launcher/...", but some providers (e.g.
+// denisproxy) detect "singbox" in UA and return a JSON config instead of
+// base64 URI list. v2rayNG is the de-facto standard that virtually all
+// panels accept while returning the classic base64/plain subscription body.
 //
-//	singbox-launcher/0.9.8 (macOS arm64)
-//	singbox-launcher/0.9.8 (windows amd64)
-//	singbox-launcher/0.9.8 (linux amd64)
+// HWID-binding panels rely on X-Hwid headers, not UA string.
 //
 // See SPEC 061-F-N §"Request headers" §1.
 func BuildSubscriptionUserAgent() string {
-	ver := strings.TrimSpace(constants.AppVersion)
-	ver = strings.TrimPrefix(ver, "v")
-	if ver == "" {
-		ver = "unknown"
-	}
-	return fmt.Sprintf("singbox-launcher/%s (%s %s)", ver, canonicalGOOSName(runtime.GOOS), runtime.GOARCH)
+	return "v2rayNG/1.8.29"
 }
 
 // MaxNodesPerSubscription limits the maximum number of nodes parsed from a single subscription
@@ -182,7 +172,6 @@ func (oc *OutboundConfig) IsTemplateRef() bool {
 func (oc *OutboundConfig) IsPresetRef() bool {
 	return oc.Ref != "" && oc.Ref != RefTemplate
 }
-
 
 // UnsetSourceIndex means SourceIndex was not assigned; exclude_from_global must not apply.
 const UnsetSourceIndex = -1

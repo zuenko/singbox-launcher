@@ -201,11 +201,8 @@ func TestFetchSubscription_UserAgentFormat(t *testing.T) {
 	if _, err := FetchSubscriptionWithMeta(srv.URL); err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
-	if !strings.HasPrefix(gotUA, "singbox-launcher/") {
-		t.Errorf("UA = %q, want prefix singbox-launcher/", gotUA)
-	}
-	if !strings.Contains(gotUA, "(") || !strings.Contains(gotUA, ")") {
-		t.Errorf("UA = %q, want platform suffix in parens", gotUA)
+	if gotUA != "v2rayNG/1.8.29" {
+		t.Errorf("UA = %q, want v2rayNG/1.8.29", gotUA)
 	}
 }
 

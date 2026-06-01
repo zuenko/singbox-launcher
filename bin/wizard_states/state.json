@@ -1,0 +1,344 @@
+{
+  "meta": {
+    "version": 6,
+    "schema": "presets_v1",
+    "created_at": "2026-06-01T08:54:21Z",
+    "updated_at": "2026-06-01T08:54:39Z"
+  },
+  "connections": {
+    "sources": [
+      {
+        "id": "01KT165MTYY6EA78M2QQ6ZR3PG",
+        "type": "subscription",
+        "enabled": true,
+        "url": "https://node.denisproxy.de/api/sub/D3Ck5QZSAo7dDupM",
+        "tag": {
+          "prefix": "1:"
+        },
+        "meta": {
+          "url_at_fetch": "https://node.denisproxy.de/api/sub/D3Ck5QZSAo7dDupM",
+          "last_fetched_at": "2026-06-01T08:54:39Z",
+          "last_status": "err",
+          "error_count": 9,
+          "last_error_msg": "decode subscription: subscription URL returned JSON configuration instead of subscription list (base64 or plain text links)",
+          "http_status_code": 200
+        }
+      }
+    ],
+    "outbounds": [
+      {
+        "tag": "auto-proxy-out",
+        "type": "urltest",
+        "options": {
+          "interrupt_exist_connections": true,
+          "interval": "@urltest_interval",
+          "tolerance": "@urltest_tolerance",
+          "url": "@urltest_url"
+        },
+        "comment": "Proxy automated group for everything that should go through VPN.",
+        "updates": [
+          {
+            "ref": "russian",
+            "patch": {
+              "filters": {
+                "tag": "!/(🇷🇺)/i"
+              }
+            }
+          },
+          {
+            "ref": "ru-inside",
+            "patch": {
+              "filters": {
+                "tag": "!/(🇷🇺)/i"
+              }
+            }
+          },
+          {
+            "ref": "ru-blocked",
+            "patch": {
+              "filters": {
+                "tag": "!/(🇷🇺)/i"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "tag": "proxy-out",
+        "type": "selector",
+        "options": {
+          "default": "auto-proxy-out",
+          "interrupt_exist_connections": true
+        },
+        "addOutbounds": [
+          "direct-out",
+          "auto-proxy-out"
+        ],
+        "comment": "Proxy group for everything that should go through VPN.",
+        "required": true,
+        "updates": [
+          {
+            "ref": "russian",
+            "patch": {
+              "filters": {
+                "tag": "!/(🇷🇺)/i"
+              }
+            }
+          },
+          {
+            "ref": "ru-inside",
+            "patch": {
+              "filters": {
+                "tag": "!/(🇷🇺)/i"
+              }
+            }
+          },
+          {
+            "ref": "ru-blocked",
+            "patch": {
+              "filters": {
+                "tag": "!/(🇷🇺)/i"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "tag": "vpn ①",
+        "type": "selector",
+        "options": {
+          "default": "proxy-out",
+          "interrupt_exist_connections": true
+        },
+        "addOutbounds": [
+          "direct-out",
+          "proxy-out"
+        ],
+        "comment": "Proxy group 1"
+      },
+      {
+        "tag": "vpn ②",
+        "type": "selector",
+        "options": {
+          "default": "proxy-out",
+          "interrupt_exist_connections": true
+        },
+        "addOutbounds": [
+          "direct-out",
+          "proxy-out"
+        ],
+        "comment": "Proxy group 2"
+      },
+      {
+        "tag": "ru VPN 🇷🇺",
+        "ref": "russian"
+      }
+    ],
+    "defaults": {
+      "reload": "4h",
+      "max_nodes": 3000
+    }
+  },
+  "rules": [
+    {
+      "kind": "preset",
+      "ref": "private-ips",
+      "enabled": true,
+      "body": {
+        "vars": {}
+      }
+    },
+    {
+      "kind": "preset",
+      "ref": "local-lan-domains",
+      "enabled": true,
+      "body": {
+        "vars": {}
+      }
+    },
+    {
+      "kind": "preset",
+      "ref": "block-ads",
+      "enabled": true,
+      "body": {
+        "vars": {}
+      }
+    },
+    {
+      "kind": "preset",
+      "ref": "russian",
+      "enabled": true,
+      "body": {
+        "vars": {}
+      }
+    },
+    {
+      "kind": "preset",
+      "ref": "ru-inside",
+      "enabled": true,
+      "body": {
+        "vars": {
+          "out": "direct-out"
+        }
+      }
+    },
+    {
+      "kind": "preset",
+      "ref": "ru-blocked",
+      "enabled": true,
+      "body": {
+        "vars": {}
+      }
+    },
+    {
+      "kind": "preset",
+      "ref": "bittorrent",
+      "enabled": true,
+      "body": {
+        "vars": {}
+      }
+    },
+    {
+      "kind": "preset",
+      "ref": "ai-services",
+      "enabled": true,
+      "body": {
+        "vars": {}
+      }
+    },
+    {
+      "kind": "preset",
+      "ref": "messengers-windows",
+      "enabled": true,
+      "body": {
+        "vars": {}
+      }
+    },
+    {
+      "kind": "preset",
+      "ref": "games",
+      "enabled": true,
+      "body": {
+        "vars": {}
+      }
+    },
+    {
+      "kind": "preset",
+      "ref": "gaming-ports",
+      "enabled": true,
+      "body": {
+        "vars": {}
+      }
+    },
+    {
+      "kind": "preset",
+      "ref": "stop-http3",
+      "enabled": true,
+      "body": {
+        "vars": {}
+      }
+    }
+  ],
+  "vars": [
+    {
+      "name": "tun_stack",
+      "value": "mixed"
+    },
+    {
+      "name": "resolve_strategy",
+      "value": "prefer_ipv4"
+    },
+    {
+      "name": "cert_store",
+      "value": "system"
+    },
+    {
+      "name": "urltest_interval",
+      "value": "5m"
+    },
+    {
+      "name": "urltest_tolerance",
+      "value": "100"
+    },
+    {
+      "name": "log_level",
+      "value": "warn"
+    },
+    {
+      "name": "clash_secret",
+      "value": "DpW4YAwI8awBSpLC"
+    },
+    {
+      "name": "dns_strategy",
+      "value": "prefer_ipv4"
+    },
+    {
+      "name": "dns_default_domain_resolver",
+      "value": "direct_dns_resolver"
+    },
+    {
+      "name": "dns_final",
+      "value": "direct_dns_resolver"
+    },
+    {
+      "name": "route_final",
+      "value": "proxy-out"
+    }
+  ],
+  "dns_options": {
+    "servers": [
+      {
+        "enabled": true,
+        "kind": "template",
+        "tag": "local_dns_resolver"
+      },
+      {
+        "enabled": true,
+        "kind": "template",
+        "tag": "direct_dns_resolver"
+      },
+      {
+        "enabled": false,
+        "kind": "template",
+        "tag": "cloudflare_udp"
+      },
+      {
+        "enabled": false,
+        "kind": "template",
+        "tag": "cloudflare_doh"
+      },
+      {
+        "enabled": true,
+        "kind": "template",
+        "tag": "google_doh"
+      },
+      {
+        "enabled": false,
+        "kind": "template",
+        "tag": "google_doh_vpn"
+      },
+      {
+        "enabled": true,
+        "kind": "preset",
+        "ref": "russian:yandex_udp"
+      },
+      {
+        "enabled": true,
+        "kind": "preset",
+        "ref": "russian:yandex_doh"
+      },
+      {
+        "enabled": true,
+        "kind": "preset",
+        "ref": "russian:yandex_dot"
+      }
+    ],
+    "rules": [
+      {
+        "enabled": true,
+        "kind": "preset",
+        "ref": "russian"
+      }
+    ]
+  }
+}

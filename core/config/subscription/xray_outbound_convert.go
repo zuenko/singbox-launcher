@@ -250,6 +250,39 @@ func xrayTransportFromStreamSettings(streamSettings map[string]interface{}, netw
 			}
 		}
 		return tr
+	case "xhttp":
+		tr := map[string]interface{}{"type": "xhttp"}
+		xh, _ := streamSettings["xhttpSettings"].(map[string]interface{})
+		if xh != nil {
+			if p := xrayMapString(xh, "path"); p != "" {
+				tr["path"] = p
+			}
+			if host := xrayMapString(xh, "host"); host != "" {
+				tr["host"] = host
+			}
+			if mode := xrayMapString(xh, "mode"); mode != "" {
+				tr["mode"] = mode
+			}
+			if extra := xrayMapString(xh, "extra"); extra != "" {
+				tr["extra"] = extra
+			}
+		}
+		return tr
+	case "httpupgrade":
+		tr := map[string]interface{}{"type": "httpupgrade"}
+		hu, _ := streamSettings["httpupgradeSettings"].(map[string]interface{})
+		if hu != nil {
+			if p := xrayMapString(hu, "path"); p != "" {
+				tr["path"] = p
+			}
+			if host := xrayMapString(hu, "host"); host != "" {
+				tr["host"] = host
+			}
+		}
+		return tr
+	case "raw":
+		// Xray "raw" is the new name for plain TCP (no transport needed).
+		return nil
 	default:
 		return nil
 	}

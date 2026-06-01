@@ -639,11 +639,28 @@ func buildOutbound(node *configtypes.ParsedNode) map[string]interface{} {
 		if network == "" {
 			network = "tcp"
 		}
-		if network == "xhttp" {
-			network = "httpupgrade"
-		}
 
 		switch {
+		case network == "xhttp":
+			tr := map[string]interface{}{"type": "xhttp"}
+			if p := node.Query.Get("path"); p != "" {
+				tr["path"] = p
+			}
+			h := queryGetFold(node.Query, "host")
+			if h == "" {
+				h = queryGetFold(node.Query, "sni")
+			}
+			if h != "" {
+				tr["host"] = h
+			}
+			if mode := queryGetFold(node.Query, "mode"); mode != "" {
+				tr["mode"] = mode
+			}
+			if extra := queryGetFold(node.Query, "extra"); extra != "" {
+				tr["extra"] = extra
+			}
+			outbound["transport"] = tr
+
 		case network == "httpupgrade":
 			tr := map[string]interface{}{"type": "httpupgrade"}
 			if p := node.Query.Get("path"); p != "" {

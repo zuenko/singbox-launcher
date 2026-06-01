@@ -118,8 +118,22 @@ func uriTransportFromQuery(q url.Values) (map[string]interface{}, bool) {
 			t["host"] = []string{host}
 		}
 		return t, true
-	case "xhttp", "httpupgrade":
-		// Xray "xhttp" and subscription alias "httpupgrade" → sing-box "httpupgrade".
+	case "xhttp":
+		t := map[string]interface{}{"type": "xhttp"}
+		if p := queryGetFold(q, "path"); p != "" {
+			t["path"] = p
+		}
+		if host := queryGetFold(q, "host"); host != "" {
+			t["host"] = host
+		}
+		if mode := queryGetFold(q, "mode"); mode != "" {
+			t["mode"] = mode
+		}
+		if extra := queryGetFold(q, "extra"); extra != "" {
+			t["extra"] = extra
+		}
+		return t, true
+	case "httpupgrade":
 		t := map[string]interface{}{"type": "httpupgrade"}
 		if p := queryGetFold(q, "path"); p != "" {
 			t["path"] = p
