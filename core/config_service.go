@@ -380,6 +380,16 @@ func (ac *AppController) buildContextFromState(s *state.State, cache *build.Pars
 	if ac != nil && ac.FileService != nil {
 		ctx.Preset.ExecDir = ac.FileService.ExecDir
 	}
+
+	// SPEC 064: Xray sidecar configuration
+	if ac != nil && ac.XraySidecarService != nil {
+		ctx.XraySidecar = build.XraySidecarConfig{
+			Enabled:  ac.XraySidecarService.Enabled(),
+			XrayPath: ac.XraySidecarService.XrayPath(),
+			BasePort: 15080,
+		}
+	}
+
 	return ctx
 }
 

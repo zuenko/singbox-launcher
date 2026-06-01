@@ -41,10 +41,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 
 	"singbox-launcher/core/template"
+	"singbox-launcher/core/xray"
 	"singbox-launcher/internal/debuglog"
 )
 
@@ -87,6 +89,17 @@ type BuildContext struct {
 	// и MergeDNSSection. Активируется когда RulesV6 содержит preset-ref'ы или
 	// DNS имеет template_servers/extra_servers/extra_rules. Иначе noop.
 	Preset PresetMergeContext
+
+	// XraySidecar — конфигурация Xray sidecar для XHTTP-транспорта.
+	// Если Enabled=false или XrayPath пуст — xhttp outbounds fallback на httpupgrade.
+	XraySidecar XraySidecarConfig
+}
+
+// XraySidecarConfig задаёт параметры sidecar для BuildConfig.
+type XraySidecarConfig struct {
+	Enabled  bool
+	XrayPath string
+	BasePort int
 }
 
 // Result — итог сборки.
@@ -97,6 +110,10 @@ type Result struct {
 	// Validation — non-fatal предупреждения (например, GetEffectiveConfig упал
 	// на substitution и мы откатились на template defaults).
 	Validation ValidationResult
+
+	// SidecarRegistry — заполнен если в конфиге были xhttp outbounds и
+	// sidecar был включён. ProcessService использует registry для старта Xray.
+	SidecarRegistry *xray.SidecarRegistry
 }
 
 // ValidationResult — структура для накопления fatal/warning'ов.
@@ -144,6 +161,13 @@ func BuildConfig(ctx BuildContext) (Result, error) {
 
 	res := Result{}
 
+	// SPEC 064: если sidecar включён и это не preview — трансформируем xhttp
+	// outbounds в socks и заполняем registry. Для preview оставляем оригинал.
+	var registry *xray.SidecarRegistry
+	if !ctx.ForPreview {
+		registry = applyXraySidecarTransform(&ctx)
+	}
+
 	// Шаг 1: эффективный конфиг через GetEffectiveConfig.
 	cfg, order := effectiveConfig(ctx.Template, ctx.Vars, &res)
 
@@ -164,7 +188,95 @@ func BuildConfig(ctx BuildContext) (Result, error) {
 	b.WriteString("\n}\n")
 
 	res.ConfigJSON = []byte(b.String())
+	res.SidecarRegistry = registry
 	return res, nil
+}
+
+// applyXraySidecarTransform сканирует cache outbounds, заменяет xhttp на socks
+// (sidecar) или httpupgrade (fallback). Возвращает заполненный registry.
+// Мутирует ctx.Cache.Outbounds in-place (cache всё равно пересоздаётся при
+// следующем parser-run).
+func applyXraySidecarTransform(ctx *BuildContext) *xray.SidecarRegistry {
+	if ctx.Cache == nil || len(ctx.Cache.Outbounds) == 0 {
+		return nil
+	}
+
+	sidecar := ctx.XraySidecar
+	xrayExists := sidecar.XrayPath != "" && fileExists(sidecar.XrayPath)
+	basePort := sidecar.BasePort
+	if basePort == 0 {
+		basePort = 15080
+	}
+
+	registry := xray.NewRegistry(basePort)
+	var modified bool
+	var registered bool
+
+	for i, raw := range ctx.Cache.Outbounds {
+		var ob map[string]interface{}
+		if err := json.Unmarshal(raw, &ob); err != nil {
+			continue
+		}
+		tr, ok := ob["transport"].(map[string]interface{})
+		if !ok || mapGetString(tr, "type") != "xhttp" {
+			continue
+		}
+
+		tag := mapGetString(ob, "tag")
+		if tag == "" {
+			tag = fmt.Sprintf("xhttp-%d", i)
+		}
+
+		if sidecar.Enabled && xrayExists {
+			// Sidecar path: xhttp → socks pointing to local Xray
+			_, socksOutbound := registry.Register(tag, ob)
+			newRaw, _ := json.Marshal(socksOutbound)
+			ctx.Cache.Outbounds[i] = newRaw
+			modified = true
+			registered = true
+			if entry, ok := registry.Get(tag); ok {
+				debuglog.DebugLog("BuildConfig: outbound %s transformed to socks (xray sidecar port %d)", tag, entry.Port)
+			}
+		} else {
+			// Fallback path: xhttp → httpupgrade (sing-box native)
+			tr["type"] = "httpupgrade"
+			delete(tr, "mode")
+			delete(tr, "extra")
+			newRaw, _ := json.Marshal(ob)
+			ctx.Cache.Outbounds[i] = newRaw
+			modified = true
+			if sidecar.Enabled && !xrayExists {
+				debuglog.WarnLog("BuildConfig: xray core not found at %s, falling back xhttp outbound %s to httpupgrade", sidecar.XrayPath, tag)
+			}
+		}
+	}
+
+	if !modified {
+		return nil
+	}
+	if !registered {
+		return nil
+	}
+	return registry
+}
+
+// fileExists — best-effort проверка существования файла.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// mapGetString safely extracts a string value from a map.
+func mapGetString(m map[string]interface{}, key string) string {
+	if v, ok := m[key]; ok {
+		switch s := v.(type) {
+		case string:
+			return s
+		default:
+			return fmt.Sprintf("%v", v)
+		}
+	}
+	return ""
 }
 
 // effectiveConfig возвращает эффективные секции и их порядок. При неудаче

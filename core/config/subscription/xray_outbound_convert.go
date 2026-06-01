@@ -251,6 +251,7 @@ func xrayTransportFromStreamSettings(streamSettings map[string]interface{}, netw
 		}
 		return tr
 	case "xhttp":
+		// Xray "xhttp" → sing-box "xhttp" (for sidecar path). Preserve mode/extra.
 		tr := map[string]interface{}{"type": "xhttp"}
 		xh, _ := streamSettings["xhttpSettings"].(map[string]interface{})
 		if xh != nil {

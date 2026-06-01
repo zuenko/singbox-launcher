@@ -119,6 +119,7 @@ func uriTransportFromQuery(q url.Values) (map[string]interface{}, bool) {
 		}
 		return t, true
 	case "xhttp":
+		// Native xhttp transport (for Xray sidecar path). Preserves mode/extra.
 		t := map[string]interface{}{"type": "xhttp"}
 		if p := queryGetFold(q, "path"); p != "" {
 			t["path"] = p

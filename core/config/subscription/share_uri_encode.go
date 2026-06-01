@@ -188,7 +188,9 @@ func transportToQuery(q url.Values, tr map[string]interface{}) {
 				}
 			}
 		}
-	case "xhttp":
+	case "xhttp", "httpupgrade":
+		// sing-box transport "xhttp" / "httpupgrade" → Xray URI "type=xhttp".
+		// mode/extra are preserved if present.
 		q.Set("type", "xhttp")
 		if p := mapGetString(tr, "path"); p != "" {
 			q.Set("path", p)
@@ -201,14 +203,6 @@ func transportToQuery(q url.Values, tr map[string]interface{}) {
 		}
 		if extra := mapGetString(tr, "extra"); extra != "" {
 			q.Set("extra", extra)
-		}
-	case "httpupgrade":
-		q.Set("type", "httpupgrade")
-		if p := mapGetString(tr, "path"); p != "" {
-			q.Set("path", p)
-		}
-		if h := mapGetString(tr, "host"); h != "" {
-			q.Set("host", h)
 		}
 	}
 }
@@ -382,7 +376,7 @@ func shareURIFromVMess(out map[string]interface{}) (string, error) {
 					}
 				}
 			}
-		case "xhttp":
+		case "xhttp", "httpupgrade":
 			vm["net"] = "xhttp"
 			vm["path"] = mapGetString(tr, "path")
 			vm["host"] = mapGetString(tr, "host")
@@ -392,10 +386,6 @@ func shareURIFromVMess(out map[string]interface{}) (string, error) {
 			if extra := mapGetString(tr, "extra"); extra != "" {
 				vm["extra"] = extra
 			}
-		case "httpupgrade":
-			vm["net"] = "httpupgrade"
-			vm["path"] = mapGetString(tr, "path")
-			vm["host"] = mapGetString(tr, "host")
 		}
 	}
 	if tls, ok := out["tls"].(map[string]interface{}); ok {

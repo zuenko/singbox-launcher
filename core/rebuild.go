@@ -166,6 +166,11 @@ func (ac *AppController) RebuildConfigIfDirty(forced ...bool) error {
 		return fmt.Errorf("build: %w", err)
 	}
 
+	// SPEC 064: store sidecar registry for ProcessService / APIService
+	if ac.XraySidecarService != nil {
+		ac.XraySidecarService.SetRegistry(res.SidecarRegistry)
+	}
+
 	// Step 5: atomic write.
 	if err := atomicWriteConfig(ac.FileService.ConfigPath, res.ConfigJSON); err != nil {
 		return fmt.Errorf("write config: %w", err)

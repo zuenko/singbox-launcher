@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -54,6 +55,8 @@ type AppController struct {
 	ProcessService *ProcessService
 	// ConfigService handles configuration parsing, subscription fetching, and JSON generation
 	ConfigService *ConfigService
+	// XraySidecarService manages Xray-core sidecar for XHTTP transport (SPEC 064)
+	XraySidecarService *XraySidecarService
 	// EventBus — типизированный sync event-bus (SPEC 047). Передаётся в
 	// сервисы при их создании, чтобы UI-слой мог точечно подписываться
 	// на изменения состояния вместо broadcast-callback'ов.
@@ -224,6 +227,7 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 	ac.ConsecutiveCrashAttempts = 0
 	ac.ProcessService = NewProcessService(ac)
 	ac.ConfigService = NewConfigService(ac)
+	ac.XraySidecarService = NewXraySidecarService(ac)
 
 	// Устанавливаем callback для проверки обновлений при открытии окна
 	ac.UIService.OnWindowShown = func() {
@@ -263,6 +267,17 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 					ac.UIService.RefreshAPIFunc()
 				}
 			}
+			// SPEC 064: start/stop Xray sidecar on proxy switch
+			if ac.XraySidecarService != nil {
+				active := ac.GetActiveProxyName()
+				if active != "" {
+					if err := ac.XraySidecarService.StartForOutbound(active); err != nil {
+						debuglog.WarnLog("OnProxySwitched: sidecar start failed for %s: %v", active, err)
+					}
+				} else {
+					ac.XraySidecarService.Stop()
+				}
+			}
 		},
 	)
 	if err != nil {
@@ -289,6 +304,27 @@ func NewAppController(appIconData, greyIconData, greenIconData, redIconData []by
 	ac.EventBus = events.NewMemoryBus()
 	ac.StateService = services.NewStateService()
 	ac.StateService.EventBus = ac.EventBus
+
+	// SPEC 064: auto-download Xray core if missing and cache contains xhttp nodes
+	if ac.XraySidecarService != nil && ac.XraySidecarService.XrayPath() == "" && ac.cacheHasXHTTPOutbounds() {
+		go func() {
+			<-time.After(5 * time.Second)
+			debuglog.InfoLog("Xray auto-download: xray core not found but xhttp nodes detected, starting background download...")
+			progressChan := make(chan DownloadProgress, 10)
+			go ac.DownloadXrayCore(ac.ctx, "", progressChan)
+			for p := range progressChan {
+				if p.Status == "done" {
+					debuglog.InfoLog("Xray auto-download: %s", p.Message)
+					// Force UI refresh if dashboard is open
+					if ac.UIService != nil && ac.UIService.UpdateCoreStatusFunc != nil {
+						fyne.Do(ac.UIService.UpdateCoreStatusFunc)
+					}
+				} else if p.Status == "error" {
+					debuglog.ErrorLog("Xray auto-download failed: %v", p.Error)
+				}
+			}
+		}()
+	}
 
 	// Check if config file exists before starting auto-update
 	if _, err := os.Stat(ac.FileService.ConfigPath); os.IsNotExist(err) {
@@ -723,4 +759,46 @@ func (ac *AppController) GetVPNButtonState() VPNButtonState {
 	state.StopEnabled = isRunning
 
 	return state
+}
+
+// cacheHasXHTTPOutbounds checks if the outbounds cache contains any xhttp transport nodes.
+func (ac *AppController) cacheHasXHTTPOutbounds() bool {
+	if ac.FileService == nil {
+		return false
+	}
+	cachePath := filepath.Join(ac.FileService.ExecDir, constants.BinDirName, constants.OutboundsCacheFileName)
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		return false
+	}
+	var cache struct {
+		Outbounds []map[string]interface{} `json:"outbounds"`
+	}
+	if err := json.Unmarshal(data, &cache); err != nil {
+		// Fallback: try raw json.RawMessage array format
+		var rawOutbounds []json.RawMessage
+		if err := json.Unmarshal(data, &rawOutbounds); err != nil {
+			return false
+		}
+		for _, raw := range rawOutbounds {
+			var ob map[string]interface{}
+			if err := json.Unmarshal(raw, &ob); err != nil {
+				continue
+			}
+			if tr, ok := ob["transport"].(map[string]interface{}); ok {
+				if t, _ := tr["type"].(string); t == "xhttp" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	for _, ob := range cache.Outbounds {
+		if tr, ok := ob["transport"].(map[string]interface{}); ok {
+			if t, _ := tr["type"].(string); t == "xhttp" {
+				return true
+			}
+		}
+	}
+	return false
 }

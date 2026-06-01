@@ -70,9 +70,19 @@ type CoreDashboardTab struct {
 	subsToastBox   *fyne.Container
 	subsToastTimer *time.Timer
 
+	// SPEC 064: Xray sidecar UI
+	xrayStatusLabel         *widget.Label
+	xrayDownloadButton      *widget.Button
+	xrayDownloadProgress    *widget.ProgressBar
+	xrayDownloadContainer   fyne.CanvasObject
+	xrayDownloadPlaceholder *canvas.Rectangle
+	xrayHelpBtn             *widget.Button
+	xrayKillButton          *widget.Button
+
 	// Data
 	downloadInProgress       bool // Flag for sing-box download process
 	wintunDownloadInProgress bool // Flag for wintun.dll download process
+	xrayDownloadInProgress   bool // Flag for xray download process
 }
 
 // CreateCoreDashboardTab creates and returns the Core Dashboard tab
@@ -107,10 +117,12 @@ func CreateCoreDashboardTab(ac *core.AppController) fyne.CanvasObject {
 		wintunBlock = tab.createWintunBlock()
 	}
 
+	xrayBlock := tab.createXrayBlock()
 	coreRows := []fyne.CanvasObject{versionBlock}
 	if runtime.GOOS == "windows" && wintunBlock != nil {
 		coreRows = append(coreRows, wintunBlock)
 	}
+	coreRows = append(coreRows, xrayBlock)
 	coreRows = append(coreRows, configBlock)
 	coreInfo := container.NewVBox(coreRows...)
 
@@ -194,6 +206,7 @@ func CreateCoreDashboardTab(ac *core.AppController) fyne.CanvasObject {
 	if runtime.GOOS == "windows" {
 		tab.updateWintunStatus() // Проверяет наличие wintun.dll
 	}
+	tab.updateXrayStatus() // SPEC 064: проверяет наличие xray core
 	tab.updateConfigInfo()
 
 	// Sing-box version is pinned via constants.RequiredCoreVersion (SPEC 046)
@@ -1432,6 +1445,180 @@ func (tab *CoreDashboardTab) handleWintunDownload() {
 					binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
 					debuglog.DebugLog("core_dashboard: showing download failed manual (wintun)")
 					dialogs.ShowDownloadFailedManual(tab.controller.GetMainWindow(), "wintun.dll download failed", constants.WintunHomeURL, binDir)
+				}
+			})
+		}
+	}()
+}
+
+// createXrayBlock creates the Xray sidecar status block (SPEC 064).
+func (tab *CoreDashboardTab) createXrayBlock() fyne.CanvasObject {
+	title := widget.NewLabel("Xray Core")
+	title.Importance = widget.MediumImportance
+
+	tab.xrayHelpBtn = widget.NewButton("?", func() {
+		msg := "Xray core is required for XHTTP transport support.\n\n" +
+			"Place xray.exe in the bin folder, or use the Download button."
+		binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
+		urlLink := widget.NewHyperlink("Xray Releases", nil)
+		_ = urlLink.SetURLFromString("https://github.com/XTLS/Xray-core/releases")
+		urlLink.OnTapped = func() {
+			_ = platform.OpenURL("https://github.com/XTLS/Xray-core/releases")
+		}
+		openBinBtn := widget.NewButtonWithIcon(locale.T("core.button_open_bin"), theme.FolderOpenIcon(), func() {
+			_ = platform.OpenFolder(binDir)
+		})
+		content := container.NewVBox(widget.NewLabel(msg), urlLink, openBinBtn)
+		dialogs.ShowCustom(tab.controller.GetMainWindow(), "Xray Core", locale.T("core.dialog_singbox_close"), content)
+	})
+
+	tab.xrayStatusLabel = widget.NewLabel("Checking...")
+	tab.xrayStatusLabel.Wrapping = fyne.TextWrapOff
+
+	tab.xrayDownloadButton = widget.NewButton(locale.T("core.button_download"), func() {
+		tab.handleXrayDownload()
+	})
+	tab.xrayDownloadButton.Importance = widget.MediumImportance
+	tab.xrayDownloadButton.Disable()
+
+	tab.xrayDownloadProgress = widget.NewProgressBar()
+	tab.xrayDownloadProgress.Hide()
+	tab.xrayDownloadProgress.SetValue(0)
+
+	if tab.xrayDownloadPlaceholder == nil {
+		tab.xrayDownloadPlaceholder = canvas.NewRectangle(color.Transparent)
+	}
+	placeholderSize := fyne.NewSize(downloadPlaceholderWidth, tab.xrayDownloadButton.MinSize().Height)
+	tab.xrayDownloadPlaceholder.SetMinSize(placeholderSize)
+	tab.xrayDownloadPlaceholder.Hide()
+
+	tab.xrayDownloadContainer = container.NewStack(
+		tab.xrayDownloadPlaceholder,
+		tab.xrayDownloadButton,
+		tab.xrayDownloadProgress,
+	)
+
+	tab.xrayKillButton = widget.NewButton("Kill", func() {
+		if tab.controller != nil && tab.controller.XraySidecarService != nil {
+			tab.controller.XraySidecarService.Stop()
+			tab.updateXrayStatus()
+		}
+	})
+	tab.xrayKillButton.Importance = widget.DangerImportance
+	tab.xrayKillButton.Hide()
+
+	return container.NewHBox(
+		title,
+		layout.NewSpacer(),
+		tab.xrayStatusLabel,
+		tab.xrayDownloadContainer,
+		tab.xrayKillButton,
+		tab.xrayHelpBtn,
+	)
+}
+
+// updateXrayStatus updates the Xray core status label.
+func (tab *CoreDashboardTab) updateXrayStatus() {
+	if tab.controller == nil || tab.controller.XraySidecarService == nil {
+		tab.xrayStatusLabel.SetText("Not available")
+		tab.xrayDownloadButton.Hide()
+		if tab.xrayKillButton != nil {
+			tab.xrayKillButton.Hide()
+		}
+		return
+	}
+
+	path := tab.controller.XraySidecarService.XrayPath()
+	if path == "" {
+		tab.xrayStatusLabel.SetText("Not installed")
+		tab.xrayStatusLabel.Importance = widget.MediumImportance
+		tab.xrayDownloadButton.Show()
+		if !tab.xrayDownloadInProgress {
+			tab.xrayDownloadButton.Enable()
+		}
+		if tab.xrayKillButton != nil {
+			tab.xrayKillButton.Hide()
+		}
+		return
+	}
+
+	ver := tab.controller.XraySidecarService.GetVersion()
+	if ver == "" {
+		ver = "installed"
+	}
+	tab.xrayStatusLabel.SetText(ver)
+	tab.xrayStatusLabel.Importance = widget.SuccessImportance
+	tab.xrayDownloadButton.Hide()
+
+	// Show Kill button only when sidecar is running
+	if tab.xrayKillButton != nil {
+		if tab.controller.XraySidecarService.IsRunning() {
+			tab.xrayKillButton.Show()
+		} else {
+			tab.xrayKillButton.Hide()
+		}
+	}
+}
+
+// setXrayDownloadState controls the visibility of xray download button vs progress bar.
+func (tab *CoreDashboardTab) setXrayDownloadState(buttonText string, progress float64) {
+	if progress >= 0 && progress < 1.0 {
+		// Download in progress
+		tab.xrayDownloadButton.Hide()
+		tab.xrayDownloadPlaceholder.Show()
+		tab.xrayDownloadProgress.Show()
+		tab.xrayDownloadProgress.SetValue(progress)
+	} else if progress < 0 {
+		// Error / reset
+		tab.xrayDownloadProgress.Hide()
+		tab.xrayDownloadPlaceholder.Hide()
+		tab.xrayDownloadButton.Show()
+		if buttonText != "" {
+			tab.xrayDownloadButton.SetText(buttonText)
+		}
+	} else {
+		// Done / idle
+		tab.xrayDownloadProgress.Hide()
+		tab.xrayDownloadPlaceholder.Hide()
+		tab.xrayDownloadButton.Show()
+		if buttonText != "" {
+			tab.xrayDownloadButton.SetText(buttonText)
+		}
+	}
+}
+
+// handleXrayDownload triggers the Xray core download.
+func (tab *CoreDashboardTab) handleXrayDownload() {
+	if tab.xrayDownloadInProgress {
+		return
+	}
+	tab.xrayDownloadInProgress = true
+	tab.xrayDownloadButton.Disable()
+	tab.setXrayDownloadState("", 0.0)
+
+	go func() {
+		progressChan := make(chan core.DownloadProgress, 10)
+
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			tab.controller.DownloadXrayCore(ctx, "", progressChan)
+		}()
+
+		for progress := range progressChan {
+			fyne.Do(func() {
+				progressValue := float64(progress.Progress) / 100.0
+				tab.setXrayDownloadState("", progressValue)
+
+				if progress.Status == "done" {
+					tab.xrayDownloadInProgress = false
+					tab.updateXrayStatus()
+					ShowInfo(tab.controller.GetMainWindow(), locale.T("core.dialog_download_complete_title"), progress.Message)
+				} else if progress.Status == "error" {
+					tab.xrayDownloadInProgress = false
+					tab.setXrayDownloadState(locale.T("core.button_download"), -1)
+					binDir := filepath.Join(tab.controller.FileService.ExecDir, constants.BinDirName)
+					dialogs.ShowDownloadFailedManual(tab.controller.GetMainWindow(), "Xray download failed", "https://github.com/XTLS/Xray-core/releases", binDir)
 				}
 			})
 		}

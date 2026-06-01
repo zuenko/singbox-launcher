@@ -70,6 +70,27 @@ singbox-launcher/
 │   │   │   - Monitor()                            # Мониторинг процесса
 │   │   │   - CheckIfRunningAtStart()              # Проверка при старте
 │   │   │
+│   ├── xray_sidecar_service.go  # SPEC 064: Xray-core sidecar для XHTTP
+│   │   │   - NewXraySidecarService()              # Создание сервиса
+│   │   │   - SetRegistry()                        # Регистрация sidecar-нод после BuildConfig
+│   │   │   - StartForOutbound()                   # Запуск Xray для конкретного outbound tag
+│   │   │   - Stop()                               # Остановка sidecar
+│   │   │   - XrayPath()                           # Путь к xray.exe / xray
+│   │   │
+│   ├── xray_downloader.go    # SPEC 064: Загрузка Xray-core из GitHub
+│   │   │   - DownloadXrayCore()                   # Загрузка Xray (XTLS/Xray-core/releases)
+│   │   │
+│   ├── xray/                 # SPEC 064: Пакет sidecar
+│   │   ├── config_builder.go  # Конвертация sing-box outbound → Xray JSON
+│   │   │   - BuildSidecarConfig()                 # Генерация Xray конфига (SOCKS inbound + VLESS+XHTTP outbound)
+│   │   ├── process.go         # Жизненный цикл процесса Xray
+│   │   │   - SidecarProcess.Start()               # Запуск xray.exe run -c <config>
+│   │   │   - SidecarProcess.Stop()                # Остановка
+│   │   │   - GetVersion()                         # xray version
+│   │   └── registry.go        # Реестр sidecar-нод
+│   │       - SidecarRegistry.Register()           # tag → port + original outbound
+│   │       - SidecarRegistry.Get()                # Получение entry по tag
+│   │   │
 │   ├── core_downloader.go    # Загрузка sing-box
 │   │   │   - DownloadCore()                        # Загрузка sing-box
 │   │   │   - ReleaseInfo struct                    # Информация о релизе

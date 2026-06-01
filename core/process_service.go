@@ -158,6 +158,16 @@ func (svc *ProcessService) Start(skipRunningCheck ...bool) {
 		// Small delay to ensure API is ready
 		<-time.After(2 * time.Second)
 		ac.AutoLoadProxies()
+		// SPEC 064: after proxies loaded, start sidecar if active proxy is XHTTP
+		<-time.After(1 * time.Second)
+		if ac.XraySidecarService != nil {
+			active := ac.GetActiveProxyName()
+			if active != "" {
+				if err := ac.XraySidecarService.StartForOutbound(active); err != nil {
+					debuglog.WarnLog("startSingBox: sidecar start failed for %s: %v", active, err)
+				}
+			}
+		}
 	}()
 
 	go svc.Monitor(ac.SingboxCmd)
@@ -366,6 +376,11 @@ func (svc *ProcessService) Monitor(cmdToMonitor *exec.Cmd) {
 		dialogs.ShowAutoHideInfo(ac.UIService.Application, ac.UIService.MainWindow, locale.T("core.crash_title"), locale.Tf("core.crash_restarting", ac.ConsecutiveCrashAttempts, restartAttempts))
 	}
 
+	// SPEC 064: stop Xray sidecar before auto-restart
+	if ac.XraySidecarService != nil {
+		ac.XraySidecarService.Stop()
+	}
+
 	ac.CmdMutex.Unlock()
 	<-time.After(2 * time.Second)
 	svc.Start(true)
@@ -445,6 +460,11 @@ func (svc *ProcessService) Stop() {
 		return
 	}
 
+	// SPEC 064: stop Xray sidecar before stopping sing-box
+	if ac.XraySidecarService != nil {
+		ac.XraySidecarService.Stop()
+	}
+
 	debuglog.InfoLog("stopSingBox: Attempting graceful shutdown...")
 	processToStop := ac.SingboxCmd.Process
 
@@ -492,6 +512,11 @@ func (svc *ProcessService) KillForRestart() {
 	}
 
 	ac.RestartRequestedByUser = true // watcher will see exit and call Start(true)
+
+	// SPEC 064: stop Xray sidecar before restarting sing-box
+	if ac.XraySidecarService != nil {
+		ac.XraySidecarService.Stop()
+	}
 
 	if ac.SingboxPrivilegedMode && ac.SingboxPrivilegedPID != 0 && ac.SingboxPrivilegedPIDFile != "" {
 		pidFile := ac.SingboxPrivilegedPIDFile
