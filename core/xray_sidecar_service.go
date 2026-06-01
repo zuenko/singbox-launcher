@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 
 	"singbox-launcher/core/xray"
@@ -72,7 +73,15 @@ func (svc *XraySidecarService) StartForOutbound(tag string) error {
 	// Write temp config
 	tempDir := filepath.Join(svc.ac.FileService.ExecDir, "temp")
 	_ = os.MkdirAll(tempDir, 0755)
-	tempConfig := filepath.Join(tempDir, fmt.Sprintf("xray-%s.json", tag))
+	// Sanitize tag for use as filename (Windows forbids : < > " | ? *).
+	safeTag := strings.ReplaceAll(tag, ":", "_")
+	safeTag = strings.ReplaceAll(safeTag, "<", "_")
+	safeTag = strings.ReplaceAll(safeTag, ">", "_")
+	safeTag = strings.ReplaceAll(safeTag, "\"", "_")
+	safeTag = strings.ReplaceAll(safeTag, "|", "_")
+	safeTag = strings.ReplaceAll(safeTag, "?", "_")
+	safeTag = strings.ReplaceAll(safeTag, "*", "_")
+	tempConfig := filepath.Join(tempDir, fmt.Sprintf("xray-%s.json", safeTag))
 
 	cfgJSON, err := xray.BuildSidecarConfig(entry.OriginalOutbound, entry.Port)
 	if err != nil {
