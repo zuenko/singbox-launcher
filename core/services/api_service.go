@@ -342,6 +342,10 @@ func (apiSvc *APIService) AutoLoadProxies(ctx context.Context) {
 				if apiSvc.OnProxiesUpdated != nil {
 					apiSvc.OnProxiesUpdated()
 				}
+				// SPEC 064: start sidecar for the active proxy once it's known
+				if apiSvc.OnProxySwitched != nil {
+					apiSvc.OnProxySwitched()
+				}
 			})
 
 			// Проверяем, есть ли сохраненный прокси для текущей группы, и переключаемся на него, если он отличается от текущего

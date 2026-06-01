@@ -46,16 +46,21 @@ func (svc *XraySidecarService) StartForOutbound(tag string) error {
 	svc.mu.Lock()
 	defer svc.mu.Unlock()
 
+	debuglog.DebugLog("XraySidecarService: StartForOutbound called for tag=%q", tag)
+
 	if svc.registry == nil {
 		debuglog.WarnLog("XraySidecarService: StartForOutbound called with nil registry — was RebuildConfigIfDirty skipped?")
 		return nil
 	}
+	debuglog.DebugLog("XraySidecarService: registry has %d entries, tags=%v", svc.registry.Len(), svc.registry.Tags())
 	entry, ok := svc.registry.Get(tag)
 	if !ok {
+		debuglog.WarnLog("XraySidecarService: tag %q not found in registry (available: %v)", tag, svc.registry.Tags())
 		return nil
 	}
 
 	xrayPath := svc.resolveXrayPath()
+	debuglog.DebugLog("XraySidecarService: resolved xray path=%q", xrayPath)
 	if xrayPath == "" {
 		return fmt.Errorf("xray core not found")
 	}
@@ -71,6 +76,7 @@ func (svc *XraySidecarService) StartForOutbound(tag string) error {
 
 	cfgJSON, err := xray.BuildSidecarConfig(entry.OriginalOutbound, entry.Port)
 	if err != nil {
+		debuglog.ErrorLog("XraySidecarService: BuildSidecarConfig failed for %s: %v", tag, err)
 		return fmt.Errorf("build xray config: %w", err)
 	}
 	if err := os.WriteFile(tempConfig, cfgJSON, 0644); err != nil {
@@ -78,6 +84,7 @@ func (svc *XraySidecarService) StartForOutbound(tag string) error {
 	}
 
 	if err := svc.process.Start(xrayPath, tempConfig); err != nil {
+		debuglog.ErrorLog("XraySidecarService: process start failed for %s: %v", tag, err)
 		return fmt.Errorf("start xray sidecar: %w", err)
 	}
 	svc.lastActiveTag = tag

@@ -257,6 +257,7 @@ func applyXraySidecarTransform(ctx *BuildContext) *xray.SidecarRegistry {
 	if !registered {
 		return nil
 	}
+	debuglog.InfoLog("BuildConfig: sidecar registry built with %d entries: %v", registry.Len(), registry.Tags())
 	return registry
 }
 

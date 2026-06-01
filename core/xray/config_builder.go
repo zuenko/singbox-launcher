@@ -43,36 +43,103 @@ func BuildSidecarConfig(singboxOutbound map[string]interface{}, port int) ([]byt
 }
 
 // convertOutbound transforms a sing-box outbound map into an Xray outbound map.
-// Currently supports VLESS with xhttp transport.
+// Supports VLESS, Trojan, and VMess with xhttp transport.
 func convertOutbound(sb map[string]interface{}) (map[string]interface{}, error) {
 	typ := mapGetString(sb, "type")
-	if typ != "vless" {
-		return nil, fmt.Errorf("unsupported outbound type %q (only vless supported)", typ)
-	}
-
 	server := mapGetString(sb, "server")
 	port := mapGetInt(sb, "server_port")
-	uuid := mapGetString(sb, "uuid")
-	if server == "" || port == 0 || uuid == "" {
-		return nil, fmt.Errorf("missing required vless fields: server=%q port=%d uuid=%q", server, port, uuid)
+	if server == "" || port == 0 {
+		return nil, fmt.Errorf("missing required fields: server=%q port=%d", server, port)
 	}
 
-	vlessSettings := map[string]interface{}{
-		"vnext": []map[string]interface{}{
-			{
-				"address": server,
-				"port":    port,
-				"users": []map[string]interface{}{
-					{
-						"id":         uuid,
-						"encryption": "none",
-						"flow":       mapGetString(sb, "flow"),
+	streamSettings := buildStreamSettings(sb)
+
+	var out map[string]interface{}
+	switch typ {
+	case "vless":
+		uuid := mapGetString(sb, "uuid")
+		if uuid == "" {
+			return nil, fmt.Errorf("missing required vless field uuid")
+		}
+		settings := map[string]interface{}{
+			"vnext": []map[string]interface{}{
+				{
+					"address": server,
+					"port":    port,
+					"users": []map[string]interface{}{
+						{
+							"id":         uuid,
+							"encryption": "none",
+							"flow":       mapGetString(sb, "flow"),
+						},
 					},
 				},
 			},
-		},
+		}
+		out = map[string]interface{}{
+			"tag":      "proxy",
+			"protocol": "vless",
+			"settings": settings,
+		}
+	case "trojan":
+		password := mapGetString(sb, "password")
+		if password == "" {
+			return nil, fmt.Errorf("missing required trojan field password")
+		}
+		settings := map[string]interface{}{
+			"servers": []map[string]interface{}{
+				{
+					"address":  server,
+					"port":     port,
+					"password": password,
+				},
+			},
+		}
+		out = map[string]interface{}{
+			"tag":      "proxy",
+			"protocol": "trojan",
+			"settings": settings,
+		}
+	case "vmess":
+		uuid := mapGetString(sb, "uuid")
+		if uuid == "" {
+			return nil, fmt.Errorf("missing required vmess field uuid")
+		}
+		security := mapGetString(sb, "security")
+		if security == "" {
+			security = "auto"
+		}
+		settings := map[string]interface{}{
+			"vnext": []map[string]interface{}{
+				{
+					"address": server,
+					"port":    port,
+					"users": []map[string]interface{}{
+						{
+							"id":       uuid,
+							"security": security,
+						},
+					},
+				},
+			},
+		}
+		out = map[string]interface{}{
+			"tag":      "proxy",
+			"protocol": "vmess",
+			"settings": settings,
+		}
+	default:
+		return nil, fmt.Errorf("unsupported outbound type %q for xray sidecar (need vless/trojan/vmess)", typ)
 	}
 
+	if len(streamSettings) > 0 {
+		out["streamSettings"] = streamSettings
+	}
+	return out, nil
+}
+
+// buildStreamSettings extracts transport, TLS, and Reality settings from a sing-box outbound.
+func buildStreamSettings(sb map[string]interface{}) map[string]interface{} {
 	streamSettings := map[string]interface{}{}
 
 	// Transport
@@ -97,8 +164,6 @@ func convertOutbound(sb map[string]interface{}) (map[string]interface{}, error) 
 			if len(xh) > 0 {
 				streamSettings["xhttpSettings"] = xh
 			}
-		default:
-			return nil, fmt.Errorf("unsupported transport type %q for xray sidecar", transportType)
 		}
 	}
 
@@ -144,15 +209,7 @@ func convertOutbound(sb map[string]interface{}) (map[string]interface{}, error) 
 		}
 	}
 
-	out := map[string]interface{}{
-		"tag":      "proxy",
-		"protocol": "vless",
-		"settings": vlessSettings,
-	}
-	if len(streamSettings) > 0 {
-		out["streamSettings"] = streamSettings
-	}
-	return out, nil
+	return streamSettings
 }
 
 // mapGetString safely extracts a string value from a map.
