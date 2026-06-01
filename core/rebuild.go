@@ -152,7 +152,13 @@ func (ac *AppController) RebuildConfigIfDirty(forced ...bool) error {
 	// pressed Rebuild button и ожидает полный rebuild + sing-box check
 	// даже если dirty markers чистые).
 	if !isForced && !cacheMissing && !ac.StateService.IsCacheStale() && !ac.StateService.IsConfigStale() {
-		return nil
+		// SPEC 064: even when config.json is clean, sidecar registry may be nil
+		// after app restart (registry is in-memory only). Fall through to build
+		// so that XraySidecarService gets its registry.
+		if ac.XraySidecarService == nil || ac.XraySidecarService.Registry() != nil {
+			return nil
+		}
+		debuglog.InfoLog("RebuildConfigIfDirty: config is clean but sidecar registry missing — rebuilding registry")
 	}
 
 	debuglog.InfoLog("RebuildConfigIfDirty: rebuilding config.json (forced=%v update_dirty=%v restart_dirty=%v cache_missing_initially=%v)",

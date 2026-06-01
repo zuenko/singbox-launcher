@@ -47,6 +47,7 @@ func (svc *XraySidecarService) StartForOutbound(tag string) error {
 	defer svc.mu.Unlock()
 
 	if svc.registry == nil {
+		debuglog.WarnLog("XraySidecarService: StartForOutbound called with nil registry — was RebuildConfigIfDirty skipped?")
 		return nil
 	}
 	entry, ok := svc.registry.Get(tag)
