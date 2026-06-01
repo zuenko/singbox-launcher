@@ -96,3 +96,6 @@ coverage.html
 docs/night-reports/
 singbox-launcher_arm64
 SPECS/
+
+# Local toolchain (Go, MinGW) — never commit
+.tools/
